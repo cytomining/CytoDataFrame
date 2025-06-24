@@ -15,7 +15,7 @@ packages = [ { include = "cytodataframe", from = "src" } ]
 poetry-dynamic-versioning = { version = ">=1.0.0,<2.0.0", extras = [ "plugin" ] }
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.13"
+python = ">=3.9,<3.14"
 # used for data management
 pandas = [
   { version = "<2.2.2", python = "<3.9" },

@@ -56,7 +56,7 @@ black = ">=24.10,<26.0"
 isort = ">=5.13.2,<7.0.0"
 jupyterlab-code-formatter = "^3.0.2"
 duckdb = "^1.1.3"
-cosmicqc = "^0.1.4"
+cosmicqc = { version = "^0.1.4", markers = "python_version < '3.13' and python_version >= '3.10'" }
 
 [tool.poetry.group.docs.dependencies]
 # used for rendering docs into docsite

@@ -618,6 +618,7 @@ description = "coSMicQC is a software tool for single-cell quality control of mo
 optional = false
 python-versions = "<3.13,>=3.9"
 groups = ["dev"]
+markers = "python_version < \"3.13\" and python_version >= \"3.10\""
 files = [
     {file = "cosmicqc-0.1.4-py3-none-any.whl", hash = "sha256:19fb7c703a261ed5bef2fdb14fc5da8977549d82de6b66ae41d54088e01a7519"},
     {file = "cosmicqc-0.1.4.tar.gz", hash = "sha256:56763eed3b456454f4f3e47866de0e87a455ad2e6543651ad505ba813c6a7196"},
@@ -921,6 +922,7 @@ description = "A library for automatically generating command line interfaces."
 optional = false
 python-versions = "*"
 groups = ["dev"]
+markers = "python_version < \"3.13\" and python_version >= \"3.10\""
 files = [
     {file = "fire-0.7.0.tar.gz", hash = "sha256:961550f07936eaf65ad1dc8360f2b2bf8408fad46abbfa4d2a3794f8d2a95cdf"},
 ]
@@ -1291,15 +1293,15 @@ test = ["flufl.flake8", "importlib-resources (>=1.3) ; python_version < \"3.9\""
 
 [[package]]
 name = "importlib-resources"
-version = "6.4.5"
+version = "6.5.2"
 description = "Read resources from Python packages"
 optional = false
-python-versions = ">=3.8"
+python-versions = ">=3.9"
 groups = ["main"]
 markers = "python_version == \"3.9\""
 files = [
-    {file = "importlib_resources-6.4.5-py3-none-any.whl", hash = "sha256:ac29d5f956f01d5e4bb63102a5a19957f1b9175e45649977264a1416783bb717"},
-    {file = "importlib_resources-6.4.5.tar.gz", hash = "sha256:980862a1d16c9e147a59603677fa2aa5fd82b87f223b6cb870695bcfce830065"},
+    {file = "importlib_resources-6.5.2-py3-none-any.whl", hash = "sha256:789cfdc3ed28c78b67a06acb8126751ced69a3d5f79c095a98298cd8a760ccec"},
+    {file = "importlib_resources-6.5.2.tar.gz", hash = "sha256:185f87adef5bcc288449d98fb4fba07cea78bc036455dd44c5fc4a2fe78fed2c"},
 ]
 
 [package.dependencies]
@@ -2476,6 +2478,7 @@ files = [
     {file = "numpy-1.26.4-pp39-pypy39_pp73-win_amd64.whl", hash = "sha256:7e50d0a0cc3189f9cb0aeb3a6a6af18c16f59f004b866cd2be1c14b36134a4a0"},
     {file = "numpy-1.26.4.tar.gz", hash = "sha256:2a02aba9ed12e4ac4eb3ea9421c420301a0c6460d9830d74a9df87efa4912010"},
 ]
+markers = {dev = "python_version >= \"3.10\""}
 
 [[package]]
 name = "opencv-python"
@@ -2566,6 +2569,7 @@ files = [
     {file = "pandas-2.2.2-cp39-cp39-win_amd64.whl", hash = "sha256:640cef9aa381b60e296db324337a554aeeb883ead99dc8f6c18e81a93942f5f4"},
     {file = "pandas-2.2.2.tar.gz", hash = "sha256:9e79019aba43cb4fda9e4d983f8e88ca0373adbb697ae9c6c43093218de28b54"},
 ]
+markers = {dev = "python_version >= \"3.10\""}
 
 [package.dependencies]
 numpy = [
@@ -2917,6 +2921,7 @@ files = [
     {file = "pyarrow-18.1.0-cp39-cp39-win_amd64.whl", hash = "sha256:a1880dd6772b685e803011a6b43a230c23b566859a6e0c9a276c1e0faf4f4052"},
     {file = "pyarrow-18.1.0.tar.gz", hash = "sha256:9386d3ca9c145b5539a1cfc75df07757dff870168c959b473a0bccbc3abc8c73"},
 ]
+markers = {dev = "python_version >= \"3.10\""}
 
 [package.extras]
 test = ["cffi", "hypothesis", "pandas", "pytest", "pytz"]
@@ -3053,6 +3058,7 @@ files = [
     {file = "pytz-2024.1-py2.py3-none-any.whl", hash = "sha256:328171f4e3623139da4983451950b28e95ac706e13f3f2630a879749e7a8b319"},
     {file = "pytz-2024.1.tar.gz", hash = "sha256:2a29735ea9c18baf14b448846bde5a48030ed267578472d8955cd0e7443a9812"},
 ]
+markers = {dev = "python_version >= \"3.10\""}
 
 [[package]]
 name = "pywavelets"
@@ -3561,6 +3567,7 @@ files = [
     {file = "scipy-1.13.1-cp39-cp39-win_amd64.whl", hash = "sha256:392e4ec766654852c25ebad4f64e4e584cf19820b980bc04960bca0b0cd6eaa2"},
     {file = "scipy-1.13.1.tar.gz", hash = "sha256:095a87a0312b08dfd6a6155cbbd310a8c51800fc931b8c0b84003014b874ed3c"},
 ]
+markers = {dev = "python_version >= \"3.10\" and python_version < \"3.13\""}
 
 [package.dependencies]
 numpy = ">=1.22.4,<2.3"
@@ -3950,6 +3957,7 @@ description = "ANSI color formatting for output in terminal"
 optional = false
 python-versions = ">=3.9"
 groups = ["dev"]
+markers = "python_version < \"3.13\" and python_version >= \"3.10\""
 files = [
     {file = "termcolor-3.1.0-py3-none-any.whl", hash = "sha256:591dd26b5c2ce03b9e43f391264626557873ce1d379019786f99b0c2bee140aa"},
     {file = "termcolor-3.1.0.tar.gz", hash = "sha256:6a6dd7fbee581909eeec6a756cff1d7f7c376063b14e4a298dc4980309e55970"},
@@ -4104,6 +4112,7 @@ files = [
     {file = "tzdata-2024.1-py2.py3-none-any.whl", hash = "sha256:9068bc196136463f5245e51efda838afa15aaeca9903f49050dfa2679db4d252"},
     {file = "tzdata-2024.1.tar.gz", hash = "sha256:2674120f8d891909751c38abcdfd386ac0a5a1127954fbc332af6b5ceae07efd"},
 ]
+markers = {dev = "python_version >= \"3.10\""}
 
 [[package]]
 name = "uri-template"
@@ -4226,5 +4235,5 @@ test = ["big-O", "importlib-resources ; python_version < \"3.9\"", "jaraco.funct
 
 [metadata]
 lock-version = "2.1"
-python-versions = ">=3.9,<3.13"
-content-hash = "181d4f3610314aae10cbb96b3a85f9891905071a116bc12e879c956827507b32"
+python-versions = ">=3.9,<3.14"
+content-hash = "fcbd7fe79306e81616cee97111ac93844bf341687f06ce3a4b56c416d1c7ac45"

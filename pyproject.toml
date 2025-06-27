@@ -56,7 +56,11 @@ black = ">=24.10,<26.0"
 isort = ">=5.13.2,<7.0.0"
 jupyterlab-code-formatter = "^3.0.2"
 duckdb = "^1.1.3"
+# version specifications below used to help surpass 3.13-based installations
 cosmicqc = { version = "^0.1.4", markers = "python_version < '3.13' and python_version >= '3.10'" }
+rpds-py = { version = "^0.22.3", markers = "python_version < '3.13' and python_version >= '3.9'" }
+cffi = { version = "^1.17.1", markers = "python_version < '3.13' and python_version >= '3.9'" }
+pillow = { version = "^11.1.0", markers = "python_version < '3.13' and python_version >= '3.9'" }
 
 [tool.poetry.group.docs.dependencies]
 # used for rendering docs into docsite

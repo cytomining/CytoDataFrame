@@ -1009,7 +1009,7 @@ class CytoDataFrame(pd.DataFrame):
         if display_options is None:
             display_options = {}
         width = display_options.get("width", "300px")
-        height = display_options.get("height", None)
+        height = display_options.get("height")
 
         html_style = [f"width:{width}"]
         if height is not None:

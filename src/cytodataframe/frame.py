@@ -6,6 +6,7 @@ import base64
 import logging
 import pathlib
 import re
+import sys
 import warnings
 from io import BytesIO, StringIO
 from typing import (
@@ -1417,7 +1418,6 @@ class CytoDataFrame(pd.DataFrame):
         enables debug mode for the instance.
         """
         logger.setLevel(logging.DEBUG)
-        import sys
 
         # Only add a handler if none exist (to avoid duplicates)
         if not logger.handlers:

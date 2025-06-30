@@ -6,6 +6,7 @@ import base64
 import logging
 import pathlib
 import re
+import sys
 import warnings
 from io import BytesIO, StringIO
 from typing import (
@@ -1008,7 +1009,7 @@ class CytoDataFrame(pd.DataFrame):
         if display_options is None:
             display_options = {}
         width = display_options.get("width", "300px")
-        height = display_options.get("height", None)
+        height = display_options.get("height")
 
         html_style = [f"width:{width}"]
         if height is not None:
@@ -1417,7 +1418,6 @@ class CytoDataFrame(pd.DataFrame):
         enables debug mode for the instance.
         """
         logger.setLevel(logging.DEBUG)
-        import sys
 
         # Only add a handler if none exist (to avoid duplicates)
         if not logger.handlers:

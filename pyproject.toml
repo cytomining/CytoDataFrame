@@ -4,7 +4,7 @@ requires = [ "poetry-core>=1", "poetry-dynamic-versioning>=1,<2" ]
 
 [tool.poetry]
 name = "CytoDataFrame"
-version = "99.0.0"
+version = "0.0.0"
 description = "An in-memory data analysis format for single-cell profiles alongside their corresponding images and segmentation masks."
 authors = [ "Way Science Community" ]
 license = "BSD-3-Clause"

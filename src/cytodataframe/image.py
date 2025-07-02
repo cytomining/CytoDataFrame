@@ -135,7 +135,7 @@ def draw_outline_on_image_from_outline(
 
 
 def draw_outline_on_image_from_mask(
-    orig_image: np.ndarray, mask_image_path: str
+    orig_image: np.ndarray, mask_image_path: str, outline_color: tuple = (0, 255, 0)
 ) -> np.ndarray:
     """
     Draws green outlines on an image based on a binary mask and returns
@@ -152,6 +152,8 @@ def draw_outline_on_image_from_mask(
             Image which a mask will be applied to. Must be a NumPy array.
         mask_image_path (str):
             Path to the binary mask image file.
+        outline_color (tuple):
+            RGB color for the outline (default: green).
 
     Returns:
         np.ndarray:
@@ -186,7 +188,7 @@ def draw_outline_on_image_from_mask(
             shape=orig_image.shape[:2],
         )
         # Assign green color to the outline in all three channels
-        outline_image[rr, cc, :] = [0, 255, 0]
+        outline_image[rr, cc, :] = outline_color
 
     # Combine the original image with the green outline
     combined_image = orig_image.copy()

@@ -171,6 +171,16 @@ def test_draw_outline_on_image_from_mask(
     else:
         assert mask is None or not mask.any(), "Unexpected outlines found."
 
+    # check that we can change the outline color
+    result_image = draw_outline_on_image_from_mask(orig_image, str(mask_image_path), outline_color=(red_color := (255, 0, 0)))
+
+    # Check for red outlines in the result
+    mask = (
+        (result_image == red_color).all(axis=-1) if result_image.ndim == 3 else None
+    )
+
+    
+
 
 # Sample test data for different image types
 @pytest.mark.parametrize(

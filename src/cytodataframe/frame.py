@@ -769,13 +769,20 @@ class CytoDataFrame(pd.DataFrame):
                 logger.debug(
                     "Found matching mask or outline: %s", matching_mask_file[0]
                 )
+                # gather display options if specified
+                display_options = self._custom_attrs.get("display_options", {})
+                if display_options is None:
+                    display_options = {}
+                # gather the outline color if specified
+                outline_color = display_options.get("outline_color", (0, 255, 0))
+
                 if mask:
                     return draw_outline_on_image_from_mask(
-                        orig_image=orig_image, mask_image_path=matching_mask_file[0]
+                        orig_image=orig_image, mask_image_path=matching_mask_file[0], outline_color=outline_color
                     )
                 else:
                     return draw_outline_on_image_from_outline(
-                        orig_image=orig_image, outline_image_path=matching_mask_file[0]
+                        orig_image=orig_image, outline_image_path=matching_mask_file[0], outline_color=outline_color
                     )
             return None
 
@@ -792,13 +799,19 @@ class CytoDataFrame(pd.DataFrame):
                         file_pattern,
                         matching_files[0],
                     )
+                    # gather display options if specified
+                    display_options = self._custom_attrs.get("display_options", {})
+                    if display_options is None:
+                        display_options = {}
+                    # gather the outline color if specified
+                    outline_color = display_options.get("outline_color", (0, 255, 0))
                     if mask:
                         return draw_outline_on_image_from_mask(
-                            orig_image=orig_image, mask_image_path=matching_files[0]
+                            orig_image=orig_image, mask_image_path=matching_files[0], outline_color=outline_color
                         )
                     else:
                         return draw_outline_on_image_from_outline(
-                            orig_image=orig_image, outline_image_path=matching_files[0]
+                            orig_image=orig_image, outline_image_path=matching_files[0], outline_color=outline_color
                         )
 
         logger.debug("No mask or outline found for: %s", data_value)

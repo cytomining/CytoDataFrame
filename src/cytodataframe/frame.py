@@ -717,7 +717,7 @@ class CytoDataFrame(pd.DataFrame):
             if str(col).replace("FileName", "PathName") in all_cols
         }
 
-    def search_for_mask_or_outline(  # noqa: PLR0913, PLR0911
+    def search_for_mask_or_outline(  # noqa: PLR0913, PLR0911, C901
         self: CytoDataFrame_type,
         data_value: str,
         pattern_map: dict,

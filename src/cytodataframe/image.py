@@ -74,7 +74,7 @@ def adjust_image_brightness(image: Image.Image) -> Image.Image:
 
 
 def draw_outline_on_image_from_outline(
-    orig_image: np.ndarray, outline_image_path: str
+    orig_image: np.ndarray, outline_image_path: str, outline_color: tuple = (0, 255, 0)
 ) -> np.ndarray:
     """
     Draws green outlines on an image based on a provided outline image and returns
@@ -89,6 +89,8 @@ def draw_outline_on_image_from_outline(
             The file path to the outline image. This image will be used
             to determine the areas where the outlines will be drawn.
             It can be grayscale or RGB.
+        outline_color (tuple):
+            RGB color for the outline (default: green).
 
     Returns:
         np.ndarray:
@@ -129,7 +131,7 @@ def draw_outline_on_image_from_outline(
 
     # Apply the green outline
     combined_image = orig_image.copy()
-    combined_image[non_black_mask] = [0, 255, 0]  # Green in uint8
+    combined_image[non_black_mask] = outline_color
 
     return combined_image
 

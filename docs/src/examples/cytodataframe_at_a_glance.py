@@ -75,7 +75,7 @@ CytoDataFrame(
     data=f"{jump_data_path}/BR00117006_shrunken.parquet",
     data_context_dir=f"{jump_data_path}/images/orig",
     data_outline_context_dir=f"{jump_data_path}/images/outlines",
-    display_options={"outline_color": (200, 100, 255)}
+    display_options={"outline_color": (200, 100, 255)},
 )[
     [
         "Metadata_ImageNumber",

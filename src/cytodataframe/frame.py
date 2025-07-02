@@ -778,11 +778,15 @@ class CytoDataFrame(pd.DataFrame):
 
                 if mask:
                     return draw_outline_on_image_from_mask(
-                        orig_image=orig_image, mask_image_path=matching_mask_file[0], outline_color=outline_color
+                        orig_image=orig_image,
+                        mask_image_path=matching_mask_file[0],
+                        outline_color=outline_color,
                     )
                 else:
                     return draw_outline_on_image_from_outline(
-                        orig_image=orig_image, outline_image_path=matching_mask_file[0], outline_color=outline_color
+                        orig_image=orig_image,
+                        outline_image_path=matching_mask_file[0],
+                        outline_color=outline_color,
                     )
             return None
 
@@ -807,11 +811,15 @@ class CytoDataFrame(pd.DataFrame):
                     outline_color = display_options.get("outline_color", (0, 255, 0))
                     if mask:
                         return draw_outline_on_image_from_mask(
-                            orig_image=orig_image, mask_image_path=matching_files[0], outline_color=outline_color
+                            orig_image=orig_image,
+                            mask_image_path=matching_files[0],
+                            outline_color=outline_color,
                         )
                     else:
                         return draw_outline_on_image_from_outline(
-                            orig_image=orig_image, outline_image_path=matching_files[0], outline_color=outline_color
+                            orig_image=orig_image,
+                            outline_image_path=matching_files[0],
+                            outline_color=outline_color,
                         )
 
         logger.debug("No mask or outline found for: %s", data_value)
@@ -1422,7 +1430,10 @@ class CytoDataFrame(pd.DataFrame):
                 in notebook view mode when debug is False).
         """
 
-        return super().__repr__()
+        if get_option("display.notebook_repr_html") and not debug:
+            return ""
+        else:
+            return super().__repr__()
 
     def _enbable_debug_mode(self: CytoDataFrame_type) -> None:
         """

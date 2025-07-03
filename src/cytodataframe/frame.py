@@ -124,6 +124,7 @@ class CytoDataFrame(pd.DataFrame):
                 This can include options like 'width', 'height', etc.
                 which are used to specify the display size of images in HTML.
                 Options:
+                - 'outline_color': Color of the outline to be drawn on the image.
                 - 'width': Width of the displayed image in pixels. A value of
                 None will default to use automatic / default adjustments.
                 - 'height': Height of the displayed image in pixels. A value of

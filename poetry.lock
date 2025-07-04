@@ -634,7 +634,7 @@ description = "coSMicQC is a software tool for single-cell quality control of mo
 optional = false
 python-versions = "<3.13,>=3.9"
 groups = ["dev"]
-markers = "python_version <= \"3.12\""
+markers = "python_version < \"3.13\""
 files = [
     {file = "cosmicqc-0.1.4-py3-none-any.whl", hash = "sha256:19fb7c703a261ed5bef2fdb14fc5da8977549d82de6b66ae41d54088e01a7519"},
     {file = "cosmicqc-0.1.4.tar.gz", hash = "sha256:56763eed3b456454f4f3e47866de0e87a455ad2e6543651ad505ba813c6a7196"},
@@ -938,7 +938,7 @@ description = "A library for automatically generating command line interfaces."
 optional = false
 python-versions = "*"
 groups = ["dev"]
-markers = "python_version <= \"3.12\""
+markers = "python_version < \"3.13\""
 files = [
     {file = "fire-0.7.0.tar.gz", hash = "sha256:961550f07936eaf65ad1dc8360f2b2bf8408fad46abbfa4d2a3794f8d2a95cdf"},
 ]
@@ -1112,22 +1112,6 @@ files = [
     {file = "h11-0.16.0-py3-none-any.whl", hash = "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"},
     {file = "h11-0.16.0.tar.gz", hash = "sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1"},
 ]
-
-[[package]]
-name = "html2image"
-version = "2.0.5"
-description = "Package acting as a wrapper around the headless mode of existing web browsers to generate images from URLs and from HTML+CSS strings or files."
-optional = false
-python-versions = "<4.0,>=3.6"
-groups = ["dev"]
-files = [
-    {file = "html2image-2.0.5-py3-none-any.whl", hash = "sha256:71593b6b1e100a585201833656cc7446ce1d2d5c7ec101b507c5c2b71bca6ecc"},
-    {file = "html2image-2.0.5.tar.gz", hash = "sha256:8d3cf5ee805647d1fb21442137349b3ab0e352b4cac7e4280e2a0f841466e87c"},
-]
-
-[package.dependencies]
-requests = "*"
-websocket-client = "==1.*"
 
 [[package]]
 name = "httpcore"
@@ -2479,10 +2463,10 @@ files = [
 
 [package.dependencies]
 numpy = [
-    {version = ">=1.21.4", markers = "python_version >= \"3.10\" and platform_system == \"Darwin\""},
-    {version = ">=1.21.2", markers = "platform_system != \"Darwin\" and python_version >= \"3.10\""},
-    {version = ">=1.23.5", markers = "python_version >= \"3.11\""},
     {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
+    {version = ">=1.23.5", markers = "python_version == \"3.11\""},
+    {version = ">=1.21.4", markers = "python_version == \"3.10\" and platform_system == \"Darwin\""},
+    {version = ">=1.21.2", markers = "platform_system != \"Darwin\" and python_version == \"3.10\""},
 ]
 
 [[package]]
@@ -2563,9 +2547,9 @@ files = [
 
 [package.dependencies]
 numpy = [
-    {version = ">=1.22.4", markers = "python_version < \"3.11\""},
-    {version = ">=1.23.2", markers = "python_version == \"3.11\""},
     {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
+    {version = ">=1.23.2", markers = "python_version == \"3.11\""},
+    {version = ">=1.22.4", markers = "python_version < \"3.11\""},
 ]
 python-dateutil = ">=2.8.2"
 pytz = ">=2020.1"
@@ -3320,19 +3304,19 @@ rpds-py = ">=0.7.0"
 
 [[package]]
 name = "requests"
-version = "2.32.3"
+version = "2.32.4"
 description = "Python HTTP for Humans."
 optional = false
 python-versions = ">=3.8"
 groups = ["dev", "docs"]
 files = [
-    {file = "requests-2.32.3-py3-none-any.whl", hash = "sha256:70761cfe03c773ceb22aa2f671b4757976145175cdfca038c02654d061d6dcc6"},
-    {file = "requests-2.32.3.tar.gz", hash = "sha256:55365417734eb18255590a9ff9eb97e9e1da868d4ccd6402399eaf68af20a760"},
+    {file = "requests-2.32.4-py3-none-any.whl", hash = "sha256:27babd3cda2a6d50b30443204ee89830707d396671944c998b5975b031ac2b2c"},
+    {file = "requests-2.32.4.tar.gz", hash = "sha256:27d0316682c8a29834d3264820024b62a36942083d52caf2f14c0591336d3422"},
 ]
 
 [package.dependencies]
 certifi = ">=2017.4.17"
-charset-normalizer = ">=2,<4"
+charset_normalizer = ">=2,<4"
 idna = ">=2.5,<4"
 urllib3 = ">=1.21.1,<3"
 
@@ -4030,7 +4014,7 @@ description = "ANSI color formatting for output in terminal"
 optional = false
 python-versions = ">=3.9"
 groups = ["dev"]
-markers = "python_version <= \"3.12\""
+markers = "python_version < \"3.13\""
 files = [
     {file = "termcolor-3.1.0-py3-none-any.whl", hash = "sha256:591dd26b5c2ce03b9e43f391264626557873ce1d379019786f99b0c2bee140aa"},
     {file = "termcolor-3.1.0.tar.gz", hash = "sha256:6a6dd7fbee581909eeec6a756cff1d7f7c376063b14e4a298dc4980309e55970"},
@@ -4306,4 +4290,4 @@ test = ["big-O", "importlib-resources ; python_version < \"3.9\"", "jaraco.funct
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.14"
-content-hash = "8ffcfc32ef73f5c3e62f327bd02b4fe17555b6913cb5acf2fb2482ef0bedeaf7"
+content-hash = "4453086b33e7b386c433ad238e901dc7b450b4e233f7dca366fa46ce86370b7f"

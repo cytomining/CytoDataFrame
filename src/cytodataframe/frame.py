@@ -125,10 +125,13 @@ class CytoDataFrame(pd.DataFrame):
                 which are used to specify the display size of images in HTML.
                 Options:
                 - 'outline_color': Color of the outline to be drawn on the image.
+                e.g. {'outline_color': (255, 0, 0)} for red.
                 - 'width': Width of the displayed image in pixels. A value of
                 None will default to use automatic / default adjustments.
+                e.g. {'width': 300} for 300 pixels width.
                 - 'height': Height of the displayed image in pixels. A value of
                 None will default to use automatic / default adjustments.
+                e.g. {'height': 300} for 300 pixels height.
             **kwargs:
                 Additional keyword arguments to pass to the pandas read functions.
         """

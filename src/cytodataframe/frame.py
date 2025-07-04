@@ -124,10 +124,14 @@ class CytoDataFrame(pd.DataFrame):
                 This can include options like 'width', 'height', etc.
                 which are used to specify the display size of images in HTML.
                 Options:
+                - 'outline_color': Color of the outline to be drawn on the image.
+                e.g. {'outline_color': (255, 0, 0)} for red.
                 - 'width': Width of the displayed image in pixels. A value of
                 None will default to use automatic / default adjustments.
+                e.g. {'width': 300} for 300 pixels width.
                 - 'height': Height of the displayed image in pixels. A value of
                 None will default to use automatic / default adjustments.
+                e.g. {'height': 300} for 300 pixels height.
             **kwargs:
                 Additional keyword arguments to pass to the pandas read functions.
         """
@@ -717,7 +721,7 @@ class CytoDataFrame(pd.DataFrame):
             if str(col).replace("FileName", "PathName") in all_cols
         }
 
-    def search_for_mask_or_outline(  # noqa: PLR0913, PLR0911
+    def search_for_mask_or_outline(  # noqa: PLR0913, PLR0911, C901
         self: CytoDataFrame_type,
         data_value: str,
         pattern_map: dict,
@@ -769,13 +773,24 @@ class CytoDataFrame(pd.DataFrame):
                 logger.debug(
                     "Found matching mask or outline: %s", matching_mask_file[0]
                 )
+                # gather display options if specified
+                display_options = self._custom_attrs.get("display_options", {})
+                if display_options is None:
+                    display_options = {}
+                # gather the outline color if specified
+                outline_color = display_options.get("outline_color", (0, 255, 0))
+
                 if mask:
                     return draw_outline_on_image_from_mask(
-                        orig_image=orig_image, mask_image_path=matching_mask_file[0]
+                        orig_image=orig_image,
+                        mask_image_path=matching_mask_file[0],
+                        outline_color=outline_color,
                     )
                 else:
                     return draw_outline_on_image_from_outline(
-                        orig_image=orig_image, outline_image_path=matching_mask_file[0]
+                        orig_image=orig_image,
+                        outline_image_path=matching_mask_file[0],
+                        outline_color=outline_color,
                     )
             return None
 
@@ -792,13 +807,23 @@ class CytoDataFrame(pd.DataFrame):
                         file_pattern,
                         matching_files[0],
                     )
+                    # gather display options if specified
+                    display_options = self._custom_attrs.get("display_options", {})
+                    if display_options is None:
+                        display_options = {}
+                    # gather the outline color if specified
+                    outline_color = display_options.get("outline_color", (0, 255, 0))
                     if mask:
                         return draw_outline_on_image_from_mask(
-                            orig_image=orig_image, mask_image_path=matching_files[0]
+                            orig_image=orig_image,
+                            mask_image_path=matching_files[0],
+                            outline_color=outline_color,
                         )
                     else:
                         return draw_outline_on_image_from_outline(
-                            orig_image=orig_image, outline_image_path=matching_files[0]
+                            orig_image=orig_image,
+                            outline_image_path=matching_files[0],
+                            outline_color=outline_color,
                         )
 
         logger.debug("No mask or outline found for: %s", data_value)
@@ -1409,7 +1434,10 @@ class CytoDataFrame(pd.DataFrame):
                 in notebook view mode when debug is False).
         """
 
-        return super().__repr__()
+        if get_option("display.notebook_repr_html") and not debug:
+            return ""
+        else:
+            return super().__repr__()
 
     def _enbable_debug_mode(self: CytoDataFrame_type) -> None:
         """

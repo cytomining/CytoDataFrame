@@ -524,10 +524,14 @@
 <span class="sd">                This can include options like &#39;width&#39;, &#39;height&#39;, etc.</span>
 <span class="sd">                which are used to specify the display size of images in HTML.</span>
 <span class="sd">                Options:</span>
+<span class="sd">                - &#39;outline_color&#39;: Color of the outline to be drawn on the image.</span>
+<span class="sd">                e.g. {&#39;outline_color&#39;: (255, 0, 0)} for red.</span>
 <span class="sd">                - &#39;width&#39;: Width of the displayed image in pixels. A value of</span>
 <span class="sd">                None will default to use automatic / default adjustments.</span>
+<span class="sd">                e.g. {&#39;width&#39;: 300} for 300 pixels width.</span>
 <span class="sd">                - &#39;height&#39;: Height of the displayed image in pixels. A value of</span>
 <span class="sd">                None will default to use automatic / default adjustments.</span>
+<span class="sd">                e.g. {&#39;height&#39;: 300} for 300 pixels height.</span>
 <span class="sd">            **kwargs:</span>
 <span class="sd">                Additional keyword arguments to pass to the pandas read functions.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -1152,7 +1156,7 @@
 
 <div class="viewcode-block" id="CytoDataFrame.search_for_mask_or_outline">
 <a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame.search_for_mask_or_outline">[docs]</a>
-    <span class="k">def</span> <span class="nf">search_for_mask_or_outline</span><span class="p">(</span>  <span class="c1"># noqa: PLR0913, PLR0911</span>
+    <span class="k">def</span> <span class="nf">search_for_mask_or_outline</span><span class="p">(</span>  <span class="c1"># noqa: PLR0913, PLR0911, C901</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
         <span class="n">data_value</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
         <span class="n">pattern_map</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
@@ -1204,13 +1208,24 @@
                 <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
                     <span class="s2">&quot;Found matching mask or outline: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">matching_mask_file</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
                 <span class="p">)</span>
+                <span class="c1"># gather display options if specified</span>
+                <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span>
+                <span class="k">if</span> <span class="n">display_options</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">display_options</span> <span class="o">=</span> <span class="p">{}</span>
+                <span class="c1"># gather the outline color if specified</span>
+                <span class="n">outline_color</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;outline_color&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+
                 <span class="k">if</span> <span class="n">mask</span><span class="p">:</span>
                     <span class="k">return</span> <span class="n">draw_outline_on_image_from_mask</span><span class="p">(</span>
-                        <span class="n">orig_image</span><span class="o">=</span><span class="n">orig_image</span><span class="p">,</span> <span class="n">mask_image_path</span><span class="o">=</span><span class="n">matching_mask_file</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                        <span class="n">orig_image</span><span class="o">=</span><span class="n">orig_image</span><span class="p">,</span>
+                        <span class="n">mask_image_path</span><span class="o">=</span><span class="n">matching_mask_file</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                        <span class="n">outline_color</span><span class="o">=</span><span class="n">outline_color</span><span class="p">,</span>
                     <span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="k">return</span> <span class="n">draw_outline_on_image_from_outline</span><span class="p">(</span>
-                        <span class="n">orig_image</span><span class="o">=</span><span class="n">orig_image</span><span class="p">,</span> <span class="n">outline_image_path</span><span class="o">=</span><span class="n">matching_mask_file</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                        <span class="n">orig_image</span><span class="o">=</span><span class="n">orig_image</span><span class="p">,</span>
+                        <span class="n">outline_image_path</span><span class="o">=</span><span class="n">matching_mask_file</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                        <span class="n">outline_color</span><span class="o">=</span><span class="n">outline_color</span><span class="p">,</span>
                     <span class="p">)</span>
             <span class="k">return</span> <span class="kc">None</span>
 
@@ -1227,13 +1242,23 @@
                         <span class="n">file_pattern</span><span class="p">,</span>
                         <span class="n">matching_files</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
                     <span class="p">)</span>
+                    <span class="c1"># gather display options if specified</span>
+                    <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span>
+                    <span class="k">if</span> <span class="n">display_options</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">display_options</span> <span class="o">=</span> <span class="p">{}</span>
+                    <span class="c1"># gather the outline color if specified</span>
+                    <span class="n">outline_color</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;outline_color&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
                     <span class="k">if</span> <span class="n">mask</span><span class="p">:</span>
                         <span class="k">return</span> <span class="n">draw_outline_on_image_from_mask</span><span class="p">(</span>
-                            <span class="n">orig_image</span><span class="o">=</span><span class="n">orig_image</span><span class="p">,</span> <span class="n">mask_image_path</span><span class="o">=</span><span class="n">matching_files</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                            <span class="n">orig_image</span><span class="o">=</span><span class="n">orig_image</span><span class="p">,</span>
+                            <span class="n">mask_image_path</span><span class="o">=</span><span class="n">matching_files</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                            <span class="n">outline_color</span><span class="o">=</span><span class="n">outline_color</span><span class="p">,</span>
                         <span class="p">)</span>
                     <span class="k">else</span><span class="p">:</span>
                         <span class="k">return</span> <span class="n">draw_outline_on_image_from_outline</span><span class="p">(</span>
-                            <span class="n">orig_image</span><span class="o">=</span><span class="n">orig_image</span><span class="p">,</span> <span class="n">outline_image_path</span><span class="o">=</span><span class="n">matching_files</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                            <span class="n">orig_image</span><span class="o">=</span><span class="n">orig_image</span><span class="p">,</span>
+                            <span class="n">outline_image_path</span><span class="o">=</span><span class="n">matching_files</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                            <span class="n">outline_color</span><span class="o">=</span><span class="n">outline_color</span><span class="p">,</span>
                         <span class="p">)</span>
 
         <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;No mask or outline found for: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">data_value</span><span class="p">)</span>
@@ -1860,7 +1885,10 @@
 <span class="sd">                in notebook view mode when debug is False).</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
-        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__repr__</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">get_option</span><span class="p">(</span><span class="s2">&quot;display.notebook_repr_html&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">debug</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__repr__</span><span class="p">()</span>
 
 <div class="viewcode-block" id="CytoDataFrame._enbable_debug_mode">
 <a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._enbable_debug_mode">[docs]</a>

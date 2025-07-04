@@ -35,7 +35,7 @@ jobs:
   run_tests:
     strategy:
       matrix:
-        python_version: ["3.9", "3.10", "3.11", "3.12"]
+        python_version: ["3.10", "3.11", "3.12", "3.13"]
         os: [ubuntu-24.04, macos-14]
     runs-on: ${{ matrix.os }}
     env:
@@ -55,6 +55,11 @@ jobs:
           poetry version 99.0.0
       - name: Install environment
         run: poetry install --no-interaction --no-ansi
-      - name: Run pytest
-        # run all tests except those marked generate_report_image
-        run: poetry run pytest -m "not generate_report_image"
+      - name: Run pytest (non-3.13)
+        if: ${{ matrix.python_version != '3.13' }}
+        # run all tests
+        run: poetry run pytest
+      - name: Run pytest (py 3.13)
+        if: ${{ matrix.python_version == '3.13' }}
+        # run all tests except integration tests with cosmicqc
+        run: poetry run pytest --ignore=tests/test_project_integration.py

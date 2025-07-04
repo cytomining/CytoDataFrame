@@ -4,7 +4,7 @@ requires = [ "poetry-core>=1", "poetry-dynamic-versioning>=1,<2" ]
 
 [tool.poetry]
 name = "CytoDataFrame"
-version = "0.0.0"
+version = "99.0.0"
 description = "An in-memory data analysis format for single-cell profiles alongside their corresponding images and segmentation masks."
 authors = [ "Way Science Community" ]
 license = "BSD-3-Clause"
@@ -15,7 +15,7 @@ packages = [ { include = "cytodataframe", from = "src" } ]
 poetry-dynamic-versioning = { version = ">=1.0.0,<2.0.0", extras = [ "plugin" ] }
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.13"
+python = ">=3.10,<3.14"
 # used for data management
 pandas = [
   { version = "<2.2.2", python = "<3.9" },
@@ -54,7 +54,8 @@ black = ">=24.10,<26.0"
 isort = ">=5.13.2,<7.0.0"
 jupyterlab-code-formatter = "^3.0.2"
 duckdb = "^1.1.3"
-cosmicqc = "^0.1.4"
+# version specifications below used to help surpass 3.13-based installations
+cosmicqc = { version = "^0.1.4", markers = "python_version < '3.13' and python_version >= '3.10'" }
 
 [tool.poetry.group.docs.dependencies]
 # used for rendering docs into docsite
@@ -115,11 +116,6 @@ lint.select = [
 lint.per-file-ignores."__init__.py" = [ "E402", "F401" ]
 # ignore typing rules for tests
 lint.per-file-ignores."tests/*" = [ "ANN201", "PLR0913", "PLR2004" ]
-
-[tool.pytest.ini_options]
-markers = [
-  "generate_report_image: tests which involve the creation of report images.",
-]
 
 [tool.coverage.run]
 # settings to avoid errors with cv2 and coverage

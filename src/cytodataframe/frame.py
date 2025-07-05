@@ -21,11 +21,11 @@ from typing import (
     Union,
 )
 
+import imageio
 import ipywidgets as widgets
 import numpy as np
 import pandas as pd
 import skimage
-import imageio
 import skimage.measure
 from IPython import get_ipython
 from IPython.display import HTML, display
@@ -966,7 +966,14 @@ class CytoDataFrame(pd.DataFrame):
             prepared_image = orig_image_array
 
         # Step 5: Add a red dot for the compartment center before cropping
-        if compartment_center_xy is not None and self._custom_attrs.get("display_options", None) is None or (self._custom_attrs.get("display_options", None) is not None and self._custom_attrs["display_options"].get("center_dot", True)):
+        if (
+            (compartment_center_xy is not None
+            and self._custom_attrs.get("display_options", None) is None)
+            or (
+                self._custom_attrs.get("display_options", None) is not None
+                and self._custom_attrs["display_options"].get("center_dot", True)
+            )
+        ):
             center_x, center_y = map(int, compartment_center_xy)  # Ensure integers
 
             # Convert grayscale image to RGB if necessary

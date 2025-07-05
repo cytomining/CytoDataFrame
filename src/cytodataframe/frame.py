@@ -967,12 +967,11 @@ class CytoDataFrame(pd.DataFrame):
 
         # Step 5: Add a red dot for the compartment center before cropping
         if (
-            (compartment_center_xy is not None
-            and self._custom_attrs.get("display_options", None) is None)
-            or (
-                self._custom_attrs.get("display_options", None) is not None
-                and self._custom_attrs["display_options"].get("center_dot", True)
-            )
+            compartment_center_xy is not None
+            and self._custom_attrs.get("display_options", None) is None
+        ) or (
+            self._custom_attrs.get("display_options", None) is not None
+            and self._custom_attrs["display_options"].get("center_dot", True)
         ):
             center_x, center_y = map(int, compartment_center_xy)  # Ensure integers
 

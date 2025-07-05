@@ -23,10 +23,18 @@
 
 # +
 import pathlib
+import warnings
 
 import pandas as pd
 
 from cytodataframe.frame import CytoDataFrame
+
+# filter warnings from skimage about imageio
+warnings.filterwarnings(
+    "ignore",
+    message=r"The plugin infrastructure.*",
+    category=FutureWarning,
+)
 
 # create paths for use with CytoDataFrames below
 jump_data_path = "../../../tests/data/cytotable/JUMP_plate_BR00117006"
@@ -49,7 +57,9 @@ CytoDataFrame(
         "Image_FileName_OrigDNA",
         "Image_FileName_OrigRNA",
     ]
-][:3]
+][
+    :3
+]
 
 # %%time
 # view JUMP plate BR00117006 with images and overlaid outlines for segmentation
@@ -65,7 +75,9 @@ CytoDataFrame(
         "Image_FileName_OrigDNA",
         "Image_FileName_OrigRNA",
     ]
-][:3]
+][
+    :3
+]
 
 
 # %%time
@@ -84,7 +96,29 @@ CytoDataFrame(
         "Image_FileName_OrigDNA",
         "Image_FileName_OrigRNA",
     ]
-][:3]
+][
+    :3
+]
+
+# %%time
+# view JUMP plate BR00117006 with images and overlaid outlines for segmentation
+# and removing the optional red center dot.
+CytoDataFrame(
+    data=f"{jump_data_path}/BR00117006_shrunken.parquet",
+    data_context_dir=f"{jump_data_path}/images/orig",
+    data_outline_context_dir=f"{jump_data_path}/images/outlines",
+    display_options={"center_dot": False},
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][
+    :3
+]
 
 # %%time
 # view JUMP plate BR00117006 with images and change the display width
@@ -101,7 +135,9 @@ CytoDataFrame(
         "Image_FileName_OrigDNA",
         "Image_FileName_OrigRNA",
     ]
-][:3]
+][
+    :3
+]
 
 # %%time
 # view JUMP plate BR00117006 with images, change the display height and width
@@ -119,7 +155,9 @@ CytoDataFrame(
         "Image_FileName_OrigDNA",
         "Image_FileName_OrigRNA",
     ]
-][:5].T
+][
+    :5
+].T
 
 # %%time
 # view NF1 Cell Painting data with images
@@ -134,7 +172,9 @@ CytoDataFrame(
         "Image_FileName_RFP",
         "Image_FileName_DAPI",
     ]
-][:3]
+][
+    :3
+]
 
 # %%time
 # view NF1 Cell Painting data with images and overlaid outlines from masks
@@ -150,7 +190,9 @@ CytoDataFrame(
         "Image_FileName_RFP",
         "Image_FileName_DAPI",
     ]
-][:3]
+][
+    :3
+]
 
 # +
 # %%time
@@ -178,7 +220,9 @@ CytoDataFrame(
         "Image_FileName_RFP",
         "Image_FileName_DAPI",
     ]
-][:3]
+][
+    :3
+]
 # -
 
 # %%time
@@ -195,7 +239,9 @@ CytoDataFrame(
         "Image_FileName_DAPI",
         "Image_FileName_GOLD",
     ]
-][:3]
+][
+    :3
+]
 
 # %%time
 # view ALSF pediatric cancer atlas plate BR00143976 with images

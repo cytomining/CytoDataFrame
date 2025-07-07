@@ -419,11 +419,11 @@
     <span class="n">Union</span><span class="p">,</span>
 <span class="p">)</span>
 
+<span class="kn">import</span> <span class="nn">imageio</span>
 <span class="kn">import</span> <span class="nn">ipywidgets</span> <span class="k">as</span> <span class="nn">widgets</span>
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
 <span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
 <span class="kn">import</span> <span class="nn">skimage</span>
-<span class="kn">import</span> <span class="nn">skimage.io</span>
 <span class="kn">import</span> <span class="nn">skimage.measure</span>
 <span class="kn">from</span> <span class="nn">IPython</span> <span class="kn">import</span> <span class="n">get_ipython</span>
 <span class="kn">from</span> <span class="nn">IPython.display</span> <span class="kn">import</span> <span class="n">HTML</span><span class="p">,</span> <span class="n">display</span>
@@ -532,6 +532,9 @@
 <span class="sd">                - &#39;height&#39;: Height of the displayed image in pixels. A value of</span>
 <span class="sd">                None will default to use automatic / default adjustments.</span>
 <span class="sd">                e.g. {&#39;height&#39;: 300} for 300 pixels height.</span>
+<span class="sd">                - &#39;center_dot&#39;: Whether to draw a red dot at the compartment center</span>
+<span class="sd">                None will default to display a center dot.</span>
+<span class="sd">                e.g. {&#39;center_dot&#39;: True} to draw a red dot at the compartment center.</span>
 <span class="sd">            **kwargs:</span>
 <span class="sd">                Additional keyword arguments to pass to the pandas read functions.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -1354,7 +1357,7 @@
                 <span class="k">return</span> <span class="n">data_value</span>
 
         <span class="c1"># read the image as an array</span>
-        <span class="n">orig_image_array</span> <span class="o">=</span> <span class="n">skimage</span><span class="o">.</span><span class="n">io</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">candidate_path</span><span class="p">)</span>
+        <span class="n">orig_image_array</span> <span class="o">=</span> <span class="n">imageio</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">candidate_path</span><span class="p">)</span>
 
         <span class="c1"># Adjust the image with image adjustment callable</span>
         <span class="c1"># or adaptive histogram equalization</span>
@@ -1401,7 +1404,13 @@
             <span class="n">prepared_image</span> <span class="o">=</span> <span class="n">orig_image_array</span>
 
         <span class="c1"># Step 5: Add a red dot for the compartment center before cropping</span>
-        <span class="k">if</span> <span class="n">compartment_center_xy</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">compartment_center_xy</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span>
+        <span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;display_options&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;center_dot&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+        <span class="p">):</span>
             <span class="n">center_x</span><span class="p">,</span> <span class="n">center_y</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">compartment_center_xy</span><span class="p">)</span>  <span class="c1"># Ensure integers</span>
 
             <span class="c1"># Convert grayscale image to RGB if necessary</span>

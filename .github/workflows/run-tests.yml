@@ -63,3 +63,6 @@ jobs:
         if: ${{ matrix.python_version == '3.13' }}
         # run all tests except integration tests with cosmicqc
         run: poetry run pytest --ignore=tests/test_project_integration.py
+      - name: Reset version to 0.0.0
+        run: |
+          poetry version 0.0.0

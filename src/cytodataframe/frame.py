@@ -21,11 +21,11 @@ from typing import (
     Union,
 )
 
+import imageio
 import ipywidgets as widgets
 import numpy as np
 import pandas as pd
 import skimage
-import skimage.io
 import skimage.measure
 from IPython import get_ipython
 from IPython.display import HTML, display
@@ -132,6 +132,9 @@ class CytoDataFrame(pd.DataFrame):
                 - 'height': Height of the displayed image in pixels. A value of
                 None will default to use automatic / default adjustments.
                 e.g. {'height': 300} for 300 pixels height.
+                - 'center_dot': Whether to draw a red dot at the compartment center
+                None will default to display a center dot.
+                e.g. {'center_dot': True} to draw a red dot at the compartment center.
             **kwargs:
                 Additional keyword arguments to pass to the pandas read functions.
         """
@@ -916,7 +919,7 @@ class CytoDataFrame(pd.DataFrame):
                 return data_value
 
         # read the image as an array
-        orig_image_array = skimage.io.imread(candidate_path)
+        orig_image_array = imageio.imread(candidate_path)
 
         # Adjust the image with image adjustment callable
         # or adaptive histogram equalization
@@ -963,7 +966,13 @@ class CytoDataFrame(pd.DataFrame):
             prepared_image = orig_image_array
 
         # Step 5: Add a red dot for the compartment center before cropping
-        if compartment_center_xy is not None:
+        if (
+            compartment_center_xy is not None
+            and self._custom_attrs.get("display_options", None) is None
+        ) or (
+            self._custom_attrs.get("display_options", None) is not None
+            and self._custom_attrs["display_options"].get("center_dot", True)
+        ):
             center_x, center_y = map(int, compartment_center_xy)  # Ensure integers
 
             # Convert grayscale image to RGB if necessary

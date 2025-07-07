@@ -23,10 +23,18 @@
 
 # +
 import pathlib
+import warnings
 
 import pandas as pd
 
 from cytodataframe.frame import CytoDataFrame
+
+# filter warnings from skimage about imageio
+warnings.filterwarnings(
+    "ignore",
+    message=r"The plugin infrastructure.*",
+    category=FutureWarning,
+)
 
 # create paths for use with CytoDataFrames below
 jump_data_path = "../../../tests/data/cytotable/JUMP_plate_BR00117006"
@@ -76,6 +84,24 @@ CytoDataFrame(
     data_context_dir=f"{jump_data_path}/images/orig",
     data_outline_context_dir=f"{jump_data_path}/images/outlines",
     display_options={"outline_color": (200, 100, 255)},
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:3]
+
+# %%time
+# view JUMP plate BR00117006 with images and overlaid outlines for segmentation
+# and removing the optional red center dot.
+CytoDataFrame(
+    data=f"{jump_data_path}/BR00117006_shrunken.parquet",
+    data_context_dir=f"{jump_data_path}/images/orig",
+    data_outline_context_dir=f"{jump_data_path}/images/outlines",
+    display_options={"center_dot": False},
 )[
     [
         "Metadata_ImageNumber",

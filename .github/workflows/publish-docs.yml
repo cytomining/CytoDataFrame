@@ -45,3 +45,6 @@ jobs:
         with:
           branch: pages
           folder: pages
+      - name: Reset version to 0.0.0
+        run: |
+          poetry version 0.0.0

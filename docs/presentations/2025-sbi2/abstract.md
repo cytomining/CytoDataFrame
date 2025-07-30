@@ -6,7 +6,7 @@ Dave Bunten, Jenna Tomkinson, Gregory P. Way
 
 ## Title (under 100 characters)
 
-Explore single‑cell images and measurements together with CytoDataFrame
+Exploring single‑cell images and profiles together with CytoDataFrame
 
 ## Abstract (under 500 words)
 

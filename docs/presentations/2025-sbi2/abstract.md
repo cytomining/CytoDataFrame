@@ -2,7 +2,7 @@
 
 ## Authors
 
-Dave Bunten, Jenna Tomkinson, Gregory P. Way
+Dave Bunten, Jenna Tomkinson, Vincent Rubinetti, Gregory P. Way
 
 ## Title (under 100 characters)
 

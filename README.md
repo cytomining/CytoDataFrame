@@ -1,3 +1,5 @@
+<img height="200" src="https://raw.githubusercontent.com/cytomining/cytodataframe/main/logo/with-text-for-light-bg.png?raw=true">
+
 # CytoDataFrame
 
 [![PyPI - Version](https://img.shields.io/pypi/v/cytodataframe)](https://pypi.org/project/CytoDataFrame/)

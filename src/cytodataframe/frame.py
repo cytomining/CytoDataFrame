@@ -141,7 +141,7 @@ class CytoDataFrame(pd.DataFrame):
                 by offsets from the center of the bounding box.
                 (overriding the bounding box data from the dataframe).
                 e.g. {'bounding_box':
-                {'x_min': -100, 'x_max': 100, 'y_min': -100, 'y_max': 100}
+                {'x_min': -100, 'y_min': -100, 'x_max': 100, 'y_max': 100}
                 }
             **kwargs:
                 Additional keyword arguments to pass to the pandas read functions.
@@ -1009,22 +1009,39 @@ class CytoDataFrame(pd.DataFrame):
 
         # Step 6: Crop the image based on the bounding box and encode it to PNG format
         try:
+            # set a default bounding box
+            x_min, y_min, x_max, y_max = map(int, bounding_box)
+
             # if we have custom offset bounding box information, use it
             if self._custom_attrs.get("display_options", None) and self._custom_attrs[
                 "display_options"
             ].get("offset_bounding_box", None):
-                center_x, center_y = map(int, compartment_center_xy)
-                # generate offset bounding box positions
-                x_min, y_min, x_max, y_max = get_pixel_bbox_from_offsets(
-                    center_x=center_x,
-                    center_y=center_y,
-                    rel_bbox=(val for val in self._custom_attrs["display_options"].get(
+                try:
+                    center_x, center_y = map(int, compartment_center_xy)
+                    
+                    offset_bounding_box = self._custom_attrs["display_options"].get(
                         "offset_bounding_box"
-                    ).values()),
-                )
-            else:
-                # otherwise use the existing bounding box information
-                x_min, y_min, x_max, y_max = map(int, bounding_box)
+                    )
+                    # generate offset bounding box positions
+                    x_min, y_min, x_max, y_max = get_pixel_bbox_from_offsets(
+                        center_x=center_x,
+                        center_y=center_y,
+                        rel_bbox=(
+                            offset_bounding_box["x_min"],
+                            offset_bounding_box["y_min"],
+                            offset_bounding_box["x_max"],
+                            offset_bounding_box["y_max"],
+                        ),
+                    )
+                except IndexError:
+                    logger.debug(
+                        (
+                            "Bounding box %s is out of bounds for image %s ."
+                            " Defaulting to use bounding box from data."
+                        ),
+                        (x_min, y_min, x_max, y_max),
+                        image_path,
+                    )
 
             cropped_img_array = prepared_image[
                 y_min:y_max, x_min:x_max

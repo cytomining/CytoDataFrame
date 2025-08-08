@@ -1015,6 +1015,8 @@ class CytoDataFrame(pd.DataFrame):
                 "display_options"
             ].get("offset_bounding_box", None):
                 try:
+                    # note: this will default to the nuclei centers based
+                    # on earlier input for this parameter.
                     center_x, center_y = map(int, compartment_center_xy)
 
                     offset_bounding_box = self._custom_attrs["display_options"].get(

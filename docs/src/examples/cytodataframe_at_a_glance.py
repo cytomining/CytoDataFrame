@@ -156,11 +156,11 @@ CytoDataFrame(
     data_outline_context_dir=f"{jump_data_path}/images/outlines",
     display_options={
         "offset_bounding_box": {
-            "x_min": -80,
-            "y_min": -80,
-            "x_max": 80,
-            "y_max": 80,
-        }
+            "x_min": -20,
+            "y_min": -20,
+            "x_max": 20,
+            "y_max": 20,
+        },
     },
 )[
     [
@@ -170,7 +170,7 @@ CytoDataFrame(
         "Image_FileName_OrigDNA",
         "Image_FileName_OrigRNA",
     ]
-][:5].T
+][:5]
 
 # %%time
 # view NF1 Cell Painting data with images

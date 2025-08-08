@@ -126,6 +126,10 @@ class CytoDataFrame(pd.DataFrame):
                 Options:
                 - 'outline_color': Color of the outline to be drawn on the image.
                 e.g. {'outline_color': (255, 0, 0)} for red.
+                - 'brightness': Sets dynamic brightness for the images and
+                sets a default for the interactive widget slider.
+                The value should be between 0 and 100.
+                e.g. {'brightness': 20} to set the brightness to 20%.
                 - 'width': Width of the displayed image in pixels. A value of
                 None will default to use automatic / default adjustments.
                 e.g. {'width': 300} for 300 pixels width.
@@ -138,6 +142,16 @@ class CytoDataFrame(pd.DataFrame):
             **kwargs:
                 Additional keyword arguments to pass to the pandas read functions.
         """
+
+        initial_brightness = (
+                    # set to 50 if no display options are provided
+                    50
+                    if not (
+                        display_options
+                        and display_options.get("brightness")
+                    )
+                    # otherwise use the brightness value from display options
+                    else display_options.get("brightness"))
 
         self._custom_attrs = {
             "data_source": None,
@@ -166,9 +180,12 @@ class CytoDataFrame(pd.DataFrame):
             ),
             "is_transposed": False,
             # add widget control meta
-            "_widget_state": {"scale": 50, "shown": False},
+            "_widget_state": {
+                "scale": initial_brightness,
+                "shown": False,
+            },
             "_scale_slider": widgets.IntSlider(
-                value=50,
+                value=initial_brightness,
                 min=0,
                 max=100,
                 step=1,
@@ -231,9 +248,7 @@ class CytoDataFrame(pd.DataFrame):
         self._custom_attrs["compartment_center_xy"] = (
             self.get_compartment_center_xy_from_data()
             if compartment_center_xy is None or compartment_center_xy is True
-            else compartment_center_xy
-            if compartment_center_xy is not False
-            else None
+            else compartment_center_xy if compartment_center_xy is not False else None
         )
 
         self._custom_attrs["data_image_paths"] = (
@@ -246,7 +261,9 @@ class CytoDataFrame(pd.DataFrame):
         # instead of Pandas DataFrames.
         self._wrap_methods()
 
-    def __getitem__(self: CytoDataFrame_type, key: Union[int, str]) -> Any:  # noqa: ANN401
+    def __getitem__(
+        self: CytoDataFrame_type, key: Union[int, str]
+    ) -> Any:  # noqa: ANN401
         """
         Returns an element or a slice of the underlying pandas DataFrame.
 
@@ -361,7 +378,9 @@ class CytoDataFrame(pd.DataFrame):
                 the result is a CytoDataFrame.
         """
 
-        def wrapper(*args: Tuple[Any, ...], **kwargs: Dict[str, Any]) -> Any:  # noqa: ANN401
+        def wrapper(
+            *args: Tuple[Any, ...], **kwargs: Dict[str, Any]
+        ) -> Any:  # noqa: ANN401
             """
             Wraps the specified method to ensure
             it returns a CytoDataFrame.

@@ -144,14 +144,12 @@ class CytoDataFrame(pd.DataFrame):
         """
 
         initial_brightness = (
-                    # set to 50 if no display options are provided
-                    50
-                    if not (
-                        display_options
-                        and display_options.get("brightness")
-                    )
-                    # otherwise use the brightness value from display options
-                    else display_options.get("brightness"))
+            # set to 50 if no display options are provided
+            50
+            if not (display_options and display_options.get("brightness"))
+            # otherwise use the brightness value from display options
+            else display_options.get("brightness")
+        )
 
         self._custom_attrs = {
             "data_source": None,
@@ -248,7 +246,9 @@ class CytoDataFrame(pd.DataFrame):
         self._custom_attrs["compartment_center_xy"] = (
             self.get_compartment_center_xy_from_data()
             if compartment_center_xy is None or compartment_center_xy is True
-            else compartment_center_xy if compartment_center_xy is not False else None
+            else compartment_center_xy
+            if compartment_center_xy is not False
+            else None
         )
 
         self._custom_attrs["data_image_paths"] = (
@@ -261,9 +261,7 @@ class CytoDataFrame(pd.DataFrame):
         # instead of Pandas DataFrames.
         self._wrap_methods()
 
-    def __getitem__(
-        self: CytoDataFrame_type, key: Union[int, str]
-    ) -> Any:  # noqa: ANN401
+    def __getitem__(self: CytoDataFrame_type, key: Union[int, str]) -> Any:  # noqa: ANN401
         """
         Returns an element or a slice of the underlying pandas DataFrame.
 
@@ -378,9 +376,7 @@ class CytoDataFrame(pd.DataFrame):
                 the result is a CytoDataFrame.
         """
 
-        def wrapper(
-            *args: Tuple[Any, ...], **kwargs: Dict[str, Any]
-        ) -> Any:  # noqa: ANN401
+        def wrapper(*args: Tuple[Any, ...], **kwargs: Dict[str, Any]) -> Any:  # noqa: ANN401
             """
             Wraps the specified method to ensure
             it returns a CytoDataFrame.

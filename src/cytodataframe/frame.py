@@ -41,6 +41,7 @@ from .image import (
     adjust_with_adaptive_histogram_equalization,
     draw_outline_on_image_from_mask,
     draw_outline_on_image_from_outline,
+    get_pixel_bbox_from_offsets,
 )
 
 logger = logging.getLogger(__name__)
@@ -135,6 +136,13 @@ class CytoDataFrame(pd.DataFrame):
                 - 'center_dot': Whether to draw a red dot at the compartment center
                 None will default to display a center dot.
                 e.g. {'center_dot': True} to draw a red dot at the compartment center.
+                - 'offset_bounding_box': declare a relative bounding box using
+                the nuclei center xy coordinates to dynamically crop all images
+                by offsets from the center of the bounding box.
+                (overriding the bounding box data from the dataframe).
+                e.g. {'bounding_box':
+                {'x_min': -100, 'x_max': 100, 'y_min': -100, 'y_max': 100}
+                }
             **kwargs:
                 Additional keyword arguments to pass to the pandas read functions.
         """
@@ -231,9 +239,7 @@ class CytoDataFrame(pd.DataFrame):
         self._custom_attrs["compartment_center_xy"] = (
             self.get_compartment_center_xy_from_data()
             if compartment_center_xy is None or compartment_center_xy is True
-            else compartment_center_xy
-            if compartment_center_xy is not False
-            else None
+            else compartment_center_xy if compartment_center_xy is not False else None
         )
 
         self._custom_attrs["data_image_paths"] = (
@@ -246,7 +252,9 @@ class CytoDataFrame(pd.DataFrame):
         # instead of Pandas DataFrames.
         self._wrap_methods()
 
-    def __getitem__(self: CytoDataFrame_type, key: Union[int, str]) -> Any:  # noqa: ANN401
+    def __getitem__(
+        self: CytoDataFrame_type, key: Union[int, str]
+    ) -> Any:  # noqa: ANN401
         """
         Returns an element or a slice of the underlying pandas DataFrame.
 
@@ -361,7 +369,9 @@ class CytoDataFrame(pd.DataFrame):
                 the result is a CytoDataFrame.
         """
 
-        def wrapper(*args: Tuple[Any, ...], **kwargs: Dict[str, Any]) -> Any:  # noqa: ANN401
+        def wrapper(
+            *args: Tuple[Any, ...], **kwargs: Dict[str, Any]
+        ) -> Any:  # noqa: ANN401
             """
             Wraps the specified method to ensure
             it returns a CytoDataFrame.
@@ -999,7 +1009,23 @@ class CytoDataFrame(pd.DataFrame):
 
         # Step 6: Crop the image based on the bounding box and encode it to PNG format
         try:
-            x_min, y_min, x_max, y_max = map(int, bounding_box)  # Ensure integers
+            # if we have custom offset bounding box information, use it
+            if self._custom_attrs.get("display_options", None) and self._custom_attrs[
+                "display_options"
+            ].get("offset_bounding_box", None):
+                center_x, center_y = map(int, compartment_center_xy)
+                # generate offset bounding box positions
+                x_min, y_min, x_max, y_max = get_pixel_bbox_from_offsets(
+                    center_x=center_x,
+                    center_y=center_y,
+                    rel_bbox=(val for val in self._custom_attrs["display_options"].get(
+                        "offset_bounding_box"
+                    ).values()),
+                )
+            else:
+                # otherwise use the existing bounding box information
+                x_min, y_min, x_max, y_max = map(int, bounding_box)
+
             cropped_img_array = prepared_image[
                 y_min:y_max, x_min:x_max
             ]  # Perform slicing

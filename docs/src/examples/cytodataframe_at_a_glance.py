@@ -22,12 +22,17 @@
 # visual information which can be viewed directly in a Jupyter notebook.
 
 # +
+import logging
 import pathlib
 import warnings
 
 import pandas as pd
 
 from cytodataframe.frame import CytoDataFrame
+
+logging.basicConfig(level=logging.INFO)  # or logging.DEBUG, WARNING, etc.
+logging.getLogger().setLevel(logging.INFO)  # Ensures root logger is set
+
 
 # filter warnings from skimage about imageio
 warnings.filterwarnings(
@@ -46,7 +51,7 @@ pediatric_cancer_atlas_path = (
 # -
 # %%time
 # view JUMP plate BR00117006 with images
-CytoDataFrame(
+frame = CytoDataFrame(
     data=f"{jump_data_path}/BR00117006_shrunken.parquet",
     data_context_dir=f"{jump_data_path}/images/orig",
 )[
@@ -58,6 +63,7 @@ CytoDataFrame(
         "Image_FileName_OrigRNA",
     ]
 ][:3]
+frame
 
 # %%time
 # view JUMP plate BR00117006 with images and overlaid outlines for segmentation
@@ -266,7 +272,7 @@ CytoDataFrame(
 
 # %%time
 # view ALSF pediatric cancer atlas plate BR00143976 with images
-CytoDataFrame(
+cdf = CytoDataFrame(
     data=f"{pediatric_cancer_atlas_path}/BR00143976_shrunken.parquet",
     data_context_dir=f"{pediatric_cancer_atlas_path}/images/orig",
     data_outline_context_dir=f"{pediatric_cancer_atlas_path}/images/outlines",
@@ -282,3 +288,9 @@ CytoDataFrame(
         "Image_FileName_OrigDNA",
     ]
 ]
+cdf
+
+# %%time
+# show that we can use the cytodataframe again
+# by quick variable reference.
+cdf

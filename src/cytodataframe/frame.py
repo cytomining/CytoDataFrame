@@ -1449,25 +1449,19 @@ class CytoDataFrame(pd.DataFrame):
 
         # if we're in a notebook process as though in a jupyter environment
         if get_option("display.notebook_repr_html") and not debug:
-            # Show a vbox with the widgets if we haven't already.
-            # This is used to initialize the display.
-            if not self._custom_attrs["_widget_state"]["shown"]:
-                display(
-                    (
-                        widgets.VBox(
-                            [
-                                self._custom_attrs["_scale_slider"],
-                                self._custom_attrs["_output"],
-                            ]
-                        )
-                    )
+            # always clear old output and show fresh slider + output
+            self._custom_attrs["_output"].clear_output(wait=True)
+            display(
+                widgets.VBox(
+                    [
+                        self._custom_attrs["_scale_slider"],
+                        self._custom_attrs["_output"],
+                    ]
                 )
-                self._custom_attrs["_widget_state"]["shown"] = True
-
-                # render the first HTML output for display
-                self._render_output()
-
-            # set an observer for the slider
+            )
+            # render fresh HTML for this cell
+            self._render_output()
+            # ensure slider continues to control the output
             self._custom_attrs["_scale_slider"].observe(
                 self._on_slider_change, names="value"
             )

@@ -527,6 +527,10 @@
 <span class="sd">                Options:</span>
 <span class="sd">                - &#39;outline_color&#39;: Color of the outline to be drawn on the image.</span>
 <span class="sd">                e.g. {&#39;outline_color&#39;: (255, 0, 0)} for red.</span>
+<span class="sd">                - &#39;brightness&#39;: Sets dynamic brightness for the images and</span>
+<span class="sd">                sets a default for the interactive widget slider.</span>
+<span class="sd">                The value should be between 0 and 100.</span>
+<span class="sd">                e.g. {&#39;brightness&#39;: 20} to set the brightness to 20%.</span>
 <span class="sd">                - &#39;width&#39;: Width of the displayed image in pixels. A value of</span>
 <span class="sd">                None will default to use automatic / default adjustments.</span>
 <span class="sd">                e.g. {&#39;width&#39;: 300} for 300 pixels width.</span>
@@ -546,6 +550,14 @@
 <span class="sd">            **kwargs:</span>
 <span class="sd">                Additional keyword arguments to pass to the pandas read functions.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">initial_brightness</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="c1"># set to 50 if no display options are provided</span>
+            <span class="mi">50</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">display_options</span> <span class="ow">and</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;brightness&quot;</span><span class="p">))</span>
+            <span class="c1"># otherwise use the brightness value from display options</span>
+            <span class="k">else</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;brightness&quot;</span><span class="p">)</span>
+        <span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span> <span class="o">=</span> <span class="p">{</span>
             <span class="s2">&quot;data_source&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
@@ -574,9 +586,12 @@
             <span class="p">),</span>
             <span class="s2">&quot;is_transposed&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
             <span class="c1"># add widget control meta</span>
-            <span class="s2">&quot;_widget_state&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;scale&quot;</span><span class="p">:</span> <span class="mi">50</span><span class="p">,</span> <span class="s2">&quot;shown&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+            <span class="s2">&quot;_widget_state&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;scale&quot;</span><span class="p">:</span> <span class="n">initial_brightness</span><span class="p">,</span>
+                <span class="s2">&quot;shown&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+            <span class="p">},</span>
             <span class="s2">&quot;_scale_slider&quot;</span><span class="p">:</span> <span class="n">widgets</span><span class="o">.</span><span class="n">IntSlider</span><span class="p">(</span>
-                <span class="n">value</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>
+                <span class="n">value</span><span class="o">=</span><span class="n">initial_brightness</span><span class="p">,</span>
                 <span class="nb">min</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
                 <span class="nb">max</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
                 <span class="n">step</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>

@@ -266,3 +266,44 @@ def adjust_with_adaptive_histogram_equalization(
 
     else:
         raise ValueError("Unsupported image format. Use grayscale, RGB, or RGBA.")
+
+
+def get_pixel_bbox_from_offsets(
+    center_x: float, center_y: float, rel_bbox: tuple[int, int, int, int]
+) -> tuple[int, int, int, int]:
+    """
+    Compute a pixel bbox given a center point and pixel offsets.
+
+    Args:
+        center_x: Center x-coordinate in pixels.
+        center_y: Center y-coordinate in pixels.
+        rel_bbox: 4-tuple of pixel offsets:
+            (dx_min, dy_min, dx_max, dy_max)
+
+    Returns:
+        A 4-tuple (x_min, x_max, y_min, y_max), where x_min and y_min
+        are clamped to be ≥ 0.  x_max and y_max are returned as-is.
+    """
+    dx_min, dy_min, dx_max, dy_max = rel_bbox
+
+    # apply offsets
+    x_min = center_x + dx_min
+    x_max = center_x + dx_max
+    y_min = center_y + dy_min
+    y_max = center_y + dy_max
+
+    # clamp lower bounds to zero and round to int
+    x_min = max(0, round(x_min))
+    y_min = max(0, round(y_min))
+
+    # round upper bounds to int (no max-image clamp)
+    x_max = round(x_max)
+    y_max = round(y_max)
+
+    # guard against inverted boxes (just in case)
+    if x_max < x_min:
+        x_min, x_max = x_max, x_min
+    if y_max < y_min:
+        y_min, y_max = y_max, y_min
+
+    return x_min, y_min, x_max, y_max

@@ -15,6 +15,7 @@ from cytodataframe.image import (
     adjust_with_adaptive_histogram_equalization,
     draw_outline_on_image_from_mask,
     draw_outline_on_image_from_outline,
+    get_pixel_bbox_from_offsets,
     is_image_too_dark,
 )
 
@@ -231,3 +232,19 @@ def test_adjust_with_adaptive_histogram_equalization(
         assert result.shape == expected_shape, (
             f"Expected shape {expected_shape}, but got {result.shape}"
         )
+
+
+def test_get_pixel_bbox_from_offsets():
+    """
+    Test get_pixel_bbox_from_offsets function.
+    """
+
+    # Get pixel bounding box
+    bbox = get_pixel_bbox_from_offsets(
+        center_x=300, center_y=400, rel_bbox=(-50, -50, 50, 50)
+    )
+
+    # Check if the bounding box is correct
+    assert bbox == (250, 350, 350, 450), (
+        f"Expected (250, 350, 350, 450), but got {bbox}"
+    )

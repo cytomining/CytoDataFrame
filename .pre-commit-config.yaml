@@ -4,7 +4,7 @@ default_language_version:
   python: python3.11
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
     -   id: trailing-whitespace
     -   id: end-of-file-fixer
@@ -59,7 +59,7 @@ repos:
     -   id: ruff-format
     -   id: ruff-check
 -   repo: https://github.com/software-gardening/almanack
-    rev: v0.1.7
+    rev: v0.1.8
     hooks:
     -   id: almanack-check
 -   repo: https://gitlab.com/vojko.pribudic.foss/pre-commit-update

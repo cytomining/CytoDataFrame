@@ -679,6 +679,50 @@
     <span class="k">else</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Unsupported image format. Use grayscale, RGB, or RGBA.&quot;</span><span class="p">)</span></div>
 
+
+
+<div class="viewcode-block" id="get_pixel_bbox_from_offsets">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.image.get_pixel_bbox_from_offsets">[docs]</a>
+<span class="k">def</span> <span class="nf">get_pixel_bbox_from_offsets</span><span class="p">(</span>
+    <span class="n">center_x</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">center_y</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">rel_bbox</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Compute a pixel bbox given a center point and pixel offsets.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        center_x: Center x-coordinate in pixels.</span>
+<span class="sd">        center_y: Center y-coordinate in pixels.</span>
+<span class="sd">        rel_bbox: 4-tuple of pixel offsets:</span>
+<span class="sd">            (dx_min, dy_min, dx_max, dy_max)</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A 4-tuple (x_min, x_max, y_min, y_max), where x_min and y_min</span>
+<span class="sd">        are clamped to be ≥ 0.  x_max and y_max are returned as-is.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">dx_min</span><span class="p">,</span> <span class="n">dy_min</span><span class="p">,</span> <span class="n">dx_max</span><span class="p">,</span> <span class="n">dy_max</span> <span class="o">=</span> <span class="n">rel_bbox</span>
+
+    <span class="c1"># apply offsets</span>
+    <span class="n">x_min</span> <span class="o">=</span> <span class="n">center_x</span> <span class="o">+</span> <span class="n">dx_min</span>
+    <span class="n">x_max</span> <span class="o">=</span> <span class="n">center_x</span> <span class="o">+</span> <span class="n">dx_max</span>
+    <span class="n">y_min</span> <span class="o">=</span> <span class="n">center_y</span> <span class="o">+</span> <span class="n">dy_min</span>
+    <span class="n">y_max</span> <span class="o">=</span> <span class="n">center_y</span> <span class="o">+</span> <span class="n">dy_max</span>
+
+    <span class="c1"># clamp lower bounds to zero and round to int</span>
+    <span class="n">x_min</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="n">x_min</span><span class="p">))</span>
+    <span class="n">y_min</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="n">y_min</span><span class="p">))</span>
+
+    <span class="c1"># round upper bounds to int (no max-image clamp)</span>
+    <span class="n">x_max</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">x_max</span><span class="p">)</span>
+    <span class="n">y_max</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">y_max</span><span class="p">)</span>
+
+    <span class="c1"># guard against inverted boxes (just in case)</span>
+    <span class="k">if</span> <span class="n">x_max</span> <span class="o">&lt;</span> <span class="n">x_min</span><span class="p">:</span>
+        <span class="n">x_min</span><span class="p">,</span> <span class="n">x_max</span> <span class="o">=</span> <span class="n">x_max</span><span class="p">,</span> <span class="n">x_min</span>
+    <span class="k">if</span> <span class="n">y_max</span> <span class="o">&lt;</span> <span class="n">y_min</span><span class="p">:</span>
+        <span class="n">y_min</span><span class="p">,</span> <span class="n">y_max</span> <span class="o">=</span> <span class="n">y_max</span><span class="p">,</span> <span class="n">y_min</span>
+
+    <span class="k">return</span> <span class="n">x_min</span><span class="p">,</span> <span class="n">y_min</span><span class="p">,</span> <span class="n">x_max</span><span class="p">,</span> <span class="n">y_max</span></div>
+
 </pre></div>
 
                 </article>

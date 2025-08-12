@@ -900,6 +900,26 @@ the outline image. The result is returned as an RGB image with shape
 </dd></dl>
 
 <dl class="py function">
+<dt class="sig sig-object py" id="src.cytodataframe.image.get_pixel_bbox_from_offsets">
+<span class="sig-prename descclassname"><span class="pre">src.cytodataframe.image.</span></span><span class="sig-name descname"><span class="pre">get_pixel_bbox_from_offsets</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">center_x</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">center_y</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rel_bbox</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/cytodataframe/image.html#get_pixel_bbox_from_offsets"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.image.get_pixel_bbox_from_offsets" title="Link to this definition">#</a></dt>
+<dd><p>Compute a pixel bbox given a center point and pixel offsets.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>center_x</strong> – Center x-coordinate in pixels.</p></li>
+<li><p><strong>center_y</strong> – Center y-coordinate in pixels.</p></li>
+<li><p><strong>rel_bbox</strong> – 4-tuple of pixel offsets:
+(dx_min, dy_min, dx_max, dy_max)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A 4-tuple (x_min, x_max, y_min, y_max), where x_min and y_min
+are clamped to be ≥ 0.  x_max and y_max are returned as-is.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
 <dt class="sig sig-object py" id="src.cytodataframe.image.is_image_too_dark">
 <span class="sig-prename descclassname"><span class="pre">src.cytodataframe.image.</span></span><span class="sig-name descname"><span class="pre">is_image_too_dark</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">image</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Image</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pixel_brightness_threshold</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10.0</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/image.html#is_image_too_dark"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.image.is_image_too_dark" title="Link to this definition">#</a></dt>
 <dd><p>Check if the image is too dark based on the mean brightness.

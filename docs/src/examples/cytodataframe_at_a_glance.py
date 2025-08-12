@@ -101,6 +101,22 @@ CytoDataFrame(
 ][:3]
 
 # %%time
+# view JUMP plate BR00117006 with images and adjust the brightness
+CytoDataFrame(
+    data=f"{jump_data_path}/BR00117006_shrunken.parquet",
+    data_context_dir=f"{jump_data_path}/images/orig",
+    display_options={"brightness": 10},
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:3]
+
+# %%time
 # view JUMP plate BR00117006 with images and overlaid outlines for segmentation
 # and removing the optional red center dot.
 CytoDataFrame(
@@ -152,6 +168,31 @@ CytoDataFrame(
         "Image_FileName_OrigRNA",
     ]
 ][:5].T
+
+# %%time
+# view JUMP plate BR00117006 with images, changing the bounding box
+# using offsets so each image has roughly the same size.
+CytoDataFrame(
+    data=f"{jump_data_path}/BR00117006_shrunken.parquet",
+    data_context_dir=f"{jump_data_path}/images/orig",
+    data_outline_context_dir=f"{jump_data_path}/images/outlines",
+    display_options={
+        "offset_bounding_box": {
+            "x_min": -20,
+            "y_min": -20,
+            "x_max": 20,
+            "y_max": 20,
+        },
+    },
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:5]
 
 # %%time
 # view NF1 Cell Painting data with images

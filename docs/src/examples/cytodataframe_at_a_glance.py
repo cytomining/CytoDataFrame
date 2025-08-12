@@ -95,6 +95,22 @@ CytoDataFrame(
 ][:3]
 
 # %%time
+# view JUMP plate BR00117006 with images and adjust the brightness
+CytoDataFrame(
+    data=f"{jump_data_path}/BR00117006_shrunken.parquet",
+    data_context_dir=f"{jump_data_path}/images/orig",
+    display_options={"brightness": 10},
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:3]
+
+# %%time
 # view JUMP plate BR00117006 with images and overlaid outlines for segmentation
 # and removing the optional red center dot.
 CytoDataFrame(

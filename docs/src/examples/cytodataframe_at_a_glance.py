@@ -108,14 +108,14 @@ CytoDataFrame(
     data_context_dir=f"{jump_data_path}/images/orig",
     data_outline_context_dir=f"{jump_data_path}/images/outlines",
     display_options={
-        'um_per_pixel': 0.5,
-        'scale_bar': {
-            'length_um': 20,
-            'location': 'lower right',
-            'color': (255, 255, 255),
-            'thickness_px': 3,
-            'margin_px': 5,
-        }
+        "um_per_pixel": 0.5,
+        "scale_bar": {
+            "length_um": 20,
+            "location": "lower right",
+            "color": (255, 255, 255),
+            "thickness_px": 3,
+            "margin_px": 5,
+        },
     },
 )[
     [

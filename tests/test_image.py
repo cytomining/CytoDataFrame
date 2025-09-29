@@ -2,6 +2,7 @@
 Tests cosmicqc image module
 """
 
+import os
 import pathlib
 
 import numpy as np
@@ -11,6 +12,7 @@ from skimage.draw import disk
 from skimage.io import imsave
 
 from cytodataframe.image import (
+    add_image_scale_bar,
     adjust_image_brightness,
     adjust_with_adaptive_histogram_equalization,
     draw_outline_on_image_from_mask,
@@ -248,3 +250,110 @@ def test_get_pixel_bbox_from_offsets():
     assert bbox == (250, 350, 350, 450), (
         f"Expected (250, 350, 350, 450), but got {bbox}"
     )
+
+
+def test_add_image_scale_bar_lower_right_bbox_and_area(tmp_path: pathlib.Path):
+    # --- Arrange ---
+    H, W = 100, 80
+    img = np.zeros((H, W), dtype=np.uint8)  # grayscale, all zeros
+
+    um_per_pixel = 0.5
+    length_um = 10.0  # => 20 px at 0.5 µm/px
+    length_px = round(length_um / um_per_pixel)
+    thickness_px = 4
+    margin_px = 10
+    color = (255, 255, 255)
+    location = "lower right"
+
+    # --- Act ---
+    out = add_image_scale_bar(
+        img,
+        um_per_pixel,
+        length_um=length_um,
+        thickness_px=thickness_px,
+        color=color,
+        location=location,
+        margin_px=margin_px,
+        label=False,  # keep dependencies minimal for the test
+    )
+
+    # --- Assert: input unchanged & output type/shape ---
+    assert out is not img, "Function should return a new array (not modify in-place)."
+    assert img.ndim == 2 and img.dtype == np.uint8 and img.shape == (H, W)
+    assert out.ndim == 3 and out.dtype == np.uint8 and out.shape == (H, W, 3)
+
+    # --- Assert: detect bar pixels robustly ---
+    # If anti-aliasing ever appears, use a high threshold; here we expect solid color.
+    bar_mask = (out[:, :, 0] >= 250) & (out[:, :, 1] >= 250) & (out[:, :, 2] >= 250)
+    bar_coords = np.argwhere(bar_mask)
+
+    assert bar_coords.size > 0, "No bright pixels found for the scale bar."
+
+    # Bounding box of detected bar pixels
+    ys = bar_coords[:, 0]
+    xs = bar_coords[:, 1]
+    y_min, y_max = ys.min(), ys.max()
+    x_min, x_max = xs.min(), xs.max()
+
+    # Dimensions inferred from bbox (inclusive indices)
+    inferred_height = (y_max - y_min) + 1
+    inferred_width = (x_max - x_min) + 1
+
+    # Check area matches exactly length_px * thickness_px
+    # (prevents extra stray pixels from counting)
+    expected_area = length_px * thickness_px
+    actual_area = int(bar_mask.sum())
+    assert actual_area == expected_area, (
+        f"Bar area mismatch: got {actual_area}, expected {expected_area}"
+    )
+
+    # Check inferred dimensions (order can be height x width or
+    # width x height depending on draw)
+    dims = sorted((inferred_height, inferred_width))
+    expected_dims = sorted((thickness_px, length_px))
+    assert dims == expected_dims, (
+        f"Bar dims mismatch: got (h={inferred_height}, w={inferred_width}), "
+        f"expected thickness={thickness_px}, length={length_px}"
+    )
+
+    # --- Assert: location near lower-right with small tolerance (±1 px) ---
+    tol = 1
+    # Expected bottom-most row and right-most col if anchored by margin
+    exp_y_max = H - margin_px - 1
+    exp_x_max = W - margin_px - 1
+
+    assert abs(int(y_max) - exp_y_max) <= tol, (
+        f"Bar not at expected vertical position: y_max={y_max}, exp≈{exp_y_max}"
+    )
+    assert abs(int(x_max) - exp_x_max) <= tol, (
+        f"Bar not at expected horizontal position: x_max={x_max}, exp≈{exp_x_max}"
+    )
+
+    # --- Assert: immediate neighbors outside the bbox remain
+    # background (when in-bounds) ---
+    if y_min - 1 >= 0:
+        assert np.all(out[y_min - 1, x_min : x_max + 1, :] == 0)
+    if x_min - 1 >= 0:
+        assert np.all(out[y_min : y_max + 1, x_min - 1, :] == 0)
+
+    H, W = 100, 80
+    img = np.zeros((H, W), dtype=np.uint8)
+
+    out = add_image_scale_bar(
+        img,
+        um_per_pixel=0.5,
+        length_um=10,
+        thickness_px=4,
+        color=(255, 255, 255),
+        location="lower right",
+        margin_px=10,
+        label=False,
+    )
+
+    # always save to tmp so you can inspect even without opening
+    out_path = tmp_path / "with_bar.png"
+    Image.fromarray(out).save(out_path)
+
+    # optionally show (useful locally; safe-off in CI)
+    if os.environ.get("SHOW_TEST_IMAGES") == "1":
+        Image.fromarray(out).show()  # opens Preview/Photos/etc.

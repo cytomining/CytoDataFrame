@@ -101,6 +101,33 @@ CytoDataFrame(
 ][:3]
 
 # %%time
+# view JUMP plate BR00117006 with images and overlaid outlines for segmentation
+# and adding scale bars which show how micrometers scale to the pixels displayed.
+CytoDataFrame(
+    data=f"{jump_data_path}/BR00117006_shrunken.parquet",
+    data_context_dir=f"{jump_data_path}/images/orig",
+    data_outline_context_dir=f"{jump_data_path}/images/outlines",
+    display_options={
+        'um_per_pixel': 0.5,
+        'scale_bar': {
+            'length_um': 20,
+            'location': 'lower right',
+            'color': (255, 255, 255),
+            'thickness_px': 3,
+            'margin_px': 5,
+        }
+    },
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:3]
+
+# %%time
 # view JUMP plate BR00117006 with images and adjust the brightness
 CytoDataFrame(
     data=f"{jump_data_path}/BR00117006_shrunken.parquet",

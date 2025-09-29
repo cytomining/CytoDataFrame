@@ -38,11 +38,11 @@ from pandas.io.formats import (
 from skimage.util import img_as_ubyte
 
 from .image import (
+    add_image_scale_bar,
     adjust_with_adaptive_histogram_equalization,
     draw_outline_on_image_from_mask,
     draw_outline_on_image_from_outline,
     get_pixel_bbox_from_offsets,
-    add_image_scale_bar
 )
 
 logger = logging.getLogger(__name__)
@@ -1086,12 +1086,17 @@ class CytoDataFrame(pd.DataFrame):
 
                 # Accept either a boolean (True -> use defaults) or a dict of options.
                 if scale_cfg:
-                    # microns-per-pixel can live in scale_cfg or in display_options for convenience
+                    # microns-per-pixel can live in scale_cfg or in
+                    # display_options for convenience
                     um_per_pixel = None
                     if isinstance(scale_cfg, dict):
-                        um_per_pixel = scale_cfg.get("um_per_pixel") or scale_cfg.get("pixel_size_um")
+                        um_per_pixel = scale_cfg.get("um_per_pixel") or scale_cfg.get(
+                            "pixel_size_um"
+                        )
                     if um_per_pixel is None:
-                        um_per_pixel = display_options.get("um_per_pixel") or display_options.get("pixel_size_um")
+                        um_per_pixel = display_options.get(
+                            "um_per_pixel"
+                        ) or display_options.get("pixel_size_um")
 
                     if um_per_pixel:
                         # Default knobs (you can expose more)
@@ -1107,13 +1112,23 @@ class CytoDataFrame(pd.DataFrame):
                             "label_offset_px": 4,
                         }
                         if isinstance(scale_cfg, dict):
-                            params.update({k: v for k, v in scale_cfg.items()
-                                        if k in params or k in ("um_per_pixel", "pixel_size_um")})
+                            params.update(
+                                {
+                                    k: v
+                                    for k, v in scale_cfg.items()
+                                    if k in params
+                                    or k in ("um_per_pixel", "pixel_size_um")
+                                }
+                            )
 
                         cropped_img_array = add_image_scale_bar(
                             cropped_img_array,
                             um_per_pixel=float(um_per_pixel),
-                            **{k: v for k, v in params.items() if k not in ("um_per_pixel", "pixel_size_um")},
+                            **{
+                                k: v
+                                for k, v in params.items()
+                                if k not in ("um_per_pixel", "pixel_size_um")
+                            },
                         )
             except Exception as e:
                 logger.debug("Skipping scale bar due to error: %s", e)

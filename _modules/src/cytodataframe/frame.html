@@ -436,6 +436,7 @@
 <span class="kn">from</span> <span class="nn">skimage.util</span> <span class="kn">import</span> <span class="n">img_as_ubyte</span>
 
 <span class="kn">from</span> <span class="nn">.image</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">add_image_scale_bar</span><span class="p">,</span>
     <span class="n">adjust_with_adaptive_histogram_equalization</span><span class="p">,</span>
     <span class="n">draw_outline_on_image_from_mask</span><span class="p">,</span>
     <span class="n">draw_outline_on_image_from_outline</span><span class="p">,</span>
@@ -547,6 +548,21 @@
 <span class="sd">                e.g. {&#39;bounding_box&#39;:</span>
 <span class="sd">                {&#39;x_min&#39;: -100, &#39;y_min&#39;: -100, &#39;x_max&#39;: 100, &#39;y_max&#39;: 100}</span>
 <span class="sd">                }</span>
+<span class="sd">                - &#39;scale_bar&#39;: Adds a physical scale bar to each displayed crop.</span>
+<span class="sd">                  note: um / pixel details can often be found within the metadata</span>
+<span class="sd">                  of the images themselves or within the experiment documentation.</span>
+<span class="sd">                  e.g. {</span>
+<span class="sd">                      &#39;um_per_pixel&#39;: 0.325,        # required if not set globally</span>
+<span class="sd">                      &#39;pixel_per_um&#39;: 3.07692307692,# required if not set globally</span>
+<span class="sd">                      &#39;length_um&#39;: 10.0,            # default 10</span>
+<span class="sd">                      &#39;thickness_px&#39;: 4,            # default 4</span>
+<span class="sd">                      &#39;color&#39;: (255, 255, 255),     # RGB, default white</span>
+<span class="sd">                      &#39;location&#39;: &#39;lower right&#39;,    # &#39;lower/upper left/right&#39;</span>
+<span class="sd">                      &#39;margin_px&#39;: 10,              # default 10</span>
+<span class="sd">                      &#39;font_size_px&#39;: 14,           # best-effort with PIL default font</span>
+<span class="sd">                  }</span>
+<span class="sd">                - Alternatively, set a global pixel size in &#39;display_options&#39;:</span>
+<span class="sd">                  {&#39;um_per_pixel&#39;: 0.325}  # used if not provided under &#39;scale_bar&#39;</span>
 <span class="sd">            **kwargs:</span>
 <span class="sd">                Additional keyword arguments to pass to the pandas read functions.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -1499,6 +1515,89 @@
             <span class="n">cropped_img_array</span> <span class="o">=</span> <span class="n">prepared_image</span><span class="p">[</span>
                 <span class="n">y_min</span><span class="p">:</span><span class="n">y_max</span><span class="p">,</span> <span class="n">x_min</span><span class="p">:</span><span class="n">x_max</span>
             <span class="p">]</span>  <span class="c1"># Perform slicing</span>
+
+            <span class="c1"># Optionally add a scale bar to the cropped image</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
+                <span class="n">scale_cfg</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;scale_bar&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+                <span class="c1"># Accept either a boolean (True -&gt; use defaults) or a dict of options.</span>
+                <span class="k">if</span> <span class="n">scale_cfg</span><span class="p">:</span>
+                    <span class="c1"># microns-per-pixel can live in scale_cfg or in</span>
+                    <span class="c1"># display_options for convenience</span>
+                    <span class="n">um_per_pixel</span> <span class="o">=</span> <span class="kc">None</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">scale_cfg</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                        <span class="n">um_per_pixel</span> <span class="o">=</span> <span class="n">scale_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;um_per_pixel&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">scale_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                            <span class="s2">&quot;pixel_size_um&quot;</span>
+                        <span class="p">)</span>
+                    <span class="k">if</span> <span class="n">um_per_pixel</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">um_per_pixel</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                            <span class="s2">&quot;um_per_pixel&quot;</span>
+                        <span class="p">)</span> <span class="ow">or</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pixel_size_um&quot;</span><span class="p">)</span>
+
+                    <span class="c1"># NEW: simple fallback for pixels_per_um / pixel_per_um (reciprocal)</span>
+                    <span class="k">if</span> <span class="n">um_per_pixel</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">ppu</span> <span class="o">=</span> <span class="kc">None</span>
+                        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">scale_cfg</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                            <span class="n">ppu</span> <span class="o">=</span> <span class="n">scale_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pixels_per_um&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">scale_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                                <span class="s2">&quot;pixel_per_um&quot;</span>
+                            <span class="p">)</span>
+                        <span class="k">if</span> <span class="n">ppu</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                            <span class="n">ppu</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                                <span class="s2">&quot;pixels_per_um&quot;</span>
+                            <span class="p">)</span> <span class="ow">or</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pixel_per_um&quot;</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">ppu</span><span class="p">:</span>
+                            <span class="k">try</span><span class="p">:</span>
+                                <span class="n">ppu</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">ppu</span><span class="p">)</span>
+                                <span class="k">if</span> <span class="n">ppu</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                                    <span class="n">um_per_pixel</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">ppu</span>
+                            <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+                                <span class="k">pass</span>  <span class="c1"># ignore bad input and skip adding a scale bar</span>
+
+                    <span class="k">if</span> <span class="n">um_per_pixel</span><span class="p">:</span>
+                        <span class="c1"># Default knobs (you can expose more)</span>
+                        <span class="n">params</span> <span class="o">=</span> <span class="p">{</span>
+                            <span class="s2">&quot;length_um&quot;</span><span class="p">:</span> <span class="mf">10.0</span><span class="p">,</span>
+                            <span class="s2">&quot;thickness_px&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+                            <span class="s2">&quot;color&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span>
+                            <span class="s2">&quot;location&quot;</span><span class="p">:</span> <span class="s2">&quot;lower right&quot;</span><span class="p">,</span>
+                            <span class="s2">&quot;margin_px&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
+                            <span class="s2">&quot;font_size_px&quot;</span><span class="p">:</span> <span class="mi">14</span><span class="p">,</span>
+                        <span class="p">}</span>
+                        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">scale_cfg</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                            <span class="n">params</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
+                                <span class="p">{</span>
+                                    <span class="n">k</span><span class="p">:</span> <span class="n">v</span>
+                                    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">scale_cfg</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                                    <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">params</span>
+                                    <span class="ow">or</span> <span class="n">k</span>
+                                    <span class="ow">in</span> <span class="p">(</span>
+                                        <span class="s2">&quot;um_per_pixel&quot;</span><span class="p">,</span>
+                                        <span class="s2">&quot;pixel_size_um&quot;</span><span class="p">,</span>
+                                        <span class="s2">&quot;pixels_per_um&quot;</span><span class="p">,</span>
+                                        <span class="s2">&quot;pixel_per_um&quot;</span><span class="p">,</span>
+                                    <span class="p">)</span>
+                                <span class="p">}</span>
+                            <span class="p">)</span>
+
+                        <span class="n">cropped_img_array</span> <span class="o">=</span> <span class="n">add_image_scale_bar</span><span class="p">(</span>
+                            <span class="n">cropped_img_array</span><span class="p">,</span>
+                            <span class="n">um_per_pixel</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">um_per_pixel</span><span class="p">),</span>
+                            <span class="o">**</span><span class="p">{</span>
+                                <span class="n">k</span><span class="p">:</span> <span class="n">v</span>
+                                <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">params</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                                <span class="k">if</span> <span class="n">k</span>
+                                <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span>
+                                    <span class="s2">&quot;um_per_pixel&quot;</span><span class="p">,</span>
+                                    <span class="s2">&quot;pixel_size_um&quot;</span><span class="p">,</span>
+                                    <span class="s2">&quot;pixels_per_um&quot;</span><span class="p">,</span>
+                                    <span class="s2">&quot;pixel_per_um&quot;</span><span class="p">,</span>
+                                <span class="p">)</span>
+                            <span class="p">},</span>
+                        <span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Skipping scale bar due to error: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+
         <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Bounding box contains invalid values: </span><span class="si">{</span><span class="n">bounding_box</span><span class="si">}</span><span class="s2">&quot;</span>

@@ -400,6 +400,8 @@
 <span class="sd">Helper functions for working with images in the context of CytoDataFrames.</span>
 <span class="sd">&quot;&quot;&quot;</span>
 
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Tuple</span>
+
 <span class="kn">import</span> <span class="nn">cv2</span>
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
 <span class="kn">import</span> <span class="nn">skimage</span>
@@ -722,6 +724,66 @@
         <span class="n">y_min</span><span class="p">,</span> <span class="n">y_max</span> <span class="o">=</span> <span class="n">y_max</span><span class="p">,</span> <span class="n">y_min</span>
 
     <span class="k">return</span> <span class="n">x_min</span><span class="p">,</span> <span class="n">y_min</span><span class="p">,</span> <span class="n">x_max</span><span class="p">,</span> <span class="n">y_max</span></div>
+
+
+
+<div class="viewcode-block" id="add_image_scale_bar">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.image.add_image_scale_bar">[docs]</a>
+<span class="k">def</span> <span class="nf">add_image_scale_bar</span><span class="p">(</span>  <span class="c1"># noqa: PLR0913</span>
+    <span class="n">img</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">um_per_pixel</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">length_um</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">10.0</span><span class="p">,</span>
+    <span class="n">thickness_px</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4</span><span class="p">,</span>
+    <span class="n">color</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span>
+    <span class="n">location</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;lower right&quot;</span><span class="p">,</span>
+    <span class="n">margin_px</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">_</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">um_per_pixel</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">um_per_pixel</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">img</span>
+
+    <span class="n">out</span> <span class="o">=</span> <span class="n">img</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="c1"># ensure RGB uint8</span>
+    <span class="k">if</span> <span class="n">out</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>  <span class="c1"># noqa: PLR2004</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">skimage</span><span class="o">.</span><span class="n">color</span><span class="o">.</span><span class="n">gray2rgb</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">out</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">out</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="mi">4</span><span class="p">:</span>  <span class="c1"># noqa: PLR2004</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">out</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="n">H</span><span class="p">,</span> <span class="n">W</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span>
+    <span class="n">length_px</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="n">length_um</span> <span class="o">/</span> <span class="n">um_per_pixel</span><span class="p">))</span>
+    <span class="n">thickness_px</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">thickness_px</span><span class="p">))</span>
+    <span class="n">margin_px</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">margin_px</span><span class="p">))</span>
+
+    <span class="c1"># clamp length so we never exceed width after margins</span>
+    <span class="n">length_px</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">length_px</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">W</span> <span class="o">-</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">margin_px</span><span class="p">))</span>
+
+    <span class="n">loc</span> <span class="o">=</span> <span class="n">location</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+    <span class="c1"># Compute starting corner (y0, x0) and use rectangle</span>
+    <span class="c1"># extent = (thickness_px, length_px)</span>
+    <span class="n">y0</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">H</span> <span class="o">-</span> <span class="n">margin_px</span> <span class="o">-</span> <span class="n">thickness_px</span><span class="p">)</span>
+        <span class="k">if</span> <span class="s2">&quot;lower&quot;</span> <span class="ow">in</span> <span class="n">loc</span>
+        <span class="k">else</span> <span class="nb">min</span><span class="p">(</span><span class="n">H</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">margin_px</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">x0</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">W</span> <span class="o">-</span> <span class="n">margin_px</span> <span class="o">-</span> <span class="n">length_px</span><span class="p">)</span> <span class="k">if</span> <span class="s2">&quot;right&quot;</span> <span class="ow">in</span> <span class="n">loc</span> <span class="k">else</span> <span class="nb">min</span><span class="p">(</span><span class="n">W</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">margin_px</span><span class="p">)</span>
+
+    <span class="c1"># Ensure extent stays inside image</span>
+    <span class="k">if</span> <span class="n">y0</span> <span class="o">+</span> <span class="n">thickness_px</span> <span class="o">&gt;</span> <span class="n">H</span><span class="p">:</span>
+        <span class="n">thickness_px</span> <span class="o">=</span> <span class="n">H</span> <span class="o">-</span> <span class="n">y0</span>
+    <span class="k">if</span> <span class="n">x0</span> <span class="o">+</span> <span class="n">length_px</span> <span class="o">&gt;</span> <span class="n">W</span><span class="p">:</span>
+        <span class="n">length_px</span> <span class="o">=</span> <span class="n">W</span> <span class="o">-</span> <span class="n">x0</span>
+
+    <span class="n">rr</span><span class="p">,</span> <span class="n">cc</span> <span class="o">=</span> <span class="n">skimage</span><span class="o">.</span><span class="n">draw</span><span class="o">.</span><span class="n">rectangle</span><span class="p">(</span>
+        <span class="n">start</span><span class="o">=</span><span class="p">(</span><span class="n">y0</span><span class="p">,</span> <span class="n">x0</span><span class="p">),</span>
+        <span class="n">extent</span><span class="o">=</span><span class="p">(</span><span class="n">thickness_px</span><span class="p">,</span> <span class="n">length_px</span><span class="p">),</span>
+        <span class="n">shape</span><span class="o">=</span><span class="n">out</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">],</span>
+    <span class="p">)</span>
+    <span class="n">out</span><span class="p">[</span><span class="n">rr</span><span class="p">,</span> <span class="n">cc</span><span class="p">]</span> <span class="o">=</span> <span class="n">color</span>
+
+    <span class="k">return</span> <span class="n">out</span></div>
 
 </pre></div>
 

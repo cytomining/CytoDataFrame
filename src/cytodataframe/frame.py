@@ -149,7 +149,8 @@ class CytoDataFrame(pd.DataFrame):
                 {'x_min': -100, 'y_min': -100, 'x_max': 100, 'y_max': 100}
                 }
                 - 'scale_bar': Adds a physical scale bar to each displayed crop.
-                  Accepts either True (use defaults, requires µm-per-pixel) or a dict:
+                  note: um / pixel details can often be found within the metadata
+                  of the images themselves or within the experiment documentation.
                   e.g. {
                       'um_per_pixel': 0.325,        # required if not set globally
                       'pixel_per_um': 3.07692307692,# required if not set globally

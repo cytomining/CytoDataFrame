@@ -38,6 +38,7 @@ from pandas.io.formats import (
 from skimage.util import img_as_ubyte
 
 from .image import (
+    add_image_scale_bar,
     adjust_with_adaptive_histogram_equalization,
     draw_outline_on_image_from_mask,
     draw_outline_on_image_from_outline,
@@ -147,6 +148,21 @@ class CytoDataFrame(pd.DataFrame):
                 e.g. {'bounding_box':
                 {'x_min': -100, 'y_min': -100, 'x_max': 100, 'y_max': 100}
                 }
+                - 'scale_bar': Adds a physical scale bar to each displayed crop.
+                  note: um / pixel details can often be found within the metadata
+                  of the images themselves or within the experiment documentation.
+                  e.g. {
+                      'um_per_pixel': 0.325,        # required if not set globally
+                      'pixel_per_um': 3.07692307692,# required if not set globally
+                      'length_um': 10.0,            # default 10
+                      'thickness_px': 4,            # default 4
+                      'color': (255, 255, 255),     # RGB, default white
+                      'location': 'lower right',    # 'lower/upper left/right'
+                      'margin_px': 10,              # default 10
+                      'font_size_px': 14,           # best-effort with PIL default font
+                  }
+                - Alternatively, set a global pixel size in 'display_options':
+                  {'um_per_pixel': 0.325}  # used if not provided under 'scale_bar'
             **kwargs:
                 Additional keyword arguments to pass to the pandas read functions.
         """
@@ -1061,6 +1077,89 @@ class CytoDataFrame(pd.DataFrame):
             cropped_img_array = prepared_image[
                 y_min:y_max, x_min:x_max
             ]  # Perform slicing
+
+            # Optionally add a scale bar to the cropped image
+            try:
+                display_options = self._custom_attrs.get("display_options", {}) or {}
+                scale_cfg = display_options.get("scale_bar", None)
+
+                # Accept either a boolean (True -> use defaults) or a dict of options.
+                if scale_cfg:
+                    # microns-per-pixel can live in scale_cfg or in
+                    # display_options for convenience
+                    um_per_pixel = None
+                    if isinstance(scale_cfg, dict):
+                        um_per_pixel = scale_cfg.get("um_per_pixel") or scale_cfg.get(
+                            "pixel_size_um"
+                        )
+                    if um_per_pixel is None:
+                        um_per_pixel = display_options.get(
+                            "um_per_pixel"
+                        ) or display_options.get("pixel_size_um")
+
+                    # NEW: simple fallback for pixels_per_um / pixel_per_um (reciprocal)
+                    if um_per_pixel is None:
+                        ppu = None
+                        if isinstance(scale_cfg, dict):
+                            ppu = scale_cfg.get("pixels_per_um") or scale_cfg.get(
+                                "pixel_per_um"
+                            )
+                        if ppu is None:
+                            ppu = display_options.get(
+                                "pixels_per_um"
+                            ) or display_options.get("pixel_per_um")
+                        if ppu:
+                            try:
+                                ppu = float(ppu)
+                                if ppu > 0:
+                                    um_per_pixel = 1.0 / ppu
+                            except (TypeError, ValueError):
+                                pass  # ignore bad input and skip adding a scale bar
+
+                    if um_per_pixel:
+                        # Default knobs (you can expose more)
+                        params = {
+                            "length_um": 10.0,
+                            "thickness_px": 4,
+                            "color": (255, 255, 255),
+                            "location": "lower right",
+                            "margin_px": 10,
+                            "font_size_px": 14,
+                        }
+                        if isinstance(scale_cfg, dict):
+                            params.update(
+                                {
+                                    k: v
+                                    for k, v in scale_cfg.items()
+                                    if k in params
+                                    or k
+                                    in (
+                                        "um_per_pixel",
+                                        "pixel_size_um",
+                                        "pixels_per_um",
+                                        "pixel_per_um",
+                                    )
+                                }
+                            )
+
+                        cropped_img_array = add_image_scale_bar(
+                            cropped_img_array,
+                            um_per_pixel=float(um_per_pixel),
+                            **{
+                                k: v
+                                for k, v in params.items()
+                                if k
+                                not in (
+                                    "um_per_pixel",
+                                    "pixel_size_um",
+                                    "pixels_per_um",
+                                    "pixel_per_um",
+                                )
+                            },
+                        )
+            except Exception as e:
+                logger.debug("Skipping scale bar due to error: %s", e)
+
         except ValueError as e:
             raise ValueError(
                 f"Bounding box contains invalid values: {bounding_box}"

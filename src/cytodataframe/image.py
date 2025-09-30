@@ -365,5 +365,4 @@ def add_image_scale_bar(  # noqa: PLR0913
     )
     out[rr, cc] = color
 
-    # (Optional) label code goes here if you want it; omitted for the test
     return out

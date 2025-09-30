@@ -152,6 +152,7 @@ class CytoDataFrame(pd.DataFrame):
                   Accepts either True (use defaults, requires µm-per-pixel) or a dict:
                   e.g. {
                       'um_per_pixel': 0.325,        # required if not set globally
+                      'pixel_per_um': 3.07692307692,# required if not set globally
                       'length_um': 10.0,            # default 10
                       'thickness_px': 4,            # default 4
                       'color': (255, 255, 255),     # RGB, default white
@@ -1079,7 +1080,7 @@ class CytoDataFrame(pd.DataFrame):
                 y_min:y_max, x_min:x_max
             ]  # Perform slicing
 
-            # Optionally add a scale bar to the cropped image
+           # Optionally add a scale bar to the cropped image
             try:
                 display_options = self._custom_attrs.get("display_options", {}) or {}
                 scale_cfg = display_options.get("scale_bar", None)
@@ -1090,13 +1091,24 @@ class CytoDataFrame(pd.DataFrame):
                     # display_options for convenience
                     um_per_pixel = None
                     if isinstance(scale_cfg, dict):
-                        um_per_pixel = scale_cfg.get("um_per_pixel") or scale_cfg.get(
-                            "pixel_size_um"
-                        )
+                        um_per_pixel = scale_cfg.get("um_per_pixel") or scale_cfg.get("pixel_size_um")
                     if um_per_pixel is None:
-                        um_per_pixel = display_options.get(
-                            "um_per_pixel"
-                        ) or display_options.get("pixel_size_um")
+                        um_per_pixel = display_options.get("um_per_pixel") or display_options.get("pixel_size_um")
+
+                    # NEW: simple fallback for pixels_per_um / pixel_per_um (reciprocal)
+                    if um_per_pixel is None:
+                        ppu = None
+                        if isinstance(scale_cfg, dict):
+                            ppu = scale_cfg.get("pixels_per_um") or scale_cfg.get("pixel_per_um")
+                        if ppu is None:
+                            ppu = display_options.get("pixels_per_um") or display_options.get("pixel_per_um")
+                        if ppu:
+                            try:
+                                ppu = float(ppu)
+                                if ppu > 0:
+                                    um_per_pixel = 1.0 / ppu
+                            except (TypeError, ValueError):
+                                pass  # ignore bad input and skip adding a scale bar
 
                     if um_per_pixel:
                         # Default knobs (you can expose more)
@@ -1117,7 +1129,7 @@ class CytoDataFrame(pd.DataFrame):
                                     k: v
                                     for k, v in scale_cfg.items()
                                     if k in params
-                                    or k in ("um_per_pixel", "pixel_size_um")
+                                    or k in ("um_per_pixel", "pixel_size_um", "pixels_per_um", "pixel_per_um")
                                 }
                             )
 
@@ -1127,7 +1139,7 @@ class CytoDataFrame(pd.DataFrame):
                             **{
                                 k: v
                                 for k, v in params.items()
-                                if k not in ("um_per_pixel", "pixel_size_um")
+                                if k not in ("um_per_pixel", "pixel_size_um", "pixels_per_um", "pixel_per_um")
                             },
                         )
             except Exception as e:

@@ -62,7 +62,9 @@ frame = CytoDataFrame(
         "Image_FileName_OrigDNA",
         "Image_FileName_OrigRNA",
     ]
-][:3]
+][
+    :3
+]
 frame
 
 # %%time
@@ -79,7 +81,9 @@ CytoDataFrame(
         "Image_FileName_OrigDNA",
         "Image_FileName_OrigRNA",
     ]
-][:3]
+][
+    :3
+]
 
 
 # %%time
@@ -98,7 +102,9 @@ CytoDataFrame(
         "Image_FileName_OrigDNA",
         "Image_FileName_OrigRNA",
     ]
-][:3]
+][
+    :3
+]
 
 # %%time
 # view JUMP plate BR00117006 with images and overlaid outlines for segmentation
@@ -108,12 +114,12 @@ CytoDataFrame(
     data_context_dir=f"{jump_data_path}/images/orig",
     data_outline_context_dir=f"{jump_data_path}/images/outlines",
     display_options={
-        "um_per_pixel": 0.5,
+        "pixel_per_um": 0.1550,
         "scale_bar": {
-            "length_um": 20,
+            "length_um": 100,
             "location": "lower right",
             "color": (255, 255, 255),
-            "thickness_px": 3,
+            "thickness_px": 2,
             "margin_px": 5,
         },
     },
@@ -125,7 +131,9 @@ CytoDataFrame(
         "Image_FileName_OrigDNA",
         "Image_FileName_OrigRNA",
     ]
-][:3]
+][
+    :3
+]
 
 # %%time
 # view JUMP plate BR00117006 with images and adjust the brightness
@@ -141,7 +149,9 @@ CytoDataFrame(
         "Image_FileName_OrigDNA",
         "Image_FileName_OrigRNA",
     ]
-][:3]
+][
+    :3
+]
 
 # %%time
 # view JUMP plate BR00117006 with images and overlaid outlines for segmentation
@@ -159,7 +169,9 @@ CytoDataFrame(
         "Image_FileName_OrigDNA",
         "Image_FileName_OrigRNA",
     ]
-][:3]
+][
+    :3
+]
 
 # %%time
 # view JUMP plate BR00117006 with images and change the display width
@@ -176,7 +188,9 @@ CytoDataFrame(
         "Image_FileName_OrigDNA",
         "Image_FileName_OrigRNA",
     ]
-][:3]
+][
+    :3
+]
 
 # %%time
 # view JUMP plate BR00117006 with images, change the display height and width
@@ -194,7 +208,9 @@ CytoDataFrame(
         "Image_FileName_OrigDNA",
         "Image_FileName_OrigRNA",
     ]
-][:5].T
+][
+    :5
+].T
 
 # %%time
 # view JUMP plate BR00117006 with images, changing the bounding box
@@ -219,7 +235,9 @@ CytoDataFrame(
         "Image_FileName_OrigDNA",
         "Image_FileName_OrigRNA",
     ]
-][:5]
+][
+    :5
+]
 
 # %%time
 # view NF1 Cell Painting data with images
@@ -234,7 +252,9 @@ CytoDataFrame(
         "Image_FileName_RFP",
         "Image_FileName_DAPI",
     ]
-][:3]
+][
+    :3
+]
 
 # %%time
 # view NF1 Cell Painting data with images and overlaid outlines from masks
@@ -250,7 +270,9 @@ CytoDataFrame(
         "Image_FileName_RFP",
         "Image_FileName_DAPI",
     ]
-][:3]
+][
+    :3
+]
 
 # +
 # %%time
@@ -278,7 +300,9 @@ CytoDataFrame(
         "Image_FileName_RFP",
         "Image_FileName_DAPI",
     ]
-][:3]
+][
+    :3
+]
 # -
 
 # %%time
@@ -295,7 +319,9 @@ CytoDataFrame(
         "Image_FileName_DAPI",
         "Image_FileName_GOLD",
     ]
-][:3]
+][
+    :3
+]
 
 # %%time
 # view ALSF pediatric cancer atlas plate BR00143976 with images

@@ -5,11 +5,11 @@ Tests cosmicqc image module
 import os
 import pathlib
 
+import imageio.v2 as imageio
 import numpy as np
 import pytest
 from PIL import Image
 from skimage.draw import disk
-from skimage.io import imsave
 
 from cytodataframe.image import (
     add_image_scale_bar,
@@ -99,7 +99,7 @@ def test_draw_outline_on_image_from_outline(
     """
     # Save the outline image to a temporary path
     outline_image_path = tmp_path / "outline.png"
-    imsave(outline_image_path, outline_image)
+    imageio.imwrite(outline_image_path, outline_image)
 
     # Call the method
     result_image = draw_outline_on_image_from_outline(
@@ -158,7 +158,7 @@ def test_draw_outline_on_image_from_mask(
 
     # Save the mask image to a temporary path
     mask_image_path = tmp_path / "mask.png"
-    imsave(mask_image_path, mask_image)
+    imageio.imwrite(mask_image_path, mask_image)
 
     # Call the method
     result_image = draw_outline_on_image_from_mask(orig_image, str(mask_image_path))

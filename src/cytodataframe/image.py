@@ -5,9 +5,9 @@ Helper functions for working with images in the context of CytoDataFrames.
 from typing import Any, Dict, Tuple
 
 import cv2
+import imageio.v2 as imageio
 import numpy as np
 import skimage
-import skimage.io
 import skimage.measure
 from PIL import Image, ImageEnhance
 from skimage import draw, exposure
@@ -102,7 +102,7 @@ def draw_outline_on_image_from_outline(
     """
 
     # Load the outline image
-    outline_image = skimage.io.imread(outline_image_path)
+    outline_image = imageio.imread(outline_image_path)
 
     # Resize if necessary
     if outline_image.shape[:2] != orig_image.shape[:2]:
@@ -164,7 +164,7 @@ def draw_outline_on_image_from_mask(
             The resulting image with the green outline applied.
     """
     # Load the binary mask image
-    mask_image = skimage.io.imread(mask_image_path)
+    mask_image = imageio.imread(mask_image_path)
 
     # Ensure the original image is RGB
     # Grayscale input

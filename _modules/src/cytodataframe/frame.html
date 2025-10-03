@@ -604,7 +604,8 @@
             <span class="c1"># add widget control meta</span>
             <span class="s2">&quot;_widget_state&quot;</span><span class="p">:</span> <span class="p">{</span>
                 <span class="s2">&quot;scale&quot;</span><span class="p">:</span> <span class="n">initial_brightness</span><span class="p">,</span>
-                <span class="s2">&quot;shown&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+                <span class="s2">&quot;shown&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>  <span class="c1"># whether VBox has been displayed</span>
+                <span class="s2">&quot;observing&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>  <span class="c1"># whether slider observer is attached</span>
             <span class="p">},</span>
             <span class="s2">&quot;_scale_slider&quot;</span><span class="p">:</span> <span class="n">widgets</span><span class="o">.</span><span class="n">IntSlider</span><span class="p">(</span>
                 <span class="n">value</span><span class="o">=</span><span class="n">initial_brightness</span><span class="p">,</span>
@@ -1714,11 +1715,6 @@
 
         <span class="c1"># if we&#39;re in a notebook process as though in a jupyter environment</span>
         <span class="k">if</span> <span class="n">get_option</span><span class="p">(</span><span class="s2">&quot;display.notebook_repr_html&quot;</span><span class="p">):</span>
-            <span class="c1"># Show widget only once per instance per notebook session</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;shown&quot;</span><span class="p">]:</span>
-                <span class="n">display</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_scale_slider&quot;</span><span class="p">])</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;shown&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
-
             <span class="n">max_rows</span> <span class="o">=</span> <span class="n">get_option</span><span class="p">(</span><span class="s2">&quot;display.max_rows&quot;</span><span class="p">)</span>
             <span class="n">min_rows</span> <span class="o">=</span> <span class="n">get_option</span><span class="p">(</span><span class="s2">&quot;display.min_rows&quot;</span><span class="p">)</span>
             <span class="n">max_cols</span> <span class="o">=</span> <span class="n">get_option</span><span class="p">(</span><span class="s2">&quot;display.max_columns&quot;</span><span class="p">)</span>
@@ -1998,16 +1994,28 @@
 
         <span class="c1"># if we&#39;re in a notebook process as though in a jupyter environment</span>
         <span class="k">if</span> <span class="n">get_option</span><span class="p">(</span><span class="s2">&quot;display.notebook_repr_html&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">debug</span><span class="p">:</span>
-            <span class="c1"># always clear old output and show fresh slider + output</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">clear_output</span><span class="p">(</span><span class="n">wait</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-            <span class="n">display</span><span class="p">(</span>
-                <span class="n">widgets</span><span class="o">.</span><span class="n">VBox</span><span class="p">(</span>
-                    <span class="p">[</span>
-                        <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_scale_slider&quot;</span><span class="p">],</span>
-                        <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">],</span>
-                    <span class="p">]</span>
+            <span class="c1"># Mount the VBox (slider + output) exactly once</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;shown&quot;</span><span class="p">]:</span>
+                <span class="n">display</span><span class="p">(</span>
+                    <span class="n">widgets</span><span class="o">.</span><span class="n">VBox</span><span class="p">(</span>
+                        <span class="p">[</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_scale_slider&quot;</span><span class="p">],</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">],</span>
+                        <span class="p">]</span>
+                    <span class="p">)</span>
                 <span class="p">)</span>
-            <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;shown&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+
+            <span class="c1"># Attach the slider observer exactly once</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;observing&quot;</span><span class="p">]:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_scale_slider&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">observe</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_on_slider_change</span><span class="p">,</span> <span class="n">names</span><span class="o">=</span><span class="s2">&quot;value&quot;</span>
+                <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;observing&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+
+            <span class="c1"># Refresh the content area (no second slider display)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">clear_output</span><span class="p">(</span><span class="n">wait</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
             <span class="c1"># render fresh HTML for this cell</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_render_output</span><span class="p">()</span>
             <span class="c1"># ensure slider continues to control the output</span>

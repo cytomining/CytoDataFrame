@@ -403,9 +403,9 @@
 <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Tuple</span>
 
 <span class="kn">import</span> <span class="nn">cv2</span>
+<span class="kn">import</span> <span class="nn">imageio.v2</span> <span class="k">as</span> <span class="nn">imageio</span>
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
 <span class="kn">import</span> <span class="nn">skimage</span>
-<span class="kn">import</span> <span class="nn">skimage.io</span>
 <span class="kn">import</span> <span class="nn">skimage.measure</span>
 <span class="kn">from</span> <span class="nn">PIL</span> <span class="kn">import</span> <span class="n">Image</span><span class="p">,</span> <span class="n">ImageEnhance</span>
 <span class="kn">from</span> <span class="nn">skimage</span> <span class="kn">import</span> <span class="n">draw</span><span class="p">,</span> <span class="n">exposure</span>
@@ -508,7 +508,7 @@
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="c1"># Load the outline image</span>
-    <span class="n">outline_image</span> <span class="o">=</span> <span class="n">skimage</span><span class="o">.</span><span class="n">io</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">outline_image_path</span><span class="p">)</span>
+    <span class="n">outline_image</span> <span class="o">=</span> <span class="n">imageio</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">outline_image_path</span><span class="p">)</span>
 
     <span class="c1"># Resize if necessary</span>
     <span class="k">if</span> <span class="n">outline_image</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span> <span class="o">!=</span> <span class="n">orig_image</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">]:</span>
@@ -573,7 +573,7 @@
 <span class="sd">            The resulting image with the green outline applied.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Load the binary mask image</span>
-    <span class="n">mask_image</span> <span class="o">=</span> <span class="n">skimage</span><span class="o">.</span><span class="n">io</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">mask_image_path</span><span class="p">)</span>
+    <span class="n">mask_image</span> <span class="o">=</span> <span class="n">imageio</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">mask_image_path</span><span class="p">)</span>
 
     <span class="c1"># Ensure the original image is RGB</span>
     <span class="c1"># Grayscale input</span>

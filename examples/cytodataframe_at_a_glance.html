@@ -422,24 +422,11 @@ DataFrame experience which is enhanced with single-cell
 visual information which can be viewed directly in a Jupyter notebook.</p>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">import</span> <span class="nn">pathlib</span>
-<span class="kn">import</span> <span class="nn">warnings</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">pathlib</span>
 
 <span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
 
 <span class="kn">from</span> <span class="nn">cytodataframe.frame</span> <span class="kn">import</span> <span class="n">CytoDataFrame</span>
-
-<span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">)</span>  <span class="c1"># or logging.DEBUG, WARNING, etc.</span>
-<span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">()</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">)</span>  <span class="c1"># Ensures root logger is set</span>
-
-
-<span class="c1"># filter warnings from skimage about imageio</span>
-<span class="n">warnings</span><span class="o">.</span><span class="n">filterwarnings</span><span class="p">(</span>
-    <span class="s2">&quot;ignore&quot;</span><span class="p">,</span>
-    <span class="n">message</span><span class="o">=</span><span class="sa">r</span><span class="s2">&quot;The plugin infrastructure.*&quot;</span><span class="p">,</span>
-    <span class="n">category</span><span class="o">=</span><span class="ne">FutureWarning</span><span class="p">,</span>
-<span class="p">)</span>
 
 <span class="c1"># create paths for use with CytoDataFrames below</span>
 <span class="n">jump_data_path</span> <span class="o">=</span> <span class="s2">&quot;../../../tests/data/cytotable/JUMP_plate_BR00117006&quot;</span>
@@ -473,11 +460,11 @@ visual information which can be viewed directly in a Jupyter notebook.</p>
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 959 ms, sys: 631 ms, total: 1.59 s
-Wall time: 791 ms
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 941 ms, sys: 713 ms, total: 1.65 s
+Wall time: 525 ms
 </pre></div>
 </div>
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "03687f56dc5d45eeb046747ae2bed0ff", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "2b016f7850e74f50a576f54ccd297830", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
                 <style>
                     /* Hide by default on screen */
                     .print-view {
@@ -560,11 +547,11 @@ Wall time: 791 ms
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 993 ms, sys: 716 ms, total: 1.71 s
-Wall time: 509 ms
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 944 ms, sys: 723 ms, total: 1.67 s
+Wall time: 505 ms
 </pre></div>
 </div>
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "ff776f0537f24a9291b0f18c2a26a2b4", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "6add24880e464fd799e123d3524df407", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
                 <style>
                     /* Hide by default on screen */
                     .print-view {
@@ -649,11 +636,11 @@ Wall time: 509 ms
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 978 ms, sys: 705 ms, total: 1.68 s
-Wall time: 508 ms
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 916 ms, sys: 696 ms, total: 1.61 s
+Wall time: 491 ms
 </pre></div>
 </div>
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "852219d6f8d2469d80cea9e4118f1897", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "9cc9cdc816c248ef9674bf17ecbf425f", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
                 <style>
                     /* Hide by default on screen */
                     .print-view {
@@ -747,11 +734,11 @@ Wall time: 508 ms
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 983 ms, sys: 709 ms, total: 1.69 s
-Wall time: 512 ms
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 892 ms, sys: 648 ms, total: 1.54 s
+Wall time: 489 ms
 </pre></div>
 </div>
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "fd7cf9633a454cec839a426b39d24ab9", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "68c66e5966784cf986fae4d4115c2541", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
                 <style>
                     /* Hide by default on screen */
                     .print-view {
@@ -834,11 +821,11 @@ Wall time: 512 ms
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 972 ms, sys: 686 ms, total: 1.66 s
-Wall time: 494 ms
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 951 ms, sys: 706 ms, total: 1.66 s
+Wall time: 515 ms
 </pre></div>
 </div>
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "c8110e3b5aa2487787b787675c2240a3", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "0ad5469211d34833a1e9423d55fb0d16", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
                 <style>
                     /* Hide by default on screen */
                     .print-view {
@@ -923,11 +910,11 @@ Wall time: 494 ms
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 952 ms, sys: 657 ms, total: 1.61 s
-Wall time: 501 ms
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 938 ms, sys: 676 ms, total: 1.61 s
+Wall time: 497 ms
 </pre></div>
 </div>
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "892699793f5744768db8c4b714410896", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "7f888032d36647b8a4f3288feda73dcb", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
                 <style>
                     /* Hide by default on screen */
                     .print-view {
@@ -1011,11 +998,11 @@ Wall time: 501 ms
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 1e+03 ms, sys: 715 ms, total: 1.71 s
-Wall time: 522 ms
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 905 ms, sys: 635 ms, total: 1.54 s
+Wall time: 509 ms
 </pre></div>
 </div>
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "cc5eed6584f145ee93a9cd0eb774c192", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "79b365d8a5714d20af75dc1a3738a3b1", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
                 <style>
                     /* Hide by default on screen */
                     .print-view {
@@ -1100,11 +1087,11 @@ Wall time: 522 ms
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 891 ms, sys: 569 ms, total: 1.46 s
-Wall time: 491 ms
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 889 ms, sys: 650 ms, total: 1.54 s
+Wall time: 485 ms
 </pre></div>
 </div>
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "dbd47ac95760490db5504afbc27c431f", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "0b9c28b02db44ce187f6830422c5cda5", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
                 <style>
                     /* Hide by default on screen */
                     .print-view {
@@ -1212,11 +1199,11 @@ Wall time: 491 ms
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 965 ms, sys: 678 ms, total: 1.64 s
-Wall time: 499 ms
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 890 ms, sys: 653 ms, total: 1.54 s
+Wall time: 491 ms
 </pre></div>
 </div>
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "0c6f0024a7c44d7c9fe68128f1b0606d", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "d957d909601243d5932444525ed46482", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
                 <style>
                     /* Hide by default on screen */
                     .print-view {
@@ -1314,11 +1301,11 @@ Wall time: 499 ms
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 303 ms, sys: 193 ms, total: 497 ms
-Wall time: 179 ms
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 293 ms, sys: 198 ms, total: 492 ms
+Wall time: 173 ms
 </pre></div>
 </div>
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "104456efdfd44add97e1c5db1bd330d5", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "fd1e6fc031f340b8ad18b159877c3c04", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
                 <style>
                     /* Hide by default on screen */
                     .print-view {
@@ -1401,11 +1388,11 @@ Wall time: 179 ms
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 259 ms, sys: 159 ms, total: 417 ms
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 273 ms, sys: 208 ms, total: 481 ms
 Wall time: 149 ms
 </pre></div>
 </div>
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "fe3b518e130740c8aa8431f27109f4a8", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "afd7879a0aa74dccabb9b62d27bec28a", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
                 <style>
                     /* Hide by default on screen */
                     .print-view {
@@ -1499,11 +1486,11 @@ Wall time: 149 ms
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 263 ms, sys: 135 ms, total: 399 ms
-Wall time: 169 ms
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 287 ms, sys: 186 ms, total: 473 ms
+Wall time: 174 ms
 </pre></div>
 </div>
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "9fb385b177bb4b7b80c5b1d8973bd554", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "fd8e2909d785471aab81cdb5aed68102", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
                 <style>
                     /* Hide by default on screen */
                     .print-view {
@@ -1586,11 +1573,11 @@ Wall time: 169 ms
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 128 ms, sys: 83.2 ms, total: 211 ms
-Wall time: 73.3 ms
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 81.2 ms, sys: 15 ms, total: 96.2 ms
+Wall time: 67.1 ms
 </pre></div>
 </div>
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "0260081dbd9347bbafb362ed753080fc", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "1752ba58b84b4a33b87072ea7602a3fd", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
                 <style>
                     /* Hide by default on screen */
                     .print-view {
@@ -1677,11 +1664,11 @@ Wall time: 73.3 ms
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 388 ms, sys: 258 ms, total: 646 ms
-Wall time: 219 ms
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 406 ms, sys: 292 ms, total: 698 ms
+Wall time: 225 ms
 </pre></div>
 </div>
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "1a87f897a59b4c8094d6079d2123ac40", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "ba7ca0341d964e1da003b00f05ae59e1", "version_major": 2, "version_minor": 0}</script><div class="output text_html">
                 <style>
                     /* Hide by default on screen */
                     .print-view {
@@ -1763,8 +1750,8 @@ Wall time: 219 ms
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 1e+03 ns, sys: 0 ns, total: 1e+03 ns
-Wall time: 2.86 µs
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>CPU times: user 1 µs, sys: 1 µs, total: 2 µs
+Wall time: 1.91 µs
 </pre></div>
 </div>
 <div class="output text_html">

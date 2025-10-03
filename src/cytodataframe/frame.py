@@ -204,7 +204,8 @@ class CytoDataFrame(pd.DataFrame):
             # add widget control meta
             "_widget_state": {
                 "scale": initial_brightness,
-                "shown": False,
+                "shown": False,  # whether VBox has been displayed
+                "observing": False,  # whether slider observer is attached
             },
             "_scale_slider": widgets.IntSlider(
                 value=initial_brightness,
@@ -1270,11 +1271,6 @@ class CytoDataFrame(pd.DataFrame):
 
         # if we're in a notebook process as though in a jupyter environment
         if get_option("display.notebook_repr_html"):
-            # Show widget only once per instance per notebook session
-            if not self._custom_attrs["_widget_state"]["shown"]:
-                display(self._custom_attrs["_scale_slider"])
-                self._custom_attrs["_widget_state"]["shown"] = True
-
             max_rows = get_option("display.max_rows")
             min_rows = get_option("display.min_rows")
             max_cols = get_option("display.max_columns")
@@ -1548,16 +1544,28 @@ class CytoDataFrame(pd.DataFrame):
 
         # if we're in a notebook process as though in a jupyter environment
         if get_option("display.notebook_repr_html") and not debug:
-            # always clear old output and show fresh slider + output
-            self._custom_attrs["_output"].clear_output(wait=True)
-            display(
-                widgets.VBox(
-                    [
-                        self._custom_attrs["_scale_slider"],
-                        self._custom_attrs["_output"],
-                    ]
+            # Mount the VBox (slider + output) exactly once
+            if not self._custom_attrs["_widget_state"]["shown"]:
+                display(
+                    widgets.VBox(
+                        [
+                            self._custom_attrs["_scale_slider"],
+                            self._custom_attrs["_output"],
+                        ]
+                    )
                 )
-            )
+                self._custom_attrs["_widget_state"]["shown"] = True
+
+            # Attach the slider observer exactly once
+            if not self._custom_attrs["_widget_state"]["observing"]:
+                self._custom_attrs["_scale_slider"].observe(
+                    self._on_slider_change, names="value"
+                )
+                self._custom_attrs["_widget_state"]["observing"] = True
+
+            # Refresh the content area (no second slider display)
+            self._custom_attrs["_output"].clear_output(wait=True)
+
             # render fresh HTML for this cell
             self._render_output()
             # ensure slider continues to control the output

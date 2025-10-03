@@ -21,12 +21,11 @@ from typing import (
     Union,
 )
 
-import imageio
+import imageio.v2 as imageio
 import ipywidgets as widgets
 import numpy as np
 import pandas as pd
 import skimage
-import skimage.measure
 from IPython import get_ipython
 from IPython.display import HTML, display
 from pandas._config import (
@@ -1181,9 +1180,7 @@ class CytoDataFrame(pd.DataFrame):
             # catch warnings about low contrast images and avoid displaying them
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", UserWarning)
-                skimage.io.imsave(
-                    png_bytes_io, cropped_img_array, plugin="imageio", extension=".png"
-                )
+                imageio.imwrite(png_bytes_io, cropped_img_array, format="png")
             png_bytes = png_bytes_io.getvalue()
 
         except (FileNotFoundError, ValueError) as exc:

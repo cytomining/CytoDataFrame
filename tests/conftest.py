@@ -6,10 +6,10 @@ https://docs.pytest.org/en/7.1.x/explanation/fixtures.html
 
 import pathlib
 
+import imageio.v2 as imageio
 import numpy as np
 import pandas as pd
 import pytest
-import skimage
 from PIL import Image
 
 
@@ -148,7 +148,7 @@ def fixture_nuclear_speckle_example_image():
     # create an image array from example nuclear speckle data
     return Image.fromarray(
         (
-            skimage.io.imread(
+            imageio.imread(
                 "tests/data/cytotable/nuclear_speckles/images/plate1/slide1_A1_M10_CH0_Z09_illumcorrect.tiff"
             )
             / 256

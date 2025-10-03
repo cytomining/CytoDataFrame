@@ -22,24 +22,11 @@
 # visual information which can be viewed directly in a Jupyter notebook.
 
 # +
-import logging
 import pathlib
-import warnings
 
 import pandas as pd
 
 from cytodataframe.frame import CytoDataFrame
-
-logging.basicConfig(level=logging.INFO)  # or logging.DEBUG, WARNING, etc.
-logging.getLogger().setLevel(logging.INFO)  # Ensures root logger is set
-
-
-# filter warnings from skimage about imageio
-warnings.filterwarnings(
-    "ignore",
-    message=r"The plugin infrastructure.*",
-    category=FutureWarning,
-)
 
 # create paths for use with CytoDataFrames below
 jump_data_path = "../../../tests/data/cytotable/JUMP_plate_BR00117006"

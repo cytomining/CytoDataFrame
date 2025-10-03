@@ -22,6 +22,7 @@
 # visual information which can be viewed directly in a Jupyter notebook.
 
 # +
+import logging
 import pathlib
 
 import pandas as pd

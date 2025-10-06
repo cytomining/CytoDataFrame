@@ -37,7 +37,7 @@ pywavelets = [
 ]
 # used for image modifications in cytodataframe
 opencv-python = "^4.10.0.84"
-imagecodecs = "^2024.9.22"
+imagecodecs = ">=2024.9.22,<2026.0.0"
 matplotlib = "^3.9.3"
 ipywidgets = "^8.1.7"
 imageio = "^2.37.0"
@@ -62,7 +62,7 @@ cosmicqc = { version = "^0.1.4", markers = "python_version < '3.13' and python_v
 # used for rendering docs into docsite
 sphinx = "^7.0.0"
 # used for rendering markdown through sphinx
-myst-parser = "^3.0.0"
+myst-parser = ">=3,<5"
 # used for rendering notebooks through myst parser
 myst-nb = "^1.1.2"
 # used for extension sphinx-multiversion and to fix git-based challenges with default branch handling

@@ -52,7 +52,7 @@ coverage = "^7.6.0"
 jupyterlab = "^4.3.0"
 jupytext = "^1.16.4"
 black = ">=24.10,<26.0"
-isort = ">=5.13.2,<7.0.0"
+isort = ">=5.13.2,<8.0.0"
 jupyterlab-code-formatter = "^3.0.2"
 duckdb = "^1.1.3"
 # version specifications below used to help surpass 3.13-based installations
@@ -60,7 +60,7 @@ cosmicqc = { version = "^0.1.4", markers = "python_version < '3.13' and python_v
 
 [tool.poetry.group.docs.dependencies]
 # used for rendering docs into docsite
-sphinx = "^7.0.0"
+sphinx = ">=7,<9"
 # used for rendering markdown through sphinx
 myst-parser = ">=3,<5"
 # used for rendering notebooks through myst parser

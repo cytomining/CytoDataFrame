@@ -11,6 +11,7 @@ import skimage
 import skimage.measure
 from PIL import Image, ImageEnhance
 from skimage import draw, exposure
+from skimage import draw as skdraw
 from skimage.util import img_as_ubyte
 
 
@@ -116,15 +117,15 @@ def draw_outline_on_image_from_outline(
     # Create a mask for non-black areas (with threshold)
     threshold = 10  # Adjust as needed
     # Grayscale
-    if outline_image.ndim == 2:  # noqa: PLR2004
+    if outline_image.ndim == 2:
         non_black_mask = outline_image > threshold
     else:  # RGB/RGBA
         non_black_mask = np.any(outline_image[..., :3] > threshold, axis=-1)
 
     # Ensure the original image is RGB
-    if orig_image.ndim == 2:  # noqa: PLR2004
+    if orig_image.ndim == 2:
         orig_image = np.stack([orig_image] * 3, axis=-1)
-    elif orig_image.shape[-1] != 3:  # noqa: PLR2004
+    elif orig_image.shape[-1] != 3:
         raise ValueError("Original image must have 3 channels (RGB).")
 
     # Ensure uint8 data type
@@ -168,14 +169,14 @@ def draw_outline_on_image_from_mask(
 
     # Ensure the original image is RGB
     # Grayscale input
-    if orig_image.ndim == 2:  # noqa: PLR2004
+    if orig_image.ndim == 2:
         orig_image = np.stack([orig_image] * 3, axis=-1)
     # Unsupported input
-    elif orig_image.shape[-1] != 3:  # noqa: PLR2004
+    elif orig_image.shape[-1] != 3:
         raise ValueError("Original image must have 3 channels (RGB).")
 
     # Ensure the mask is 2D (binary)
-    if mask_image.ndim > 2:  # noqa: PLR2004
+    if mask_image.ndim > 2:
         mask_image = mask_image[..., 0]  # Take the first channel if multi-channel
 
     # Detect contours from the mask
@@ -248,17 +249,17 @@ def adjust_with_adaptive_histogram_equalization(
         gamma = 1.0 - brightness_shift * 0.8  # e.g. 1.8 → dark, 0.2 → bright
         return exposure.adjust_gamma(eq, gamma=gamma)
 
-    if image.ndim == 2:  # noqa: PLR2004
+    if image.ndim == 2:
         result = equalize_and_adjust(image)
         return img_as_ubyte(result)
 
-    elif image.ndim == 3 and image.shape[2] == 3:  # noqa: PLR2004
+    elif image.ndim == 3 and image.shape[2] == 3:
         result = np.stack(
             [equalize_and_adjust(image[:, :, i]) for i in range(3)], axis=-1
         )
         return img_as_ubyte(result)
 
-    elif image.ndim == 3 and image.shape[2] == 4:  # noqa: PLR2004
+    elif image.ndim == 3 and image.shape[2] == 4:
         rgb = image[:, :, :3]
         alpha = image[:, :, 3]
         result = np.stack(
@@ -322,16 +323,77 @@ def add_image_scale_bar(  # noqa: PLR0913
     margin_px: int = 10,
     **_: Dict[Any, Any],
 ) -> np.ndarray:
+    """
+    Add a scale bar to the lower or upper corner of an image.
+
+    The function overlays a solid rectangular scale bar onto a grayscale,
+    RGB, or RGBA image.  The bar's physical length in micrometers is
+    converted to pixels using the provided microns-per-pixel value.
+    Non-finite or out-of-range input values are sanitized before drawing.
+
+    Args:
+        img (np.ndarray):
+            Input image, either 2-D grayscale or 3-D RGB/RGBA.
+        um_per_pixel (float):
+            Micrometers per pixel.  If None or ≤ 0, the image is returned
+            unchanged.
+        length_um (float, optional):
+            Desired length of the scale bar in micrometers.  Defaults to
+            10.0.
+        thickness_px (int, optional):
+            Thickness of the bar in pixels.  Defaults to 4.
+        color (Tuple[int, int, int], optional):
+            RGB color of the bar.  Defaults to white ``(255, 255, 255)``.
+        location (str, optional):
+            Placement of the bar: ``"lower right"``, ``"lower left"``,
+            ``"upper right"``, or ``"upper left"``.  Defaults to
+            ``"lower right"``.
+        margin_px (int, optional):
+            Distance in pixels between the bar and the image edges.
+            Defaults to 10.
+        **_ (Dict[Any, Any]):
+            Additional keyword arguments ignored for forward
+            compatibility.
+
+    Returns:
+        np.ndarray:
+            A new RGB image with the scale bar drawn.  The array is always
+            of type ``uint8`` and has shape ``(H, W, 3)``.
+
+    Raises:
+        ValueError: If the input image has an unsupported number of
+            channels.
+
+    Notes:
+        The bar length is clamped to fit within image bounds after
+        margins.  The function does not rely on ``skimage.color`` and is
+        safe against NaN or Inf input values.
+    """
+
     if um_per_pixel is None or um_per_pixel <= 0:
         return img
 
-    out = img.copy()
-    # ensure RGB uint8
-    if out.ndim == 2:  # noqa: PLR2004
-        out = skimage.color.gray2rgb(out)
-    elif out.ndim == 3 and out.shape[2] == 4:  # noqa: PLR2004
-        out = out[:, :, :3]
+    # --- Sanitize input first: replace non-finite, clip to valid range, cast to uint8
+    out = np.nan_to_num(img, nan=0.0, posinf=255.0, neginf=0.0)
+
+    # If float image, try to guess range and bring to 0..255
+    if np.issubdtype(out.dtype, np.floating):
+        # If values look like 0..1, scale to 0..255; otherwise clip to 0..255
+        if out.max() <= 1.0:
+            out = out * 255.0
+        out = np.clip(out, 0, 255)
+
     out = out.astype(np.uint8, copy=False)
+
+    # ensure RGB without using skimage.color.* conversions
+    if out.ndim == 2:  # grayscale -> stack
+        out = np.dstack([out, out, out])
+    elif out.ndim == 3 and out.shape[2] == 4:  # RGBA -> drop alpha for drawing
+        out = out[:, :, :3]
+    elif out.ndim != 3 or out.shape[2] != 3:
+        raise ValueError(
+            "Unsupported image shape for scale bar; expected gray/RGB/RGBA."
+        )
 
     H, W = out.shape[:2]
     length_px = max(1, round(length_um / um_per_pixel))
@@ -343,8 +405,6 @@ def add_image_scale_bar(  # noqa: PLR0913
 
     loc = location.lower().strip()
 
-    # Compute starting corner (y0, x0) and use rectangle
-    # extent = (thickness_px, length_px)
     y0 = (
         max(0, H - margin_px - thickness_px)
         if "lower" in loc
@@ -358,7 +418,7 @@ def add_image_scale_bar(  # noqa: PLR0913
     if x0 + length_px > W:
         length_px = W - x0
 
-    rr, cc = skimage.draw.rectangle(
+    rr, cc = skdraw.rectangle(
         start=(y0, x0),
         extent=(thickness_px, length_px),
         shape=out.shape[:2],

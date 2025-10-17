@@ -1,0 +1,188 @@
+---
+title: CytoDataFrame — Seeing cells inside your tables
+format:
+  poster-typst:
+    size: "48x32"
+    poster-authors: "Dave Bunten¹, Jenna Tomkinson¹, Gregory P. Way¹"
+    departments: "¹Department of Biomedical Informatics, University of Colorado Anschutz Medical Campus"
+    institution-logo: "./images/header-combined-images.png"
+    footer-text: "github.com/cytomining/CytoDataFrame"
+    footer-url: "CytoDataFrame"
+    footer-emails: "https://github.com/cytomining/CytoDataFrame"
+    footer-color: "7CC4FF"
+output-file: "cytodataframe-2025-poster.pdf"
+---
+
+## Why CytoDataFrame?
+
+_Feature tables and images often live in separate tools, making it hard to \
+build intuition about single cells. CytoDataFrame keeps them together in one \
+interactive table inside your notebook._
+
+High-content screens produce **millions of rows of features** and **many
+images**. Jumping between a DataFrame and an image viewer slows exploration and
+hides issues like segmentation errors or odd phenotypes. **CytoDataFrame**
+puts a **thumbnail (or mask)** right next to the row’s features so you can
+**see** what the numbers mean.
+
+---
+
+## What is CytoDataFrame?
+
+_A Pandas-compatible table where each row includes features plus an \
+inline image/mask preview._
+
+**CytoDataFrame** is a small, focused extension of `pandas.DataFrame` that
+embeds **inline images** (cells, nuclei, or other compartments) alongside
+per-object features for **Jupyter** workflows.
+
+- **Keep context at a glance** — Each row shows the features *and* the object.
+- **Adjust on the fly** — Sliders/toggles for brightness, channels, and masks.
+- **Filter and explore** — Subset outliers, phenotypes, or QC flags and see
+  what they look like immediately.
+- **Stay in your workflow** — It behaves like a DataFrame; your plotting,
+  modeling, and exports still work.
+- **Built-in QC loop** — Tight integration with **coSMicQC** returns
+  CytoDataFrames so you can act on QC signals with visuals.
+
+---
+
+## A 60-second install & hello world
+
+_Load features, point to images, and get an interactive table. No new \
+viewer required._
+
+### Install
+
+```bash
+pip install cytodataframe
+# (Optional) for QC workflows
+pip install cosmicqc
+```
+
+### Minimal example
+
+```python
+import pandas as pd
+from cytodataframe import CytoDataFrame
+
+# features_df must include a column with image paths or image bytes
+features_df = pd.read_parquet("profiles.parquet")  # rows = single cells
+# e.g., columns: ["CellID", "AreaShape_Area", "Intensity_Mean", "image_path"]
+
+cdf = CytoDataFrame(
+    features_df,
+    image_col="image_path",        # path/URI to object crops or full frames
+    mask_col="mask_path",          # optional: per-row binary mask
+    channel_map={"gray": 0},       # optional: simple channel mapping
+)
+
+cdf  # in Jupyter, shows an interactive table with thumbnails + widgets
+```
+
+---
+
+## How it works (under the hood)
+
+_A thin layer over Pandas with a custom HTML representation for Jupyter, \
+plus small stateful widgets to tune image display._
+
+- **Subclass of `pandas.DataFrame`** with a custom `_repr_html_()` to render
+  *images + controls* inline.
+- Image sources can be **file paths, URIs, or bytes**; masks are optional.
+- Lightweight UI built with **ipywidgets**; no external viewer dependency.
+- Designed to **preserve state** while slicing/filtering in notebook sessions.
+
+---
+
+## Explore faster with visual context
+
+_Outlier selection reveals unusual morphology immediately—no context switch \
+needed._
+
+- **Outlier triage:** Sort by a feature or UMAP distance, then eyeball what the
+  extremes actually look like.
+- **Phenotype review:** Filter to a class label and verify visual coherence.
+- **Mask check:** Toggle masks to catch segmentation leaks or missed objects.
+- **Data cleaning:** Spot NaNs, saturations, and channel mis-orders by sight.
+
+---
+
+## Quality control with coSMicQC
+
+_coSMicQC functions can return CytoDataFrames, letting you pair QC flags \
+with images to make immediate, visual decisions._
+
+```python
+from cosmicqc import assess_segmentation
+
+qc = assess_segmentation(
+    image_paths=features_df["image_path"],
+    mask_paths=features_df["mask_path"],
+    return_cdf=True,              # ← returns a CytoDataFrame
+)
+
+# Filter to likely-problematic rows and inspect visually
+qc_bad = qc[qc["qc_flag"] == "suspect"]
+qc_bad
+```
+
+Benefits:
+- **See the failure** behind every QC flag.
+- Rapid **feedback loop** for pipeline tuning.
+- Easier **communication** across wet-lab and analysis teammates.
+
+---
+
+## Plays nicely with the stack you already use
+
+_Use your existing plotting and modeling code; CytoDataFrame stays \
+DataFrame-compatible._
+
+- **Plotting:** `matplotlib`, `plotly`, `hvplot`—all fine.
+- **Compute:** `numpy`, `scikit-learn`, `polars`/`duckdb` bridges via exports.
+- **Storage:** Start from CSV/Parquet, export cleaned subsets for sharing.
+- **Reproducibility:** Works in notebooks, scripts, and CI notebooks runners.
+
+---
+
+## Case study (toy)
+
+_Filtering by intensity and inspecting masks reveals a subtle \
+over-segmentation pattern._
+
+1. Load single-cell profiles and masks into a CytoDataFrame.  
+2. Filter to high intensity + large area.  
+3. Toggle masks → discover over-segmentation around bright nuclei.  
+4. Adjust thresholding parameters; rerun → cleaner phenotype clusters.
+
+---
+
+## Roadmap
+
+_Upcoming: multi-channel presets, napari handoff, thumbnail caching, and \
+richer notebook exports._
+
+- **Multi-channel presets** and per-row channel metadata.
+- **Napari handoff** for deep dives on selected rows.
+- **Thumbnail caching** for massive tables.
+- **Rich exports** (HTML bundles) to share interactive snapshots.
+
+---
+
+## Get involved
+
+_Open source and welcoming contributions._
+
+- **Repo:** https://github.com/cytomining/CytoDataFrame  
+- **Issues & ideas:** Bug reports, feature requests, and UX feedback welcome.
+- **Use cases:** Share notebooks—we’ll collect examples in the docs.
+
+---
+
+## Acknowledgements
+
+We thank contributors and collaborators in the **Cytomining** community and the
+**Department of Biomedical Informatics** (CU Anschutz). We also acknowledge
+the coSMicQC project for aligned APIs and interop patterns that enable
+image-aware QC loops inside dataframes.

@@ -138,7 +138,7 @@ align(left,
 
     // main title
     text(font: "Vollkorn", weight: 500, size: 55pt)[
-      Exploring single-cell 
+      Exploring single-cell
       #text(weight: 800, style: "italic")[images and profiles] together with~~
       #text(baseline: 0pt)[
       #box(

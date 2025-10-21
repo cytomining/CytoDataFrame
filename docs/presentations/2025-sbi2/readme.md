@@ -23,7 +23,6 @@ poetry run poe poster-render
 
 ## References
 
-- Image clipping for poster title provided from a photograph by [Dietmar Rabich titled "Dülmen, Naturschutzgebiet -Am Enteborn- -- 2014 -- 0202"](https://commons.wikimedia.org/wiki/File:D%C3%BClmen,_Naturschutzgebiet_-Am_Enteborn-_--_2014_--_0202.jpg)
 - Fonts were sourced locally for rendering within Quarto and Typst:
   - [Vollkorn](https://fonts.google.com/specimen/Vollkorn)
   - [Lato](https://fonts.google.com/specimen/Lato)
@@ -32,7 +31,7 @@ poetry run poe poster-render
 
 ```shell
 # append text to qr codes
-magick images/sga-qr.png -gravity South -background transparent -splice 0x15 -pointsize 40 -font Arial -weight Bold -annotate 0x15 'Scan for GitHub!' images/sga-qr-text.png
+magick images/cytodataframe-qr.png -gravity South -background transparent -splice 0x15 -pointsize 40 -font Arial -weight Bold -annotate 0x15 'Scan for GitHub!' images/sga-qr-text.png
 
 # create a transparent spacer
 magick -size 100x460 xc:transparent images/spacer.png

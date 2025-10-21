@@ -1,5 +1,5 @@
 ---
-title: CytoDataFrame — Seeing cells inside your tables
+title: Exploring single‑cell images and profiles together with CytoDataFrame
 format:
   poster-typst:
     size: "48x32"
@@ -13,11 +13,9 @@ format:
 output-file: "cytodataframe-2025-poster.pdf"
 ---
 
-## Why CytoDataFrame?
+## Why separate profiles and images?
 
-_Feature tables and images often live in separate tools, making it hard to \
-build intuition about single cells. CytoDataFrame keeps them together in one \
-interactive table inside your notebook._
+![_Feature tables and images often live in separate tools, making it hard to build intuition about single cells. CytoDataFrame keeps them together in one interactive table inside your notebook._](images/wall_between_images_and_profiles.png){width=100% fig-align="center"}
 
 High-content screens produce **millions of rows of features** and **many
 images**. Jumping between a DataFrame and an image viewer slows exploration and
@@ -25,27 +23,20 @@ hides issues like segmentation errors or odd phenotypes. **CytoDataFrame**
 puts a **thumbnail (or mask)** right next to the row’s features so you can
 **see** what the numbers mean.
 
----
+## CytoDataFrame for integrated analysis
 
-## What is CytoDataFrame?
+![_Images and profile data may be mixed using Pandas idioms through Jupyter interfaces to create a unified experience for bioimage analysts and data scientists._](images/cytodataframe_equation.png){width=100% fig-align="center"}
 
-_A Pandas-compatible table where each row includes features plus an \
-inline image/mask preview._
-
-**CytoDataFrame** is a small, focused extension of `pandas.DataFrame` that
+**CytoDataFrame** is a small package built on top of `pandas.DataFrame` that
 embeds **inline images** (cells, nuclei, or other compartments) alongside
 per-object features for **Jupyter** workflows.
 
-- **Keep context at a glance** — Each row shows the features *and* the object.
-- **Adjust on the fly** — Sliders/toggles for brightness, channels, and masks.
-- **Filter and explore** — Subset outliers, phenotypes, or QC flags and see
+- **Keep context at a glance** - Each row shows the features *and* the object.
+- **Filter and explore** - Subset outliers, phenotypes, or QC flags and see
   what they look like immediately.
-- **Stay in your workflow** — It behaves like a DataFrame; your plotting,
+- **Stay in your workflow** - It behaves like a DataFrame; your plotting,
   modeling, and exports still work.
-- **Built-in QC loop** — Tight integration with **coSMicQC** returns
-  CytoDataFrames so you can act on QC signals with visuals.
-
----
+- **Fantastic for integrations** - Tight integration with packages such as **coSMicQC** returns CytoDataFrames so you can act on QC signals with visuals.
 
 ## A 60-second install & hello world
 
@@ -80,7 +71,7 @@ cdf = CytoDataFrame(
 cdf  # in Jupyter, shows an interactive table with thumbnails + widgets
 ```
 
----
+
 
 ## How it works (under the hood)
 
@@ -93,11 +84,11 @@ plus small stateful widgets to tune image display._
 - Lightweight UI built with **ipywidgets**; no external viewer dependency.
 - Designed to **preserve state** while slicing/filtering in notebook sessions.
 
----
+
 
 ## Explore faster with visual context
 
-_Outlier selection reveals unusual morphology immediately—no context switch \
+_Outlier selection reveals unusual morphology immediately-no context switch \
 needed._
 
 - **Outlier triage:** Sort by a feature or UMAP distance, then eyeball what the
@@ -105,8 +96,6 @@ needed._
 - **Phenotype review:** Filter to a class label and verify visual coherence.
 - **Mask check:** Toggle masks to catch segmentation leaks or missed objects.
 - **Data cleaning:** Spot NaNs, saturations, and channel mis-orders by sight.
-
----
 
 ## Quality control with coSMicQC
 
@@ -132,19 +121,15 @@ Benefits:
 - Rapid **feedback loop** for pipeline tuning.
 - Easier **communication** across wet-lab and analysis teammates.
 
----
-
 ## Plays nicely with the stack you already use
 
 _Use your existing plotting and modeling code; CytoDataFrame stays \
 DataFrame-compatible._
 
-- **Plotting:** `matplotlib`, `plotly`, `hvplot`—all fine.
+- **Plotting:** `matplotlib`, `plotly`, `hvplot`-all fine.
 - **Compute:** `numpy`, `scikit-learn`, `polars`/`duckdb` bridges via exports.
 - **Storage:** Start from CSV/Parquet, export cleaned subsets for sharing.
 - **Reproducibility:** Works in notebooks, scripts, and CI notebooks runners.
-
----
 
 ## Case study (toy)
 
@@ -156,8 +141,6 @@ over-segmentation pattern._
 3. Toggle masks → discover over-segmentation around bright nuclei.  
 4. Adjust thresholding parameters; rerun → cleaner phenotype clusters.
 
----
-
 ## Roadmap
 
 _Upcoming: multi-channel presets, napari handoff, thumbnail caching, and \
@@ -168,17 +151,13 @@ richer notebook exports._
 - **Thumbnail caching** for massive tables.
 - **Rich exports** (HTML bundles) to share interactive snapshots.
 
----
-
 ## Get involved
 
 _Open source and welcoming contributions._
 
 - **Repo:** https://github.com/cytomining/CytoDataFrame  
 - **Issues & ideas:** Bug reports, feature requests, and UX feedback welcome.
-- **Use cases:** Share notebooks—we’ll collect examples in the docs.
-
----
+- **Use cases:** Share notebooks-we’ll collect examples in the docs.
 
 ## Acknowledgements
 

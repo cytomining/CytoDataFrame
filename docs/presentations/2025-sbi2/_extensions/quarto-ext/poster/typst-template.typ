@@ -12,9 +12,9 @@
   footer_color: "Hex Color Code",
   keywords: (),
   num_columns: "4",
-  univ_logo_scale: "185",
-  univ_logo_column_size: "13",
-  title_column_size: "22",
+  univ_logo_scale: "160",
+  univ_logo_column_size: "10",
+  title_column_size: "30",
   title_font_size: "48",
   authors_font_size: "36",
   footer_url_font_size: "40",
@@ -22,7 +22,7 @@
   body
 ) = {
   // initialize template display formatting
-  set text(font: "Lato", size: 26pt)
+  set text(font: "Lato", size: 30pt)
   let sizes = size.split("x")
   let width = int(sizes.at(0)) * 1in
   let height = int(sizes.at(1)) * 1in
@@ -95,7 +95,7 @@
     ] else if it.level == 1 [
       #v(10pt, weak: true)
       #set align(left)
-      #set text({ 40pt }, weight: 600, font: "Vollkorn", fill: rgb("#246876"))
+      #set text({ 40pt }, weight: 600, font: "Vollkorn", fill: rgb("#73213b"))
       #v(50pt, weak: true)
       #if it.numbering != none {
         numbering("I.", deepest)
@@ -108,7 +108,7 @@
 
     // all other headers
     ] else [
-      #set text({ 36pt }, weight: 600, font: "Vollkorn", fill: rgb("#1e4b5c"), style: "italic")
+      #set text({ 36pt }, weight: 600, font: "Vollkorn", fill: rgb("#af4e6d"), style: "italic")
       #if it.level == 2 {
         numbering("❀  a)", deepest)
         [ ]
@@ -127,18 +127,21 @@
       column-gutter: 5pt,
       row-gutter: 30pt,
       // main title
-      image("./images/title-text.png", width: 65%),
+      text(font: "Vollkorn", weight: 500, size: 55pt)[
+        Exploring single-cell images and profiles together with
+        #text(fill: rgb("#BF0A30"), weight: 800)[CytoDataFrame]
+      ],
       grid.cell(
-        pad(top: 20pt,
+        pad(top: 0pt,
           image(univ_logo, width: univ_logo_scale),
         ),
         rowspan: 3,
         align: left,
       ),
       // author display
-      text(size: 28pt, authors),
+      pad(top: 5pt, text(size: 38pt, authors)),
       // department and notes display
-      text(size: 25pt, emph(departments)),
+      pad(top: 5pt, text(size: 30pt, emph(departments)))
     )
   )
 

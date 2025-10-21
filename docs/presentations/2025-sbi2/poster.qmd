@@ -19,7 +19,7 @@ output-file: "cytodataframe-2025-poster.pdf"
 
 High-content screens produce **millions of rows of features** and **many
 images**.
-Jumping between a DataFrame and an image viewer slows exploration and hides issues like segmentation errors or odd phenotypes.
+Jumping between a DataFrame and an image viewer slows exploration and hides issues like segmentation or image errors.
 **CytoDataFrame** puts an **image thumbnail** right next to the row's features so you can **see** how features relate to images.
 
 ## CytoDataFrame for integrated analysis
@@ -140,21 +140,24 @@ CytoDataFrame(
 import cosmicqc
 
 # find and label outliers for single-cell data
-# and return a cytodataframe for use.
-cosmicqc.analyze.label_outliers(
-  df=CytoDataFrame(
+find_outliers(
+    df=CytoDataFrame(
       data="single-cell-profiles.parquet,
       data_context_dir="images/orig",
       data_outline_context_dir=f"images/outlines",
+      display_options={"center_dot": False,
+"outline_color": (180, 30, 180), "brightness": 20,
+    },
   ),
-  include_threshold_scores=True,
+    metadata_columns=metadata_columns,
+    feature_thresholds={
+"Nuclei_Intensity_MassDisplacement_CorrDNA": 0.05,
+"Nuclei_Intensity_IntegratedIntensity_CorrDNA": 1.5,
+    },
 )[[
-        "Metadata_ImageNumber",
-        "Metadata_Cells_Number_Object_Number",
-        "cqc.large_nuclei.is_outlier",
-        "Image_FileName_GFP",
-        "Image_FileName_RFP",
-        "Image_FileName_DAPI",
+"Nuclei_Intensity_MassDisplacement_CorrDNA",
+"Nuclei_Intensity_IntegratedIntensity_CorrDNA",
+"Image_FileName_OrigDNA",
   ]]
 ```
 

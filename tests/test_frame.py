@@ -429,12 +429,16 @@ def test_example_notebook_execution():
     Executes the example notebook to ensure it runs.
     """
 
-    with open("docs/src/examples/cytodataframe_at_a_glance.ipynb") as f:
+    with open(
+        (notebook_path := "docs/src/examples/cytodataframe_at_a_glance.ipynb")
+    ) as f:
         nb = nbformat.read(f, as_version=4)
 
     ep = ExecutePreprocessor(timeout=300, kernel_name="python3")
 
     try:
-        ep.preprocess(nb, {"metadata": {"path": "."}})
+        ep.preprocess(
+            nb, {"metadata": {"path": str(pathlib.Path(notebook_path).parent)}}
+        )
     except CellExecutionError as e:
         pytest.fail(f"Notebook execution failed: {e}")

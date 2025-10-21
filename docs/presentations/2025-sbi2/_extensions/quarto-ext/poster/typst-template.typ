@@ -14,7 +14,7 @@
   num_columns: "4",
   univ_logo_scale: "160",
   univ_logo_column_size: "10",
-  title_column_size: "30",
+  title_column_size: "33",
   title_font_size: "48",
   authors_font_size: "36",
   footer_url_font_size: "40",
@@ -119,29 +119,53 @@
 }
 
   // header grid
-  align(left,
-    grid(
-      // rows and cols in the header
-      rows: (auto, auto),
-      columns: (title_column_size, univ_logo_column_size),
-      column-gutter: 5pt,
-      row-gutter: 30pt,
-      // main title
-      text(font: "Vollkorn", weight: 500, size: 55pt)[
-        Exploring single-cell images and profiles together with
-        #text(fill: rgb("#BF0A30"), weight: 800)[CytoDataFrame]
-      ],
-      grid.cell(
-        pad(top: 0pt,
-          image(univ_logo, width: univ_logo_scale),
-        ),
-        rowspan: 3,
-        align: left,
+align(left,
+  grid(
+    // add one more column at the start for the left-side image
+    rows: (auto, auto),
+    columns: (140pt, title_column_size, univ_logo_column_size),
+    column-gutter: 5pt,
+    row-gutter: 30pt,
+
+    // left-side image cell
+    grid.cell(
+      pad(top: 20pt,
+        image("images/cdf_icon.svg", width: 120pt),
       ),
-      // author display
-      pad(top: 5pt, text(size: 38pt, authors)),
-      // department and notes display
-      pad(top: 5pt, text(size: 30pt, emph(departments)))
+      rowspan: 3,
+      align: left,
+    ),
+
+    // main title
+    text(font: "Vollkorn", weight: 500, size: 55pt)[
+      Exploring single-cell 
+      #text(weight: 800, style: "italic")[images and profiles] together with~~
+      #text(baseline: 0pt)[
+      #box(
+        stroke: (paint: rgb("#BF0A30"), thickness: 3pt),
+        outset: 26pt,
+        radius: 4pt,
+      box(
+        stroke: (paint: rgb("#BF0A30"), thickness: 3pt),
+        outset: 17pt,
+        radius: 4pt,
+        text(fill: rgb("#BF0A30"), weight: 800)[CytoDataFrame]))]
+    ],
+
+    // university logo on the far right
+    grid.cell(
+      pad(top: 0pt,
+        image(univ_logo, width: univ_logo_scale),
+      ),
+      rowspan: 3,
+      align: right,
+    ),
+
+    // author display
+    pad(top: 5pt, text(size: 38pt, authors)),
+
+    // department and notes display
+    pad(top: 5pt, text(size: 30pt, emph(departments)))
     )
   )
 

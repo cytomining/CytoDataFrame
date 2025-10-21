@@ -110,7 +110,7 @@
     ] else [
       #set text({ 36pt }, weight: 600, font: "Vollkorn", fill: rgb("#af4e6d"), style: "italic")
       #if it.level == 2 {
-        numbering("❀  a)", deepest)
+        numbering("⧈  a)", deepest)
         [ ]
       }
       #it.body

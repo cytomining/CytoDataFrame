@@ -6,10 +6,10 @@ format:
     poster-authors: "Dave Bunten¹, Jenna Tomkinson¹, Gregory P. Way¹"
     departments: "¹Department of Biomedical Informatics, University of Colorado Anschutz Medical Campus"
     institution-logo: "./images/header-combined-images.png"
-    footer-text: "github.com/cytomining/CytoDataFrame"
+    footer-text: "A Cytomining Ecosystem project (https://github.com/cytomining)"
     footer-url: "CytoDataFrame"
     footer-emails: "https://github.com/cytomining/CytoDataFrame"
-    footer-color: "7CC4FF"
+    footer-color: "ffc9da"
 output-file: "cytodataframe-2025-poster.pdf"
 ---
 
@@ -18,18 +18,16 @@ output-file: "cytodataframe-2025-poster.pdf"
 ![_Feature tables and images often live in separate tools, making it hard to build intuition about single cells. CytoDataFrame keeps them together in one interactive table inside your notebook._](images/wall_between_images_and_profiles.png){width=100% fig-align="center"}
 
 High-content screens produce **millions of rows of features** and **many
-images**. Jumping between a DataFrame and an image viewer slows exploration and
-hides issues like segmentation errors or odd phenotypes. **CytoDataFrame**
-puts a **thumbnail (or mask)** right next to the row’s features so you can
-**see** what the numbers mean.
+images**.
+Jumping between a DataFrame and an image viewer slows exploration and hides issues like segmentation errors or odd phenotypes.
+**CytoDataFrame** puts an **image thumbnail** right next to the row's features so you can **see** how features relate to images.
 
 ## CytoDataFrame for integrated analysis
 
 ![_Images and profile data may be mixed using Pandas idioms through Jupyter interfaces to create a unified experience for bioimage analysts and data scientists._](images/cytodataframe_equation.png){width=100% fig-align="center"}
 
-**CytoDataFrame** is a small package built on top of `pandas.DataFrame` that
-embeds **inline images** (cells, nuclei, or other compartments) alongside
-per-object features for **Jupyter** workflows.
+**CytoDataFrame** is a small package built on top of `pandas.DataFrame` that embeds **inline images** (cells, nuclei, or other compartments) alongside per-object features within **Jupyter** notebook interfaces.
+Using CytoDataFrame enables you to:
 
 - **Keep context at a glance** - Each row shows the features *and* the object.
 - **Filter and explore** - Subset outliers, phenotypes, or QC flags and see
@@ -38,130 +36,136 @@ per-object features for **Jupyter** workflows.
   modeling, and exports still work.
 - **Fantastic for integrations** - Tight integration with packages such as **coSMicQC** returns CytoDataFrames so you can act on QC signals with visuals.
 
-## A 60-second install & hello world
-
-_Load features, point to images, and get an interactive table. No new \
-viewer required._
+## Using CytoDataFrame in Python
 
 ### Install
 
 ```bash
+# install CytoDataFrame from PyPI
 pip install cytodataframe
-# (Optional) for QC workflows
-pip install cosmicqc
 ```
 
-### Minimal example
+### View images with your profiles
 
 ```python
-import pandas as pd
 from cytodataframe import CytoDataFrame
 
-# features_df must include a column with image paths or image bytes
-features_df = pd.read_parquet("profiles.parquet")  # rows = single cells
-# e.g., columns: ["CellID", "AreaShape_Area", "Intensity_Mean", "image_path"]
-
-cdf = CytoDataFrame(
-    features_df,
-    image_col="image_path",        # path/URI to object crops or full frames
-    mask_col="mask_path",          # optional: per-row binary mask
-    channel_map={"gray": 0},       # optional: simple channel mapping
-)
-
-cdf  # in Jupyter, shows an interactive table with thumbnails + widgets
+# Load features and images together.
+CytoDataFrame(
+    data="BR00117006.parquet",
+    data_context_dir="images/orig",
+)[[
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+  ]]
 ```
 
+![](images/cdf_with_images_default.png)
 
-
-## How it works (under the hood)
-
-_A thin layer over Pandas with a custom HTML representation for Jupyter, \
-plus small stateful widgets to tune image display._
-
-- **Subclass of `pandas.DataFrame`** with a custom `_repr_html_()` to render
-  *images + controls* inline.
-- Image sources can be **file paths, URIs, or bytes**; masks are optional.
-- Lightweight UI built with **ipywidgets**; no external viewer dependency.
-- Designed to **preserve state** while slicing/filtering in notebook sessions.
-
-
-
-## Explore faster with visual context
-
-_Outlier selection reveals unusual morphology immediately-no context switch \
-needed._
-
-- **Outlier triage:** Sort by a feature or UMAP distance, then eyeball what the
-  extremes actually look like.
-- **Phenotype review:** Filter to a class label and verify visual coherence.
-- **Mask check:** Toggle masks to catch segmentation leaks or missed objects.
-- **Data cleaning:** Spot NaNs, saturations, and channel mis-orders by sight.
-
-## Quality control with coSMicQC
-
-_coSMicQC functions can return CytoDataFrames, letting you pair QC flags \
-with images to make immediate, visual decisions._
+### Show segmented objects with profiles
 
 ```python
-from cosmicqc import assess_segmentation
-
-qc = assess_segmentation(
-    image_paths=features_df["image_path"],
-    mask_paths=features_df["mask_path"],
-    return_cdf=True,              # ← returns a CytoDataFrame
-)
-
-# Filter to likely-problematic rows and inspect visually
-qc_bad = qc[qc["qc_flag"] == "suspect"]
-qc_bad
+# load outlines to show segmented images
+CytoDataFrame(
+    data="BR00117006.parquet",
+    data_context_dir="images/orig",
+    data_outline_context_dir=f"images/outlines",
+)[[
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+  ]]
 ```
 
-Benefits:
-- **See the failure** behind every QC flag.
-- Rapid **feedback loop** for pipeline tuning.
-- Easier **communication** across wet-lab and analysis teammates.
+![](images/cdf_with_images_outlines.png)
 
-## Plays nicely with the stack you already use
+### Change display configuration for images
 
-_Use your existing plotting and modeling code; CytoDataFrame stays \
-DataFrame-compatible._
+```python
+# change the color of your outlines (and more!)
+CytoDataFrame(
+    data="BR00117006.parquet",
+    data_context_dir="images/orig",
+    data_outline_context_dir=f"images/outlines",
+    display_options={
+      "outline_color": (200, 100, 255)
+    },
+)[[
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+  ]]
+```
 
-- **Plotting:** `matplotlib`, `plotly`, `hvplot`-all fine.
-- **Compute:** `numpy`, `scikit-learn`, `polars`/`duckdb` bridges via exports.
-- **Storage:** Start from CSV/Parquet, export cleaned subsets for sharing.
-- **Reproducibility:** Works in notebooks, scripts, and CI notebooks runners.
+![](images/cdf_with_images_outlines_colored.png)
 
-## Case study (toy)
+### Add scale bars for objects
 
-_Filtering by intensity and inspecting masks reveals a subtle \
-over-segmentation pattern._
+```python
+# add scale bars using reproducible configuration
+CytoDataFrame(
+    data="BR00117006.parquet",
+    data_context_dir="images/orig",
+    data_outline_context_dir=f"images/outlines",
+    display_options={
+        "pixel_per_um": 0.1550,
+        "scale_bar": {"length_um": 100,
+            "location": "lower right",
+            "color": (255, 255, 255),
+            "thickness_px": 2, "margin_px": 5,},
+    },
+)[[
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+  ]]
+```
 
-1. Load single-cell profiles and masks into a CytoDataFrame.  
-2. Filter to high intensity + large area.  
-3. Toggle masks → discover over-segmentation around bright nuclei.  
-4. Adjust thresholding parameters; rerun → cleaner phenotype clusters.
+![](images/cdf_with_images_outlines_scaled.png)
 
-## Roadmap
+## coSMicQC leverages CytoDataFrames
 
-_Upcoming: multi-channel presets, napari handoff, thumbnail caching, and \
-richer notebook exports._
+![](images/cosmicqc_biorxiv_preprint_and_integration.png)
 
-- **Multi-channel presets** and per-row channel metadata.
-- **Napari handoff** for deep dives on selected rows.
-- **Thumbnail caching** for massive tables.
-- **Rich exports** (HTML bundles) to share interactive snapshots.
+```python
+import cosmicqc
 
-## Get involved
+# find and label outliers for single-cell data
+# and return a cytodataframe for use.
+cosmicqc.analyze.label_outliers(
+  df=CytoDataFrame(
+      data="single-cell-profiles.parquet,
+      data_context_dir="images/orig",
+      data_outline_context_dir=f"images/outlines",
+  ),
+  include_threshold_scores=True,
+)[[
+        "Metadata_ImageNumber",
+        "Metadata_Cells_Number_Object_Number",
+        "cqc.large_nuclei.is_outlier",
+        "Image_FileName_GFP",
+        "Image_FileName_RFP",
+        "Image_FileName_DAPI",
+  ]]
+```
 
-_Open source and welcoming contributions._
+![](images/cdf_cosmicqc_integration_visualized.png)
 
-- **Repo:** https://github.com/cytomining/CytoDataFrame  
-- **Issues & ideas:** Bug reports, feature requests, and UX feedback welcome.
-- **Use cases:** Share notebooks-we’ll collect examples in the docs.
+_coSMicQC functions can return CytoDataFrames, letting you pair quality control flags with images to make immediate, visual decisions and improve your profiling outcomes._
 
 ## Acknowledgements
 
-We thank contributors and collaborators in the **Cytomining** community and the
-**Department of Biomedical Informatics** (CU Anschutz). We also acknowledge
-the coSMicQC project for aligned APIs and interop patterns that enable
-image-aware QC loops inside dataframes.
+We thank those who have inspired, contributed, or helped support CytoDataFrame and the Cytomining Ecosystem:
+
+- Open source science from the teams behind [__CellProfiler__](https://github.com/CellProfiler/CellProfiler)
+- Members of the [__Way Lab__](https://www.waysciencelab.com/) at the University of Colorado Anschutz Medical Campus
+- [__Department of Biomedical Informatics__](https://medschool.cuanschutz.edu/dbmi) within the School of Medicine at the University of Colorado Anschutz Medical Campus

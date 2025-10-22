@@ -123,14 +123,14 @@ align(left,
   grid(
     // add one more column at the start for the left-side image
     rows: (auto, auto),
-    columns: (140pt, title_column_size, univ_logo_column_size),
+    columns: (200pt, title_column_size, univ_logo_column_size),
     column-gutter: 5pt,
     row-gutter: 30pt,
 
     // left-side image cell
     grid.cell(
-      pad(top: 20pt,
-        image("images/cdf_icon.svg", width: 120pt),
+      pad(top: -18pt,
+        image("images/cdf_icon.svg", width: 190pt),
       ),
       rowspan: 3,
       align: left,

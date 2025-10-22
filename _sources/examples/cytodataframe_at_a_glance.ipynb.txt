@@ -49,14 +49,14 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "CPU times: user 941 ms, sys: 713 ms, total: 1.65 s\n",
-      "Wall time: 525 ms\n"
+      "CPU times: user 935 ms, sys: 733 ms, total: 1.67 s\n",
+      "Wall time: 510 ms\n"
      ]
     },
     {
      "data": {
       "application/vnd.jupyter.widget-view+json": {
-       "model_id": "2b016f7850e74f50a576f54ccd297830",
+       "model_id": "110636c228ba410fb833edf160a6194c",
        "version_major": 2,
        "version_minor": 0
       },
@@ -172,17 +172,9 @@
    },
    "outputs": [
     {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "CPU times: user 944 ms, sys: 723 ms, total: 1.67 s\n",
-      "Wall time: 505 ms\n"
-     ]
-    },
-    {
      "data": {
       "application/vnd.jupyter.widget-view+json": {
-       "model_id": "6add24880e464fd799e123d3524df407",
+       "model_id": "6d196115064b40abad355effaea8d342",
        "version_major": 2,
        "version_minor": 0
       },
@@ -272,7 +264,6 @@
     }
    ],
    "source": [
-    "%%time\n",
     "# view JUMP plate BR00117006 with images and overlaid outlines for segmentation\n",
     "CytoDataFrame(\n",
     "    data=f\"{jump_data_path}/BR00117006_shrunken.parquet\",\n",
@@ -299,14 +290,14 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "CPU times: user 916 ms, sys: 696 ms, total: 1.61 s\n",
-      "Wall time: 491 ms\n"
+      "CPU times: user 949 ms, sys: 726 ms, total: 1.68 s\n",
+      "Wall time: 520 ms\n"
      ]
     },
     {
      "data": {
       "application/vnd.jupyter.widget-view+json": {
-       "model_id": "9cc9cdc816c248ef9674bf17ecbf425f",
+       "model_id": "a78367d5dfa94126b441bfa203e0b837",
        "version_major": 2,
        "version_minor": 0
       },
@@ -425,14 +416,14 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "CPU times: user 892 ms, sys: 648 ms, total: 1.54 s\n",
-      "Wall time: 489 ms\n"
+      "CPU times: user 941 ms, sys: 734 ms, total: 1.68 s\n",
+      "Wall time: 492 ms\n"
      ]
     },
     {
      "data": {
       "application/vnd.jupyter.widget-view+json": {
-       "model_id": "68c66e5966784cf986fae4d4115c2541",
+       "model_id": "c43c76f657154641a05a709629f8b723",
        "version_major": 2,
        "version_minor": 0
       },
@@ -560,14 +551,14 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "CPU times: user 951 ms, sys: 706 ms, total: 1.66 s\n",
-      "Wall time: 515 ms\n"
+      "CPU times: user 928 ms, sys: 741 ms, total: 1.67 s\n",
+      "Wall time: 471 ms\n"
      ]
     },
     {
      "data": {
       "application/vnd.jupyter.widget-view+json": {
-       "model_id": "0ad5469211d34833a1e9423d55fb0d16",
+       "model_id": "61562e4abc2d470dba968ded8f21de7d",
        "version_major": 2,
        "version_minor": 0
       },
@@ -684,14 +675,14 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "CPU times: user 938 ms, sys: 676 ms, total: 1.61 s\n",
-      "Wall time: 497 ms\n"
+      "CPU times: user 907 ms, sys: 701 ms, total: 1.61 s\n",
+      "Wall time: 472 ms\n"
      ]
     },
     {
      "data": {
       "application/vnd.jupyter.widget-view+json": {
-       "model_id": "7f888032d36647b8a4f3288feda73dcb",
+       "model_id": "dbabbdcdbe50454fa2bb27fb5ac113f3",
        "version_major": 2,
        "version_minor": 0
       },
@@ -810,14 +801,14 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "CPU times: user 905 ms, sys: 635 ms, total: 1.54 s\n",
-      "Wall time: 509 ms\n"
+      "CPU times: user 971 ms, sys: 739 ms, total: 1.71 s\n",
+      "Wall time: 519 ms\n"
      ]
     },
     {
      "data": {
       "application/vnd.jupyter.widget-view+json": {
-       "model_id": "79b365d8a5714d20af75dc1a3738a3b1",
+       "model_id": "f82893522d6748f68f6f5d2087c586ea",
        "version_major": 2,
        "version_minor": 0
       },
@@ -935,14 +926,14 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "CPU times: user 889 ms, sys: 650 ms, total: 1.54 s\n",
-      "Wall time: 485 ms\n"
+      "CPU times: user 924 ms, sys: 724 ms, total: 1.65 s\n",
+      "Wall time: 478 ms\n"
      ]
     },
     {
      "data": {
       "application/vnd.jupyter.widget-view+json": {
-       "model_id": "0b9c28b02db44ce187f6830422c5cda5",
+       "model_id": "c37afa47f4ba498091142382dff9fe02",
        "version_major": 2,
        "version_minor": 0
       },
@@ -1077,14 +1068,14 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "CPU times: user 890 ms, sys: 653 ms, total: 1.54 s\n",
-      "Wall time: 491 ms\n"
+      "CPU times: user 899 ms, sys: 618 ms, total: 1.52 s\n",
+      "Wall time: 489 ms\n"
      ]
     },
     {
      "data": {
       "application/vnd.jupyter.widget-view+json": {
-       "model_id": "d957d909601243d5932444525ed46482",
+       "model_id": "54a9a7ca0a9e4f1194402c4f1ce6dfc1",
        "version_major": 2,
        "version_minor": 0
       },
@@ -1226,14 +1217,14 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "CPU times: user 293 ms, sys: 198 ms, total: 492 ms\n",
-      "Wall time: 173 ms\n"
+      "CPU times: user 293 ms, sys: 212 ms, total: 505 ms\n",
+      "Wall time: 170 ms\n"
      ]
     },
     {
      "data": {
       "application/vnd.jupyter.widget-view+json": {
-       "model_id": "fd1e6fc031f340b8ad18b159877c3c04",
+       "model_id": "84d334516ef84092b40aa365f8007096",
        "version_major": 2,
        "version_minor": 0
       },
@@ -1349,14 +1340,14 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "CPU times: user 273 ms, sys: 208 ms, total: 481 ms\n",
-      "Wall time: 149 ms\n"
+      "CPU times: user 259 ms, sys: 192 ms, total: 452 ms\n",
+      "Wall time: 142 ms\n"
      ]
     },
     {
      "data": {
       "application/vnd.jupyter.widget-view+json": {
-       "model_id": "afd7879a0aa74dccabb9b62d27bec28a",
+       "model_id": "e72299034c494af4b0a366ba6d3ffbd8",
        "version_major": 2,
        "version_minor": 0
       },
@@ -1473,14 +1464,14 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "CPU times: user 287 ms, sys: 186 ms, total: 473 ms\n",
-      "Wall time: 174 ms\n"
+      "CPU times: user 287 ms, sys: 209 ms, total: 496 ms\n",
+      "Wall time: 165 ms\n"
      ]
     },
     {
      "data": {
       "application/vnd.jupyter.widget-view+json": {
-       "model_id": "fd8e2909d785471aab81cdb5aed68102",
+       "model_id": "d2f37bbd63f24821a1a2cae91317b3f1",
        "version_major": 2,
        "version_minor": 0
       },
@@ -1608,14 +1599,14 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "CPU times: user 81.2 ms, sys: 15 ms, total: 96.2 ms\n",
-      "Wall time: 67.1 ms\n"
+      "CPU times: user 94.2 ms, sys: 38.2 ms, total: 132 ms\n",
+      "Wall time: 71.8 ms\n"
      ]
     },
     {
      "data": {
       "application/vnd.jupyter.widget-view+json": {
-       "model_id": "1752ba58b84b4a33b87072ea7602a3fd",
+       "model_id": "de95fb06e84a49c7b7a18054166500b1",
        "version_major": 2,
        "version_minor": 0
       },
@@ -1732,14 +1723,14 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "CPU times: user 406 ms, sys: 292 ms, total: 698 ms\n",
-      "Wall time: 225 ms\n"
+      "CPU times: user 393 ms, sys: 300 ms, total: 693 ms\n",
+      "Wall time: 210 ms\n"
      ]
     },
     {
      "data": {
       "application/vnd.jupyter.widget-view+json": {
-       "model_id": "ba7ca0341d964e1da003b00f05ae59e1",
+       "model_id": "194dd73144cf4b37b69eb72b9a40440f",
        "version_major": 2,
        "version_minor": 0
       },
@@ -1870,8 +1861,8 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "CPU times: user 1 µs, sys: 1 µs, total: 2 µs\n",
-      "Wall time: 1.91 µs\n"
+      "CPU times: user 1e+03 ns, sys: 0 ns, total: 1e+03 ns\n",
+      "Wall time: 1.91 μs\n"
      ]
     },
     {

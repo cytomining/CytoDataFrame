@@ -1239,7 +1239,7 @@ class CytoDataFrame(pd.DataFrame):
             return start_display + end_display
 
     @staticmethod
-    def _normalize_labels(labels):
+    def _normalize_labels(labels: pd.Index) -> Tuple[pd.Index, Dict[str, Any]]:
         """
         Return (labels_as_str: pd.Index, backmap: dict[str, Any])
         """
@@ -1369,7 +1369,8 @@ class CytoDataFrame(pd.DataFrame):
                 or {}
             )
 
-            # Remap any returned path-column names back to the original (possibly non-string) labels
+            # Remap any returned path-column names back to the
+            # original (possibly non-string) labels
             image_path_cols = {}
             for img_col in image_cols:
                 key = str(img_col)
@@ -1440,9 +1441,9 @@ class CytoDataFrame(pd.DataFrame):
                             compartment_center_xy=(
                                 (
                                     # rows below are specified using the column name to
-                                    # determine which part of the bounding box the columns
-                                    # relate to (the list of column names could be in
-                                    # various order).
+                                    # determine which part of the bounding box the
+                                    # columns relate to (the list of column names
+                                    # could be in various order).
                                     row[
                                         next(
                                             col

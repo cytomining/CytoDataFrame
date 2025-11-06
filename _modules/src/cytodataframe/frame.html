@@ -1680,6 +1680,18 @@
             <span class="k">return</span> <span class="n">start_display</span> <span class="o">+</span> <span class="n">end_display</span></div>
 
 
+<div class="viewcode-block" id="CytoDataFrame._normalize_labels">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._normalize_labels">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_normalize_labels</span><span class="p">(</span><span class="n">labels</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return (labels_as_str: pd.Index, backmap: dict[str, Any])</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">labels_as_str</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">labels</span><span class="p">))</span>
+        <span class="n">backmap</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">labels_as_str</span><span class="p">,</span> <span class="n">labels</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">labels_as_str</span><span class="p">,</span> <span class="n">backmap</span></div>
+
+
 <div class="viewcode-block" id="CytoDataFrame._generate_jupyter_dataframe_html">
 <a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._generate_jupyter_dataframe_html">[docs]</a>
     <span class="k">def</span> <span class="nf">_generate_jupyter_dataframe_html</span><span class="p">(</span>  <span class="c1"># noqa: C901, PLR0912, PLR0915</span>
@@ -1790,66 +1802,56 @@
                     <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
                 <span class="p">)</span>
 
-                <span class="c1"># determine if we have image_cols to display</span>
-            <span class="k">if</span> <span class="n">image_cols</span> <span class="o">:=</span> <span class="n">CytoDataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">find_image_columns</span><span class="p">():</span>
-                <span class="c1"># attempt to find the image path columns</span>
-                <span class="n">image_path_cols</span> <span class="o">=</span> <span class="n">CytoDataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">find_image_path_columns</span><span class="p">(</span>
-                    <span class="n">image_cols</span><span class="o">=</span><span class="n">image_cols</span><span class="p">,</span> <span class="n">all_cols</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span>
+            <span class="c1"># determine if we have image_cols to display</span>
+            <span class="n">image_cols</span> <span class="o">=</span> <span class="n">CytoDataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">find_image_columns</span><span class="p">()</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="c1"># normalize both the set of image cols and the pool of all cols to strings</span>
+            <span class="n">all_cols_str</span><span class="p">,</span> <span class="n">all_cols_back</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_labels</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span>
+            <span class="n">image_cols_str</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">image_cols</span><span class="p">]</span>
+
+            <span class="c1"># If your helper expects strings, pass strings; then map the result back</span>
+            <span class="n">image_path_cols_str</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">CytoDataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">find_image_path_columns</span><span class="p">(</span>
+                    <span class="n">image_cols</span><span class="o">=</span><span class="n">image_cols_str</span><span class="p">,</span> <span class="n">all_cols</span><span class="o">=</span><span class="n">all_cols_str</span>
                 <span class="p">)</span>
+                <span class="ow">or</span> <span class="p">{}</span>
+            <span class="p">)</span>
+
+            <span class="c1"># Remap any returned path-column names back to the</span>
+            <span class="c1"># original (possibly non-string) labels</span>
+            <span class="n">image_path_cols</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">for</span> <span class="n">img_col</span> <span class="ow">in</span> <span class="n">image_cols</span><span class="p">:</span>
+                <span class="n">key</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">img_col</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">image_path_cols_str</span><span class="p">:</span>
+                    <span class="n">path_col_str</span> <span class="o">=</span> <span class="n">image_path_cols_str</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+                    <span class="c1"># path_col_str should be one of all_cols_str; map back to original</span>
+                    <span class="n">image_path_cols</span><span class="p">[</span><span class="n">img_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">all_cols_back</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                        <span class="nb">str</span><span class="p">(</span><span class="n">path_col_str</span><span class="p">),</span> <span class="n">path_col_str</span>
+                    <span class="p">)</span>
+
             <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Image columns found: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">image_cols</span><span class="p">)</span>
 
             <span class="c1"># gather indices which will be displayed based on pandas configuration</span>
             <span class="n">display_indices</span> <span class="o">=</span> <span class="n">CytoDataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">get_displayed_rows</span><span class="p">()</span>
 
             <span class="c1"># gather bounding box columns for use below</span>
-            <span class="n">bounding_box_cols</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_bounding_box&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-
-            <span class="c1"># gather compartment_xy columns for use below</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;compartment_center_xy&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">compartment_center_xy_cols</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span>
-                    <span class="s2">&quot;compartment_center_xy&quot;</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_bounding_box&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">bounding_box_cols</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span>
+                    <span class="s2">&quot;data_bounding_box&quot;</span>
                 <span class="p">]</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
 
-            <span class="k">for</span> <span class="n">image_col</span> <span class="ow">in</span> <span class="n">image_cols</span><span class="p">:</span>
-                <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">display_indices</span><span class="p">,</span> <span class="n">image_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">display_indices</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
-                    <span class="k">lambda</span> <span class="n">row</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_image_data_as_html_display</span><span class="p">(</span>
-                        <span class="n">data_value</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="n">image_col</span><span class="p">],</span>
-                        <span class="n">bounding_box</span><span class="o">=</span><span class="p">(</span>
-                            <span class="c1"># rows below are specified using the column name to</span>
-                            <span class="c1"># determine which part of the bounding box the columns</span>
-                            <span class="c1"># relate to (the list of column names could be in</span>
-                            <span class="c1"># various order).</span>
-                            <span class="n">row</span><span class="p">[</span>
-                                <span class="nb">next</span><span class="p">(</span>
-                                    <span class="n">col</span>
-                                    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span>
-                                    <span class="k">if</span> <span class="s2">&quot;Minimum_X&quot;</span> <span class="ow">in</span> <span class="n">col</span>
-                                <span class="p">)</span>
-                            <span class="p">],</span>
-                            <span class="n">row</span><span class="p">[</span>
-                                <span class="nb">next</span><span class="p">(</span>
-                                    <span class="n">col</span>
-                                    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span>
-                                    <span class="k">if</span> <span class="s2">&quot;Minimum_Y&quot;</span> <span class="ow">in</span> <span class="n">col</span>
-                                <span class="p">)</span>
-                            <span class="p">],</span>
-                            <span class="n">row</span><span class="p">[</span>
-                                <span class="nb">next</span><span class="p">(</span>
-                                    <span class="n">col</span>
-                                    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span>
-                                    <span class="k">if</span> <span class="s2">&quot;Maximum_X&quot;</span> <span class="ow">in</span> <span class="n">col</span>
-                                <span class="p">)</span>
-                            <span class="p">],</span>
-                            <span class="n">row</span><span class="p">[</span>
-                                <span class="nb">next</span><span class="p">(</span>
-                                    <span class="n">col</span>
-                                    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span>
-                                    <span class="k">if</span> <span class="s2">&quot;Maximum_Y&quot;</span> <span class="ow">in</span> <span class="n">col</span>
-                                <span class="p">)</span>
-                            <span class="p">],</span>
-                        <span class="p">),</span>
-                        <span class="n">compartment_center_xy</span><span class="o">=</span><span class="p">(</span>
-                            <span class="p">(</span>
+                <span class="c1"># gather compartment_xy columns for use below</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;compartment_center_xy&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">compartment_center_xy_cols</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span>
+                        <span class="s2">&quot;compartment_center_xy&quot;</span>
+                    <span class="p">]</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+
+                <span class="k">for</span> <span class="n">image_col</span> <span class="ow">in</span> <span class="n">image_cols</span><span class="p">:</span>
+                    <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">display_indices</span><span class="p">,</span> <span class="n">image_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+                        <span class="n">display_indices</span>
+                    <span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+                        <span class="k">lambda</span> <span class="n">row</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_image_data_as_html_display</span><span class="p">(</span>
+                            <span class="n">data_value</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="n">image_col</span><span class="p">],</span>
+                            <span class="n">bounding_box</span><span class="o">=</span><span class="p">(</span>
                                 <span class="c1"># rows below are specified using the column name to</span>
                                 <span class="c1"># determine which part of the bounding box the columns</span>
                                 <span class="c1"># relate to (the list of column names could be in</span>
@@ -1857,30 +1859,66 @@
                                 <span class="n">row</span><span class="p">[</span>
                                     <span class="nb">next</span><span class="p">(</span>
                                         <span class="n">col</span>
-                                        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">compartment_center_xy_cols</span>
-                                        <span class="k">if</span> <span class="s2">&quot;X&quot;</span> <span class="ow">in</span> <span class="n">col</span>
+                                        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span>
+                                        <span class="k">if</span> <span class="s2">&quot;Minimum_X&quot;</span> <span class="ow">in</span> <span class="n">col</span>
                                     <span class="p">)</span>
                                 <span class="p">],</span>
                                 <span class="n">row</span><span class="p">[</span>
                                     <span class="nb">next</span><span class="p">(</span>
                                         <span class="n">col</span>
-                                        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">compartment_center_xy_cols</span>
-                                        <span class="k">if</span> <span class="s2">&quot;Y&quot;</span> <span class="ow">in</span> <span class="n">col</span>
+                                        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span>
+                                        <span class="k">if</span> <span class="s2">&quot;Minimum_Y&quot;</span> <span class="ow">in</span> <span class="n">col</span>
                                     <span class="p">)</span>
                                 <span class="p">],</span>
-                            <span class="p">)</span>
-                            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;compartment_center_xy&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                            <span class="k">else</span> <span class="kc">None</span>
+                                <span class="n">row</span><span class="p">[</span>
+                                    <span class="nb">next</span><span class="p">(</span>
+                                        <span class="n">col</span>
+                                        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span>
+                                        <span class="k">if</span> <span class="s2">&quot;Maximum_X&quot;</span> <span class="ow">in</span> <span class="n">col</span>
+                                    <span class="p">)</span>
+                                <span class="p">],</span>
+                                <span class="n">row</span><span class="p">[</span>
+                                    <span class="nb">next</span><span class="p">(</span>
+                                        <span class="n">col</span>
+                                        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span>
+                                        <span class="k">if</span> <span class="s2">&quot;Maximum_Y&quot;</span> <span class="ow">in</span> <span class="n">col</span>
+                                    <span class="p">)</span>
+                                <span class="p">],</span>
+                            <span class="p">),</span>
+                            <span class="n">compartment_center_xy</span><span class="o">=</span><span class="p">(</span>
+                                <span class="p">(</span>
+                                    <span class="c1"># rows below are specified using the column name to</span>
+                                    <span class="c1"># determine which part of the bounding box the</span>
+                                    <span class="c1"># columns relate to (the list of column names</span>
+                                    <span class="c1"># could be in various order).</span>
+                                    <span class="n">row</span><span class="p">[</span>
+                                        <span class="nb">next</span><span class="p">(</span>
+                                            <span class="n">col</span>
+                                            <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">compartment_center_xy_cols</span>
+                                            <span class="k">if</span> <span class="s2">&quot;X&quot;</span> <span class="ow">in</span> <span class="n">col</span>
+                                        <span class="p">)</span>
+                                    <span class="p">],</span>
+                                    <span class="n">row</span><span class="p">[</span>
+                                        <span class="nb">next</span><span class="p">(</span>
+                                            <span class="n">col</span>
+                                            <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">compartment_center_xy_cols</span>
+                                            <span class="k">if</span> <span class="s2">&quot;Y&quot;</span> <span class="ow">in</span> <span class="n">col</span>
+                                        <span class="p">)</span>
+                                    <span class="p">],</span>
+                                <span class="p">)</span>
+                                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;compartment_center_xy&quot;</span><span class="p">]</span>
+                                <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                                <span class="k">else</span> <span class="kc">None</span>
+                            <span class="p">),</span>
+                            <span class="c1"># set the image path based on the image_path cols.</span>
+                            <span class="n">image_path</span><span class="o">=</span><span class="p">(</span>
+                                <span class="n">row</span><span class="p">[</span><span class="n">image_path_cols</span><span class="p">[</span><span class="n">image_col</span><span class="p">]]</span>
+                                <span class="k">if</span> <span class="n">image_path_cols</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">image_path_cols</span> <span class="o">!=</span> <span class="p">{}</span>
+                                <span class="k">else</span> <span class="kc">None</span>
+                            <span class="p">),</span>
                         <span class="p">),</span>
-                        <span class="c1"># set the image path based on the image_path cols.</span>
-                        <span class="n">image_path</span><span class="o">=</span><span class="p">(</span>
-                            <span class="n">row</span><span class="p">[</span><span class="n">image_path_cols</span><span class="p">[</span><span class="n">image_col</span><span class="p">]]</span>
-                            <span class="k">if</span> <span class="n">image_path_cols</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">image_path_cols</span> <span class="o">!=</span> <span class="p">{}</span>
-                            <span class="k">else</span> <span class="kc">None</span>
-                        <span class="p">),</span>
-                    <span class="p">),</span>
-                    <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-                <span class="p">)</span>
+                        <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+                    <span class="p">)</span>
 
             <span class="k">if</span> <span class="n">bounding_box_externally_joined</span><span class="p">:</span>
                 <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span>

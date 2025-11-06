@@ -20,7 +20,7 @@ repos:
     hooks:
     -   id: poetry-check
 -   repo: https://github.com/tox-dev/pyproject-fmt
-    rev: "v2.11.0"
+    rev: "v2.11.1"
     hooks:
     -   id: pyproject-fmt
 -   repo: https://github.com/codespell-project/codespell
@@ -59,7 +59,7 @@ repos:
     -   id: ruff-format
     -   id: ruff-check
 -   repo: https://github.com/software-gardening/almanack
-    rev: v0.1.9
+    rev: v0.1.10
     hooks:
     -   id: almanack-check
 -   repo: https://gitlab.com/vojko.pribudic.foss/pre-commit-update

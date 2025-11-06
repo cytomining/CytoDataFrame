@@ -59,7 +59,7 @@ repos:
     -   id: ruff-format
     -   id: ruff-check
 -   repo: https://github.com/software-gardening/almanack
-    rev: v0.1.9
+    rev: v0.1.10
     hooks:
     -   id: almanack-check
 -   repo: https://gitlab.com/vojko.pribudic.foss/pre-commit-update

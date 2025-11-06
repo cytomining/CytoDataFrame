@@ -1238,6 +1238,15 @@ class CytoDataFrame(pd.DataFrame):
             logger.debug("Detected display rows: %s", start_display + end_display)
             return start_display + end_display
 
+    @staticmethod
+    def _normalize_labels(labels):
+        """
+        Return (labels_as_str: pd.Index, backmap: dict[str, Any])
+        """
+        labels_as_str = pd.Index(map(str, labels))
+        backmap = dict(zip(labels_as_str, labels))
+        return labels_as_str, backmap
+
     def _generate_jupyter_dataframe_html(  # noqa: C901, PLR0912, PLR0915
         self: CytoDataFrame_type,
     ) -> str:
@@ -1346,66 +1355,55 @@ class CytoDataFrame(pd.DataFrame):
                     else self.copy()
                 )
 
-                # determine if we have image_cols to display
-            if image_cols := CytoDataFrame(data).find_image_columns():
-                # attempt to find the image path columns
-                image_path_cols = CytoDataFrame(data).find_image_path_columns(
-                    image_cols=image_cols, all_cols=data.columns
+            # determine if we have image_cols to display
+            image_cols = CytoDataFrame(data).find_image_columns() or []
+            # normalize both the set of image cols and the pool of all cols to strings
+            all_cols_str, all_cols_back = self._normalize_labels(data.columns)
+            image_cols_str = [str(c) for c in image_cols]
+
+            # If your helper expects strings, pass strings; then map the result back
+            image_path_cols_str = (
+                CytoDataFrame(data).find_image_path_columns(
+                    image_cols=image_cols_str, all_cols=all_cols_str
                 )
+                or {}
+            )
+
+            # Remap any returned path-column names back to the original (possibly non-string) labels
+            image_path_cols = {}
+            for img_col in image_cols:
+                key = str(img_col)
+                if key in image_path_cols_str:
+                    path_col_str = image_path_cols_str[key]
+                    # path_col_str should be one of all_cols_str; map back to original
+                    image_path_cols[img_col] = all_cols_back.get(
+                        str(path_col_str), path_col_str
+                    )
+
             logger.debug("Image columns found: %s", image_cols)
 
             # gather indices which will be displayed based on pandas configuration
             display_indices = CytoDataFrame(data).get_displayed_rows()
 
             # gather bounding box columns for use below
-            bounding_box_cols = self._custom_attrs["data_bounding_box"].columns.tolist()
-
-            # gather compartment_xy columns for use below
-            if self._custom_attrs["compartment_center_xy"] is not None:
-                compartment_center_xy_cols = self._custom_attrs[
-                    "compartment_center_xy"
+            if self._custom_attrs["data_bounding_box"] is not None:
+                bounding_box_cols = self._custom_attrs[
+                    "data_bounding_box"
                 ].columns.tolist()
 
-            for image_col in image_cols:
-                data.loc[display_indices, image_col] = data.loc[display_indices].apply(
-                    lambda row: self.process_image_data_as_html_display(
-                        data_value=row[image_col],
-                        bounding_box=(
-                            # rows below are specified using the column name to
-                            # determine which part of the bounding box the columns
-                            # relate to (the list of column names could be in
-                            # various order).
-                            row[
-                                next(
-                                    col
-                                    for col in bounding_box_cols
-                                    if "Minimum_X" in col
-                                )
-                            ],
-                            row[
-                                next(
-                                    col
-                                    for col in bounding_box_cols
-                                    if "Minimum_Y" in col
-                                )
-                            ],
-                            row[
-                                next(
-                                    col
-                                    for col in bounding_box_cols
-                                    if "Maximum_X" in col
-                                )
-                            ],
-                            row[
-                                next(
-                                    col
-                                    for col in bounding_box_cols
-                                    if "Maximum_Y" in col
-                                )
-                            ],
-                        ),
-                        compartment_center_xy=(
-                            (
+                # gather compartment_xy columns for use below
+                if self._custom_attrs["compartment_center_xy"] is not None:
+                    compartment_center_xy_cols = self._custom_attrs[
+                        "compartment_center_xy"
+                    ].columns.tolist()
+
+                for image_col in image_cols:
+                    data.loc[display_indices, image_col] = data.loc[
+                        display_indices
+                    ].apply(
+                        lambda row: self.process_image_data_as_html_display(
+                            data_value=row[image_col],
+                            bounding_box=(
                                 # rows below are specified using the column name to
                                 # determine which part of the bounding box the columns
                                 # relate to (the list of column names could be in
@@ -1413,30 +1411,66 @@ class CytoDataFrame(pd.DataFrame):
                                 row[
                                     next(
                                         col
-                                        for col in compartment_center_xy_cols
-                                        if "X" in col
+                                        for col in bounding_box_cols
+                                        if "Minimum_X" in col
                                     )
                                 ],
                                 row[
                                     next(
                                         col
-                                        for col in compartment_center_xy_cols
-                                        if "Y" in col
+                                        for col in bounding_box_cols
+                                        if "Minimum_Y" in col
                                     )
                                 ],
-                            )
-                            if self._custom_attrs["compartment_center_xy"] is not None
-                            else None
+                                row[
+                                    next(
+                                        col
+                                        for col in bounding_box_cols
+                                        if "Maximum_X" in col
+                                    )
+                                ],
+                                row[
+                                    next(
+                                        col
+                                        for col in bounding_box_cols
+                                        if "Maximum_Y" in col
+                                    )
+                                ],
+                            ),
+                            compartment_center_xy=(
+                                (
+                                    # rows below are specified using the column name to
+                                    # determine which part of the bounding box the columns
+                                    # relate to (the list of column names could be in
+                                    # various order).
+                                    row[
+                                        next(
+                                            col
+                                            for col in compartment_center_xy_cols
+                                            if "X" in col
+                                        )
+                                    ],
+                                    row[
+                                        next(
+                                            col
+                                            for col in compartment_center_xy_cols
+                                            if "Y" in col
+                                        )
+                                    ],
+                                )
+                                if self._custom_attrs["compartment_center_xy"]
+                                is not None
+                                else None
+                            ),
+                            # set the image path based on the image_path cols.
+                            image_path=(
+                                row[image_path_cols[image_col]]
+                                if image_path_cols is not None and image_path_cols != {}
+                                else None
+                            ),
                         ),
-                        # set the image path based on the image_path cols.
-                        image_path=(
-                            row[image_path_cols[image_col]]
-                            if image_path_cols is not None and image_path_cols != {}
-                            else None
-                        ),
-                    ),
-                    axis=1,
-                )
+                        axis=1,
+                    )
 
             if bounding_box_externally_joined:
                 data = data.drop(

@@ -5,7 +5,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.18.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -52,6 +52,7 @@ frame = CytoDataFrame(
 ][:3]
 frame
 
+# %%time
 # view JUMP plate BR00117006 with images and overlaid outlines for segmentation
 CytoDataFrame(
     data=f"{jump_data_path}/BR00117006_shrunken.parquet",

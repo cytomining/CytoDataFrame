@@ -4,10 +4,12 @@ Tests cosmicqc image module
 
 import os
 import pathlib
+import warnings
 
 import imageio.v2 as imageio
 import numpy as np
 import pytest
+import skimage
 from PIL import Image
 from skimage.draw import disk
 
@@ -357,3 +359,75 @@ def test_add_image_scale_bar_lower_right_bbox_and_area(tmp_path: pathlib.Path):
     # optionally show (useful locally; safe-off in CI)
     if os.environ.get("SHOW_TEST_IMAGES") == "1":
         Image.fromarray(out).show()  # opens Preview/Photos/etc.
+
+
+def test_colorconv_control_may_emit_warning():
+    """
+    CONTROL: Try a few skimage color conversions on a bad array to see if any
+    emit the classic matmul divide-by-zero warning. If none do on this version
+    of skimage, skip the control.
+    """
+    bad = np.array([[0.0, np.inf], [np.nan, 1.0]], dtype=float)
+
+    funcs = [
+        lambda a: skimage.color.gray2rgb(a),
+        lambda a: skimage.color.rgb2lab(np.dstack([a, a, a])),
+        lambda a: skimage.color.lab2rgb(np.dstack([a * 100.0, a * 255.0, a * 255.0])),
+        lambda a: skimage.color.rgb2hsv(np.dstack([a, a, a])),
+    ]
+
+    saw_warning = False
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", category=RuntimeWarning)
+        for fn in funcs:
+            try:
+                _ = fn(bad)
+            except Exception:
+                # We only care about warnings, not exceptions
+                pass
+
+    for w in caught:
+        if issubclass(
+            w.category, RuntimeWarning
+        ) and "divide by zero encountered in matmul" in str(w.message):
+            saw_warning = True
+            break
+
+    if not saw_warning:
+        pytest.skip(
+            "No skimage colorconv matmul warning emitted in this environment; "
+            "control not applicable."
+        )
+
+
+def test_add_image_scale_bar_avoids_colorconv_warning_with_bad_values():
+    """add_image_scale_bar should not emit the colorconv matmul warning."""
+    H, W = 60, 50
+    img = np.zeros((H, W), dtype=float)
+    img[0, 0] = np.nan
+    img[0, 1] = np.inf
+    img[1, 0] = -np.inf
+    img[1, 1] = 2.0
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", category=RuntimeWarning)
+        out = add_image_scale_bar(
+            img,
+            um_per_pixel=0.5,
+            length_um=10.0,
+            thickness_px=3,
+            color=(255, 255, 255),
+            location="lower right",
+            margin_px=5,
+            label=False,  # ignored via **kwargs
+        )
+
+    assert not any(
+        (
+            issubclass(w.category, RuntimeWarning)
+            and "divide by zero encountered in matmul" in str(w.message)
+        )
+        for w in caught
+    ), "Should not trigger the skimage colorconv matmul warning."
+
+    assert out.ndim == 3 and out.shape == (H, W, 3) and out.dtype == np.uint8

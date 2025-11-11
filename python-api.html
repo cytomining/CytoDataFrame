@@ -816,7 +816,47 @@ or None if no relevant file is found.</p>
 <dl class="py function">
 <dt class="sig sig-object py" id="src.cytodataframe.image.add_image_scale_bar">
 <span class="sig-prename descclassname"><span class="pre">src.cytodataframe.image.</span></span><span class="sig-name descname"><span class="pre">add_image_scale_bar</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">img</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">um_per_pixel</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">length_um</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">thickness_px</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">4</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">color</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">(255,</span> <span class="pre">255,</span> <span class="pre">255)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">location</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'lower</span> <span class="pre">right'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">margin_px</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">_</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/image.html#add_image_scale_bar"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.image.add_image_scale_bar" title="Link to this definition">#</a></dt>
-<dd></dd></dl>
+<dd><p>Add a scale bar to the lower or upper corner of an image.</p>
+<p>The function overlays a solid rectangular scale bar onto a grayscale,
+RGB, or RGBA image.  The bar’s physical length in micrometers is
+converted to pixels using the provided microns-per-pixel value.
+Non-finite or out-of-range input values are sanitized before drawing.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>img</strong> (<em>np.ndarray</em>) – Input image, either 2-D grayscale or 3-D RGB/RGBA.</p></li>
+<li><p><strong>um_per_pixel</strong> (<em>float</em>) – Micrometers per pixel.  If None or ≤ 0, the image is returned
+unchanged.</p></li>
+<li><p><strong>length_um</strong> (<em>float</em><em>, </em><em>optional</em>) – Desired length of the scale bar in micrometers.  Defaults to
+10.0.</p></li>
+<li><p><strong>thickness_px</strong> (<em>int</em><em>, </em><em>optional</em>) – Thickness of the bar in pixels.  Defaults to 4.</p></li>
+<li><p><strong>color</strong> (<em>Tuple</em><em>[</em><em>int</em><em>, </em><em>int</em><em>, </em><em>int</em><em>]</em><em>, </em><em>optional</em>) – RGB color of the bar.  Defaults to white <code class="docutils literal notranslate"><span class="pre">(255,</span> <span class="pre">255,</span> <span class="pre">255)</span></code>.</p></li>
+<li><p><strong>location</strong> (<em>str</em><em>, </em><em>optional</em>) – Placement of the bar: <code class="docutils literal notranslate"><span class="pre">&quot;lower</span> <span class="pre">right&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;lower</span> <span class="pre">left&quot;</span></code>,
+<code class="docutils literal notranslate"><span class="pre">&quot;upper</span> <span class="pre">right&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;upper</span> <span class="pre">left&quot;</span></code>.  Defaults to
+<code class="docutils literal notranslate"><span class="pre">&quot;lower</span> <span class="pre">right&quot;</span></code>.</p></li>
+<li><p><strong>margin_px</strong> (<em>int</em><em>, </em><em>optional</em>) – Distance in pixels between the bar and the image edges.
+Defaults to 10.</p></li>
+<li><p><strong>**_</strong> (<em>Dict</em><em>[</em><em>Any</em><em>, </em><em>Any</em><em>]</em>) – Additional keyword arguments ignored for forward
+compatibility.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A new RGB image with the scale bar drawn.  The array is always
+of type <code class="docutils literal notranslate"><span class="pre">uint8</span></code> and has shape <code class="docutils literal notranslate"><span class="pre">(H,</span> <span class="pre">W,</span> <span class="pre">3)</span></code>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError</strong> – If the input image has an unsupported number of
+    channels.</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>The bar length is clamped to fit within image bounds after
+margins.  The function does not rely on <code class="docutils literal notranslate"><span class="pre">skimage.color</span></code> and is
+safe against NaN or Inf input values.</p>
+</dd></dl>
 
 <dl class="py function">
 <dt class="sig sig-object py" id="src.cytodataframe.image.adjust_image_brightness">

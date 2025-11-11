@@ -44,7 +44,7 @@ imageio = "^2.37.0"
 
 [tool.poetry.group.dev.dependencies]
 # provides testing capabilities for project
-pytest = "^8.3.3"
+pytest = ">=8.3.3,<10.0.0"
 # used for test data generation
 sqlalchemy = ">=1.3.6,<3"
 # added to generate test coverage reports
@@ -57,6 +57,7 @@ jupyterlab-code-formatter = "^3.0.2"
 duckdb = "^1.1.3"
 # version specifications below used to help surpass 3.13-based installations
 cosmicqc = { version = "^0.1.4", markers = "python_version < '3.13' and python_version >= '3.10'" }
+poethepoet = "^0.37.0"
 
 [tool.poetry.group.docs.dependencies]
 # used for rendering docs into docsite
@@ -134,3 +135,17 @@ formats = "ipynb,py:light"
 
 [tool.bandit]
 exclude_dirs = [ "tests" ]
+
+[tool.poe.tasks]
+# note: quarto commands below expect quarto installed on the local system.
+# see here for more information: https://quarto.org/docs/download/
+poster-preview.shell = """
+quarto preview \
+  docs/presentations/2025-sbi2/poster.qmd
+"""
+poster-render.shell = """
+  quarto render \
+  docs/presentations/2025-sbi2/poster.qmd
+  mv docs/presentations/2025-sbi2/cytodataframe-2025-poster.pdf \
+  docs/src/_static/cytodataframe-2025-poster.pdf
+"""

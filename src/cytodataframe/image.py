@@ -2,10 +2,12 @@
 Helper functions for working with images in the context of CytoDataFrames.
 """
 
+from typing import Any, Dict, Tuple
+
 import cv2
+import imageio.v2 as imageio
 import numpy as np
 import skimage
-import skimage.io
 import skimage.measure
 from PIL import Image, ImageEnhance
 from skimage import draw, exposure
@@ -100,7 +102,7 @@ def draw_outline_on_image_from_outline(
     """
 
     # Load the outline image
-    outline_image = skimage.io.imread(outline_image_path)
+    outline_image = imageio.imread(outline_image_path)
 
     # Resize if necessary
     if outline_image.shape[:2] != orig_image.shape[:2]:
@@ -162,7 +164,7 @@ def draw_outline_on_image_from_mask(
             The resulting image with the green outline applied.
     """
     # Load the binary mask image
-    mask_image = skimage.io.imread(mask_image_path)
+    mask_image = imageio.imread(mask_image_path)
 
     # Ensure the original image is RGB
     # Grayscale input
@@ -307,3 +309,60 @@ def get_pixel_bbox_from_offsets(
         y_min, y_max = y_max, y_min
 
     return x_min, y_min, x_max, y_max
+
+
+def add_image_scale_bar(  # noqa: PLR0913
+    img: np.ndarray,
+    um_per_pixel: float,
+    *,
+    length_um: float = 10.0,
+    thickness_px: int = 4,
+    color: Tuple[int, int, int] = (255, 255, 255),
+    location: str = "lower right",
+    margin_px: int = 10,
+    **_: Dict[Any, Any],
+) -> np.ndarray:
+    if um_per_pixel is None or um_per_pixel <= 0:
+        return img
+
+    out = img.copy()
+    # ensure RGB uint8
+    if out.ndim == 2:  # noqa: PLR2004
+        out = skimage.color.gray2rgb(out)
+    elif out.ndim == 3 and out.shape[2] == 4:  # noqa: PLR2004
+        out = out[:, :, :3]
+    out = out.astype(np.uint8, copy=False)
+
+    H, W = out.shape[:2]
+    length_px = max(1, round(length_um / um_per_pixel))
+    thickness_px = max(1, int(thickness_px))
+    margin_px = max(0, int(margin_px))
+
+    # clamp length so we never exceed width after margins
+    length_px = min(length_px, max(1, W - 2 * margin_px))
+
+    loc = location.lower().strip()
+
+    # Compute starting corner (y0, x0) and use rectangle
+    # extent = (thickness_px, length_px)
+    y0 = (
+        max(0, H - margin_px - thickness_px)
+        if "lower" in loc
+        else min(H - 1, margin_px)
+    )
+    x0 = max(0, W - margin_px - length_px) if "right" in loc else min(W - 1, margin_px)
+
+    # Ensure extent stays inside image
+    if y0 + thickness_px > H:
+        thickness_px = H - y0
+    if x0 + length_px > W:
+        length_px = W - x0
+
+    rr, cc = skimage.draw.rectangle(
+        start=(y0, x0),
+        extent=(thickness_px, length_px),
+        shape=out.shape[:2],
+    )
+    out[rr, cc] = color
+
+    return out

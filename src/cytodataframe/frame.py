@@ -21,12 +21,11 @@ from typing import (
     Union,
 )
 
-import imageio
+import imageio.v2 as imageio
 import ipywidgets as widgets
 import numpy as np
 import pandas as pd
 import skimage
-import skimage.measure
 from IPython import get_ipython
 from IPython.display import HTML, display
 from pandas._config import (
@@ -38,6 +37,7 @@ from pandas.io.formats import (
 from skimage.util import img_as_ubyte
 
 from .image import (
+    add_image_scale_bar,
     adjust_with_adaptive_histogram_equalization,
     draw_outline_on_image_from_mask,
     draw_outline_on_image_from_outline,
@@ -147,6 +147,21 @@ class CytoDataFrame(pd.DataFrame):
                 e.g. {'bounding_box':
                 {'x_min': -100, 'y_min': -100, 'x_max': 100, 'y_max': 100}
                 }
+                - 'scale_bar': Adds a physical scale bar to each displayed crop.
+                  note: um / pixel details can often be found within the metadata
+                  of the images themselves or within the experiment documentation.
+                  e.g. {
+                      'um_per_pixel': 0.325,        # required if not set globally
+                      'pixel_per_um': 3.07692307692,# required if not set globally
+                      'length_um': 10.0,            # default 10
+                      'thickness_px': 4,            # default 4
+                      'color': (255, 255, 255),     # RGB, default white
+                      'location': 'lower right',    # 'lower/upper left/right'
+                      'margin_px': 10,              # default 10
+                      'font_size_px': 14,           # best-effort with PIL default font
+                  }
+                - Alternatively, set a global pixel size in 'display_options':
+                  {'um_per_pixel': 0.325}  # used if not provided under 'scale_bar'
             **kwargs:
                 Additional keyword arguments to pass to the pandas read functions.
         """
@@ -188,7 +203,8 @@ class CytoDataFrame(pd.DataFrame):
             # add widget control meta
             "_widget_state": {
                 "scale": initial_brightness,
-                "shown": False,
+                "shown": False,  # whether VBox has been displayed
+                "observing": False,  # whether slider observer is attached
             },
             "_scale_slider": widgets.IntSlider(
                 value=initial_brightness,
@@ -1061,6 +1077,89 @@ class CytoDataFrame(pd.DataFrame):
             cropped_img_array = prepared_image[
                 y_min:y_max, x_min:x_max
             ]  # Perform slicing
+
+            # Optionally add a scale bar to the cropped image
+            try:
+                display_options = self._custom_attrs.get("display_options", {}) or {}
+                scale_cfg = display_options.get("scale_bar", None)
+
+                # Accept either a boolean (True -> use defaults) or a dict of options.
+                if scale_cfg:
+                    # microns-per-pixel can live in scale_cfg or in
+                    # display_options for convenience
+                    um_per_pixel = None
+                    if isinstance(scale_cfg, dict):
+                        um_per_pixel = scale_cfg.get("um_per_pixel") or scale_cfg.get(
+                            "pixel_size_um"
+                        )
+                    if um_per_pixel is None:
+                        um_per_pixel = display_options.get(
+                            "um_per_pixel"
+                        ) or display_options.get("pixel_size_um")
+
+                    # NEW: simple fallback for pixels_per_um / pixel_per_um (reciprocal)
+                    if um_per_pixel is None:
+                        ppu = None
+                        if isinstance(scale_cfg, dict):
+                            ppu = scale_cfg.get("pixels_per_um") or scale_cfg.get(
+                                "pixel_per_um"
+                            )
+                        if ppu is None:
+                            ppu = display_options.get(
+                                "pixels_per_um"
+                            ) or display_options.get("pixel_per_um")
+                        if ppu:
+                            try:
+                                ppu = float(ppu)
+                                if ppu > 0:
+                                    um_per_pixel = 1.0 / ppu
+                            except (TypeError, ValueError):
+                                pass  # ignore bad input and skip adding a scale bar
+
+                    if um_per_pixel:
+                        # Default knobs (you can expose more)
+                        params = {
+                            "length_um": 10.0,
+                            "thickness_px": 4,
+                            "color": (255, 255, 255),
+                            "location": "lower right",
+                            "margin_px": 10,
+                            "font_size_px": 14,
+                        }
+                        if isinstance(scale_cfg, dict):
+                            params.update(
+                                {
+                                    k: v
+                                    for k, v in scale_cfg.items()
+                                    if k in params
+                                    or k
+                                    in (
+                                        "um_per_pixel",
+                                        "pixel_size_um",
+                                        "pixels_per_um",
+                                        "pixel_per_um",
+                                    )
+                                }
+                            )
+
+                        cropped_img_array = add_image_scale_bar(
+                            cropped_img_array,
+                            um_per_pixel=float(um_per_pixel),
+                            **{
+                                k: v
+                                for k, v in params.items()
+                                if k
+                                not in (
+                                    "um_per_pixel",
+                                    "pixel_size_um",
+                                    "pixels_per_um",
+                                    "pixel_per_um",
+                                )
+                            },
+                        )
+            except Exception as e:
+                logger.debug("Skipping scale bar due to error: %s", e)
+
         except ValueError as e:
             raise ValueError(
                 f"Bounding box contains invalid values: {bounding_box}"
@@ -1081,9 +1180,7 @@ class CytoDataFrame(pd.DataFrame):
             # catch warnings about low contrast images and avoid displaying them
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", UserWarning)
-                skimage.io.imsave(
-                    png_bytes_io, cropped_img_array, plugin="imageio", extension=".png"
-                )
+                imageio.imwrite(png_bytes_io, cropped_img_array, format="png")
             png_bytes = png_bytes_io.getvalue()
 
         except (FileNotFoundError, ValueError) as exc:
@@ -1141,6 +1238,15 @@ class CytoDataFrame(pd.DataFrame):
             logger.debug("Detected display rows: %s", start_display + end_display)
             return start_display + end_display
 
+    @staticmethod
+    def _normalize_labels(labels: pd.Index) -> Tuple[pd.Index, Dict[str, Any]]:
+        """
+        Return (labels_as_str: pd.Index, backmap: dict[str, Any])
+        """
+        labels_as_str = pd.Index(map(str, labels))
+        backmap = dict(zip(labels_as_str, labels))
+        return labels_as_str, backmap
+
     def _generate_jupyter_dataframe_html(  # noqa: C901, PLR0912, PLR0915
         self: CytoDataFrame_type,
     ) -> str:
@@ -1171,11 +1277,6 @@ class CytoDataFrame(pd.DataFrame):
 
         # if we're in a notebook process as though in a jupyter environment
         if get_option("display.notebook_repr_html"):
-            # Show widget only once per instance per notebook session
-            if not self._custom_attrs["_widget_state"]["shown"]:
-                display(self._custom_attrs["_scale_slider"])
-                self._custom_attrs["_widget_state"]["shown"] = True
-
             max_rows = get_option("display.max_rows")
             min_rows = get_option("display.min_rows")
             max_cols = get_option("display.max_columns")
@@ -1254,66 +1355,56 @@ class CytoDataFrame(pd.DataFrame):
                     else self.copy()
                 )
 
-                # determine if we have image_cols to display
-            if image_cols := CytoDataFrame(data).find_image_columns():
-                # attempt to find the image path columns
-                image_path_cols = CytoDataFrame(data).find_image_path_columns(
-                    image_cols=image_cols, all_cols=data.columns
+            # determine if we have image_cols to display
+            image_cols = CytoDataFrame(data).find_image_columns() or []
+            # normalize both the set of image cols and the pool of all cols to strings
+            all_cols_str, all_cols_back = self._normalize_labels(data.columns)
+            image_cols_str = [str(c) for c in image_cols]
+
+            # If your helper expects strings, pass strings; then map the result back
+            image_path_cols_str = (
+                CytoDataFrame(data).find_image_path_columns(
+                    image_cols=image_cols_str, all_cols=all_cols_str
                 )
+                or {}
+            )
+
+            # Remap any returned path-column names back to the
+            # original (possibly non-string) labels
+            image_path_cols = {}
+            for img_col in image_cols:
+                key = str(img_col)
+                if key in image_path_cols_str:
+                    path_col_str = image_path_cols_str[key]
+                    # path_col_str should be one of all_cols_str; map back to original
+                    image_path_cols[img_col] = all_cols_back.get(
+                        str(path_col_str), path_col_str
+                    )
+
             logger.debug("Image columns found: %s", image_cols)
 
             # gather indices which will be displayed based on pandas configuration
             display_indices = CytoDataFrame(data).get_displayed_rows()
 
             # gather bounding box columns for use below
-            bounding_box_cols = self._custom_attrs["data_bounding_box"].columns.tolist()
-
-            # gather compartment_xy columns for use below
-            if self._custom_attrs["compartment_center_xy"] is not None:
-                compartment_center_xy_cols = self._custom_attrs[
-                    "compartment_center_xy"
+            if self._custom_attrs["data_bounding_box"] is not None:
+                bounding_box_cols = self._custom_attrs[
+                    "data_bounding_box"
                 ].columns.tolist()
 
-            for image_col in image_cols:
-                data.loc[display_indices, image_col] = data.loc[display_indices].apply(
-                    lambda row: self.process_image_data_as_html_display(
-                        data_value=row[image_col],
-                        bounding_box=(
-                            # rows below are specified using the column name to
-                            # determine which part of the bounding box the columns
-                            # relate to (the list of column names could be in
-                            # various order).
-                            row[
-                                next(
-                                    col
-                                    for col in bounding_box_cols
-                                    if "Minimum_X" in col
-                                )
-                            ],
-                            row[
-                                next(
-                                    col
-                                    for col in bounding_box_cols
-                                    if "Minimum_Y" in col
-                                )
-                            ],
-                            row[
-                                next(
-                                    col
-                                    for col in bounding_box_cols
-                                    if "Maximum_X" in col
-                                )
-                            ],
-                            row[
-                                next(
-                                    col
-                                    for col in bounding_box_cols
-                                    if "Maximum_Y" in col
-                                )
-                            ],
-                        ),
-                        compartment_center_xy=(
-                            (
+                # gather compartment_xy columns for use below
+                if self._custom_attrs["compartment_center_xy"] is not None:
+                    compartment_center_xy_cols = self._custom_attrs[
+                        "compartment_center_xy"
+                    ].columns.tolist()
+
+                for image_col in image_cols:
+                    data.loc[display_indices, image_col] = data.loc[
+                        display_indices
+                    ].apply(
+                        lambda row: self.process_image_data_as_html_display(
+                            data_value=row[image_col],
+                            bounding_box=(
                                 # rows below are specified using the column name to
                                 # determine which part of the bounding box the columns
                                 # relate to (the list of column names could be in
@@ -1321,30 +1412,66 @@ class CytoDataFrame(pd.DataFrame):
                                 row[
                                     next(
                                         col
-                                        for col in compartment_center_xy_cols
-                                        if "X" in col
+                                        for col in bounding_box_cols
+                                        if "Minimum_X" in col
                                     )
                                 ],
                                 row[
                                     next(
                                         col
-                                        for col in compartment_center_xy_cols
-                                        if "Y" in col
+                                        for col in bounding_box_cols
+                                        if "Minimum_Y" in col
                                     )
                                 ],
-                            )
-                            if self._custom_attrs["compartment_center_xy"] is not None
-                            else None
+                                row[
+                                    next(
+                                        col
+                                        for col in bounding_box_cols
+                                        if "Maximum_X" in col
+                                    )
+                                ],
+                                row[
+                                    next(
+                                        col
+                                        for col in bounding_box_cols
+                                        if "Maximum_Y" in col
+                                    )
+                                ],
+                            ),
+                            compartment_center_xy=(
+                                (
+                                    # rows below are specified using the column name to
+                                    # determine which part of the bounding box the
+                                    # columns relate to (the list of column names
+                                    # could be in various order).
+                                    row[
+                                        next(
+                                            col
+                                            for col in compartment_center_xy_cols
+                                            if "X" in col
+                                        )
+                                    ],
+                                    row[
+                                        next(
+                                            col
+                                            for col in compartment_center_xy_cols
+                                            if "Y" in col
+                                        )
+                                    ],
+                                )
+                                if self._custom_attrs["compartment_center_xy"]
+                                is not None
+                                else None
+                            ),
+                            # set the image path based on the image_path cols.
+                            image_path=(
+                                row[image_path_cols[image_col]]
+                                if image_path_cols is not None and image_path_cols != {}
+                                else None
+                            ),
                         ),
-                        # set the image path based on the image_path cols.
-                        image_path=(
-                            row[image_path_cols[image_col]]
-                            if image_path_cols is not None and image_path_cols != {}
-                            else None
-                        ),
-                    ),
-                    axis=1,
-                )
+                        axis=1,
+                    )
 
             if bounding_box_externally_joined:
                 data = data.drop(
@@ -1449,16 +1576,28 @@ class CytoDataFrame(pd.DataFrame):
 
         # if we're in a notebook process as though in a jupyter environment
         if get_option("display.notebook_repr_html") and not debug:
-            # always clear old output and show fresh slider + output
-            self._custom_attrs["_output"].clear_output(wait=True)
-            display(
-                widgets.VBox(
-                    [
-                        self._custom_attrs["_scale_slider"],
-                        self._custom_attrs["_output"],
-                    ]
+            # Mount the VBox (slider + output) exactly once
+            if not self._custom_attrs["_widget_state"]["shown"]:
+                display(
+                    widgets.VBox(
+                        [
+                            self._custom_attrs["_scale_slider"],
+                            self._custom_attrs["_output"],
+                        ]
+                    )
                 )
-            )
+                self._custom_attrs["_widget_state"]["shown"] = True
+
+            # Attach the slider observer exactly once
+            if not self._custom_attrs["_widget_state"]["observing"]:
+                self._custom_attrs["_scale_slider"].observe(
+                    self._on_slider_change, names="value"
+                )
+                self._custom_attrs["_widget_state"]["observing"] = True
+
+            # Refresh the content area (no second slider display)
+            self._custom_attrs["_output"].clear_output(wait=True)
+
             # render fresh HTML for this cell
             self._render_output()
             # ensure slider continues to control the output

@@ -5,7 +5,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.17.1
+#       jupytext_version: 1.18.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -22,24 +22,11 @@
 # visual information which can be viewed directly in a Jupyter notebook.
 
 # +
-import logging
 import pathlib
-import warnings
 
 import pandas as pd
 
 from cytodataframe.frame import CytoDataFrame
-
-logging.basicConfig(level=logging.INFO)  # or logging.DEBUG, WARNING, etc.
-logging.getLogger().setLevel(logging.INFO)  # Ensures root logger is set
-
-
-# filter warnings from skimage about imageio
-warnings.filterwarnings(
-    "ignore",
-    message=r"The plugin infrastructure.*",
-    category=FutureWarning,
-)
 
 # create paths for use with CytoDataFrames below
 jump_data_path = "../../../tests/data/cytotable/JUMP_plate_BR00117006"
@@ -90,6 +77,33 @@ CytoDataFrame(
     data_context_dir=f"{jump_data_path}/images/orig",
     data_outline_context_dir=f"{jump_data_path}/images/outlines",
     display_options={"outline_color": (200, 100, 255)},
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:3]
+
+# %%time
+# view JUMP plate BR00117006 with images and overlaid outlines for segmentation
+# and adding scale bars which show how micrometers scale to the pixels displayed.
+CytoDataFrame(
+    data=f"{jump_data_path}/BR00117006_shrunken.parquet",
+    data_context_dir=f"{jump_data_path}/images/orig",
+    data_outline_context_dir=f"{jump_data_path}/images/outlines",
+    display_options={
+        "um_per_pixel": 0.1550,
+        "scale_bar": {
+            "length_um": 5,
+            "location": "lower right",
+            "color": (255, 255, 255),
+            "thickness_px": 2,
+            "margin_px": 5,
+        },
+    },
 )[
     [
         "Metadata_ImageNumber",

@@ -11,6 +11,9 @@ on:
 jobs:
   pre_commit_checks:
     runs-on: ubuntu-24.04
+    # we avoid running duplicative
+    # pre-commit checks for dependabot PRs
+    if: github.actor != 'dependabot[bot]'
     steps:
       # checks out the repo
       - uses: actions/checkout@v5

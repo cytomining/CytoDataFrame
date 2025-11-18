@@ -114,6 +114,10 @@ def test_to_ome_parquet_real_data(
     for column in expected_arrow_cols:
         assert column in table.column_names
 
+    mask_cols = [f"{col}_OMEArrowMask" for col in image_cols]
+    mask_df = table.select(mask_cols).to_pandas()
+    assert mask_df.notna().any().any()
+
 
 def test_to_ome_parquet_layer_flags(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch

@@ -1025,7 +1025,7 @@ class CytoDataFrame(pd.DataFrame):
         candidate_path: pathlib.Path,
         orig_image: np.ndarray,
         mask: bool = True,
-    ) -> np.ndarray:
+    ) -> Tuple[Optional[np.ndarray], Optional[pathlib.Path]]:
         """
         Search for a mask or outline image file based on the
         provided patterns and apply it to the target image.
@@ -1059,7 +1059,7 @@ class CytoDataFrame(pd.DataFrame):
 
         if file_dir is None:
             logger.debug("No mask or outline directory specified.")
-            return None
+            return None, None
 
         if pattern_map is None:
             matching_mask_file = list(
@@ -1077,18 +1077,24 @@ class CytoDataFrame(pd.DataFrame):
                 outline_color = display_options.get("outline_color", (0, 255, 0))
 
                 if mask:
-                    return draw_outline_on_image_from_mask(
-                        orig_image=orig_image,
-                        mask_image_path=matching_mask_file[0],
-                        outline_color=outline_color,
+                    return (
+                        draw_outline_on_image_from_mask(
+                            orig_image=orig_image,
+                            mask_image_path=matching_mask_file[0],
+                            outline_color=outline_color,
+                        ),
+                        matching_mask_file[0],
                     )
                 else:
-                    return draw_outline_on_image_from_outline(
-                        orig_image=orig_image,
-                        outline_image_path=matching_mask_file[0],
-                        outline_color=outline_color,
+                    return (
+                        draw_outline_on_image_from_outline(
+                            orig_image=orig_image,
+                            outline_image_path=matching_mask_file[0],
+                            outline_color=outline_color,
+                        ),
+                        matching_mask_file[0],
                     )
-            return None
+            return None, None
 
         for file_pattern, original_pattern in pattern_map.items():
             if re.search(original_pattern, data_value):
@@ -1110,21 +1116,27 @@ class CytoDataFrame(pd.DataFrame):
                     # gather the outline color if specified
                     outline_color = display_options.get("outline_color", (0, 255, 0))
                     if mask:
-                        return draw_outline_on_image_from_mask(
-                            orig_image=orig_image,
-                            mask_image_path=matching_files[0],
-                            outline_color=outline_color,
+                        return (
+                            draw_outline_on_image_from_mask(
+                                orig_image=orig_image,
+                                mask_image_path=matching_files[0],
+                                outline_color=outline_color,
+                            ),
+                            matching_files[0],
                         )
                     else:
-                        return draw_outline_on_image_from_outline(
-                            orig_image=orig_image,
-                            outline_image_path=matching_files[0],
-                            outline_color=outline_color,
+                        return (
+                            draw_outline_on_image_from_outline(
+                                orig_image=orig_image,
+                                outline_image_path=matching_files[0],
+                                outline_color=outline_color,
+                            ),
+                            matching_files[0],
                         )
 
         logger.debug("No mask or outline found for: %s", data_value)
 
-        return None
+        return None, None
 
     def _extract_array_from_ome_arrow(  # noqa: PLR0911, ANN401
         self: CytoDataFrame_type, data_value: Any
@@ -1289,7 +1301,7 @@ class CytoDataFrame(pd.DataFrame):
             orig_image_array.copy() if include_original else None
         )
 
-        prepared_image = self.search_for_mask_or_outline(
+        prepared_image, mask_source_path = self.search_for_mask_or_outline(
             data_value=data_value,
             pattern_map=pattern_map,
             file_dir=self._custom_attrs["data_mask_context_dir"],
@@ -1298,9 +1310,8 @@ class CytoDataFrame(pd.DataFrame):
             mask=True,
         )
 
-        mask_overlay_image = None
         if prepared_image is None:
-            prepared_image = self.search_for_mask_or_outline(
+            prepared_image, mask_source_path = self.search_for_mask_or_outline(
                 data_value=data_value,
                 pattern_map=pattern_map,
                 file_dir=self._custom_attrs["data_outline_context_dir"],
@@ -1311,9 +1322,16 @@ class CytoDataFrame(pd.DataFrame):
 
         if prepared_image is None:
             prepared_image = orig_image_array
-        else:
-            if include_mask_outline:
-                mask_overlay_image = prepared_image.copy()
+
+        mask_source_array = None
+        if include_mask_outline and mask_source_path is not None:
+            try:
+                mask_source_array = self._ensure_uint8(imageio.imread(mask_source_path))
+            except (FileNotFoundError, ValueError) as exc:
+                logger.error(
+                    "Unable to read mask/outline image %s: %s", mask_source_path, exc
+                )
+                mask_source_array = None
 
         if (
             compartment_center_xy is not None
@@ -1370,11 +1388,18 @@ class CytoDataFrame(pd.DataFrame):
                 if include_original and original_image_copy is not None
                 else None
             )
-            cropped_mask = (
-                mask_overlay_image[y_min:y_max, x_min:x_max]
-                if include_mask_outline and mask_overlay_image is not None
-                else None
-            )
+            if include_mask_outline and mask_source_array is not None:
+                try:
+                    cropped_mask = mask_source_array[y_min:y_max, x_min:x_max]
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug(
+                        "Failed to crop mask/outline array for %s: %s",
+                        mask_source_path,
+                        exc,
+                    )
+                    cropped_mask = None
+            else:
+                cropped_mask = None
 
             try:
                 display_options = self._custom_attrs.get("display_options", {}) or {}

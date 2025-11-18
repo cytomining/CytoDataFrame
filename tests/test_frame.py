@@ -61,11 +61,19 @@ def test_to_ome_parquet_adds_arrow_column(
     output_path = tmp_path / "out.parquet"
     cdf.to_ome_parquet(output_path)
 
-    arrow_col = "Image_FileName_DNA_OMEArrow"
-    assert arrow_col in captured["df"].columns
-    arrow_value = captured["df"].loc[0, arrow_col]
-    assert isinstance(arrow_value, str)
-    assert arrow_value.endswith(".tiff")
+    composite_col = "Image_FileName_DNA_OMEArrow"
+    orig_col = "Image_FileName_DNA_OMEArrowOriginal"
+    mask_col = "Image_FileName_DNA_OMEArrowMask"
+    for column in (composite_col, orig_col, mask_col):
+        assert column in captured["df"].columns
+
+    comp_value = captured["df"].loc[0, composite_col]
+    orig_value = captured["df"].loc[0, orig_col]
+    mask_value = captured["df"].loc[0, mask_col]
+
+    assert isinstance(comp_value, str) and comp_value.endswith(".tiff")
+    assert isinstance(orig_value, str) and orig_value.endswith(".tiff")
+    assert mask_value is None
     assert captured["file_path"] == output_path
     assert captured["kwargs"].get("engine") == "pyarrow"
 
@@ -94,9 +102,65 @@ def test_to_ome_parquet_real_data(
 
     assert output_path.exists()
     table = parquet.read_table(output_path)
-    expected_arrow_cols = [f"{col}_OMEArrow" for col in image_cols]
+    expected_arrow_cols = []
+    for col in image_cols:
+        expected_arrow_cols.extend(
+            [
+                f"{col}_OMEArrow",
+                f"{col}_OMEArrowOriginal",
+                f"{col}_OMEArrowMask",
+            ]
+        )
     for column in expected_arrow_cols:
         assert column in table.column_names
+
+
+def test_to_ome_parquet_layer_flags(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    image_dir = tmp_path / "images"
+    image_dir.mkdir()
+    image_path = image_dir / "sample.tiff"
+    imageio.imwrite(image_path, np.zeros((10, 10), dtype=np.uint8))
+
+    data = pd.DataFrame(
+        {
+            "Image_FileName_DNA": [image_path.name],
+            "Image_PathName_DNA": [str(image_dir)],
+            "Cells_AreaShape_BoundingBoxMinimum_X": [0],
+            "Cells_AreaShape_BoundingBoxMinimum_Y": [0],
+            "Cells_AreaShape_BoundingBoxMaximum_X": [10],
+            "Cells_AreaShape_BoundingBoxMaximum_Y": [10],
+        }
+    )
+
+    cdf = CytoDataFrame(data=data)
+
+    class DummyOMEArrow:
+        def __init__(self, data: str):  # noqa: ANN204
+            self.data = data
+
+    dummy_module = types.SimpleNamespace(OMEArrow=DummyOMEArrow)
+    monkeypatch.setitem(sys.modules, "ome_arrow", dummy_module)
+
+    captured: dict = {}
+
+    def fake_to_parquet(self, file_path, **kwargs):  # noqa: ANN001, ANN202, ANN003
+        captured["df"] = self.copy()
+
+    monkeypatch.setattr(pd.DataFrame, "to_parquet", fake_to_parquet, raising=False)
+
+    cdf.to_ome_parquet(
+        tmp_path / "out.parquet",
+        include_original=False,
+        include_mask_outline=False,
+        include_composite=True,
+    )
+
+    columns = captured["df"].columns
+    assert "Image_FileName_DNA_OMEArrow" in columns
+    assert "Image_FileName_DNA_OMEArrowOriginal" not in columns
+    assert "Image_FileName_DNA_OMEArrowMask" not in columns
 
 
 def test_ome_arrow_columns_render_html(

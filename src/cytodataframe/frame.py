@@ -645,6 +645,9 @@ class CytoDataFrame(pd.DataFrame):
         self: CytoDataFrame_type,
         file_path: Union[str, pathlib.Path],
         arrow_column_suffix: str = "_OMEArrow",
+        include_original: bool = True,
+        include_mask_outline: bool = True,
+        include_composite: bool = True,
         **kwargs: Dict[str, Any],
     ) -> None:
         """Export the dataframe with cropped images encoded as OMEArrow structs."""
@@ -656,6 +659,12 @@ class CytoDataFrame(pd.DataFrame):
                 "CytoDataFrame.to_ome_parquet requires the optional 'ome-arrow' "
                 "dependency. Install it via `pip install ome-arrow`."
             ) from exc
+
+        if not any((include_original, include_mask_outline, include_composite)):
+            raise ValueError(
+                "At least one of include_original, include_mask_outline, or "
+                "include_composite must be True."
+            )
 
         image_cols = self.find_image_columns() or []
         if not image_cols:
@@ -743,14 +752,27 @@ class CytoDataFrame(pd.DataFrame):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir_path = pathlib.Path(tmpdir)
             for image_col in image_cols:
-                arrow_col_name = f"{image_col}{arrow_column_suffix}"
-                ome_values: List[Optional[OMEArrow]] = []
                 image_path_col = image_path_cols.get(image_col)
+
+                layer_configs: List[Tuple[str, str]] = []
+                if include_original:
+                    layer_configs.append(
+                        ("original", f"{image_col}{arrow_column_suffix}Original")
+                    )
+                if include_mask_outline:
+                    layer_configs.append(
+                        ("mask", f"{image_col}{arrow_column_suffix}Mask")
+                    )
+                if include_composite:
+                    layer_configs.append(("composite", f"{image_col}{arrow_column_suffix}"))
+
+                column_values = {col_name: [] for _, col_name in layer_configs}
 
                 for _, row in working_df.iterrows():
                     image_value = row.get(image_col)
                     if image_value is None or pd.isna(image_value):
-                        ome_values.append(None)
+                        for _, col_name in layer_configs:
+                            column_values[col_name].append(None)
                         continue
 
                     try:
@@ -761,11 +783,13 @@ class CytoDataFrame(pd.DataFrame):
                             row[bbox_column_map["y_max"]],
                         )
                     except KeyError:
-                        ome_values.append(None)
+                        for _, col_name in layer_configs:
+                            column_values[col_name].append(None)
                         continue
 
                     if any(pd.isna(value) for value in bbox_values):
-                        ome_values.append(None)
+                        for _, col_name in layer_configs:
+                            column_values[col_name].append(None)
                         continue
 
                     bounding_box = tuple(int(value) for value in bbox_values)
@@ -780,40 +804,56 @@ class CytoDataFrame(pd.DataFrame):
                         row.get(image_path_col) if image_path_col is not None else None
                     )
 
-                    cropped_img_array = self._prepare_cropped_image_array(
+                    layers = self._prepare_cropped_image_layers(
                         data_value=image_value,
                         bounding_box=bounding_box,
                         compartment_center_xy=compartment_center,
                         image_path=image_path_value,
+                        include_original=include_original,
+                        include_mask_outline=include_mask_outline,
+                        include_composite=include_composite,
                     )
 
-                    if cropped_img_array is None:
-                        ome_values.append(None)
-                        continue
-
                     sanitized_col = re.sub(r"[^A-Za-z0-9_.-]", "_", str(image_col))
-                    temp_path = tmpdir_path / f"{sanitized_col}_{uuid.uuid4().hex}.tiff"
-                    try:
-                        with warnings.catch_warnings():
-                            warnings.simplefilter("ignore", UserWarning)
-                            imageio.imwrite(temp_path, cropped_img_array, format="tiff")
-                    except Exception as exc:
-                        logger.error(
-                            "Failed to write temporary TIFF for OMEArrow: %s", exc
-                        )
-                        ome_values.append(None)
-                        continue
-                    try:
-                        ome_struct = OMEArrow(data=str(temp_path)).data
-                        if hasattr(ome_struct, "as_py"):
-                            ome_struct = ome_struct.as_py()
-                    except Exception as exc:
-                        logger.error("Failed to create OMEArrow struct: %s", exc)
-                        ome_values.append(None)
-                        continue
-                    ome_values.append(ome_struct)
 
-                working_df[arrow_col_name] = ome_values
+                    for layer_key, col_name in layer_configs:
+                        layer_array = layers.get(layer_key)
+                        if layer_array is None:
+                            column_values[col_name].append(None)
+                            continue
+
+                        temp_path = (
+                            tmpdir_path
+                            / f"{sanitized_col}_{layer_key}_{uuid.uuid4().hex}.tiff"
+                        )
+                        try:
+                            with warnings.catch_warnings():
+                                warnings.simplefilter("ignore", UserWarning)
+                                imageio.imwrite(temp_path, layer_array, format="tiff")
+                        except Exception as exc:
+                            logger.error(
+                                "Failed to write temporary TIFF for OMEArrow (%s): %s",
+                                layer_key,
+                                exc,
+                            )
+                            column_values[col_name].append(None)
+                            continue
+                        try:
+                            ome_struct = OMEArrow(data=str(temp_path)).data
+                            if hasattr(ome_struct, "as_py"):
+                                ome_struct = ome_struct.as_py()
+                        except Exception as exc:
+                            logger.error(
+                                "Failed to create OMEArrow struct for %s: %s",
+                                layer_key,
+                                exc,
+                            )
+                            column_values[col_name].append(None)
+                            continue
+                        column_values[col_name].append(ome_struct)
+
+                for _, col_name in layer_configs:
+                    working_df[col_name] = column_values[col_name]
 
         if missing_bbox_cols:
             working_df = working_df.drop(columns=missing_bbox_cols)
@@ -1140,22 +1180,37 @@ class CytoDataFrame(pd.DataFrame):
         if np.issubdtype(arr.dtype, np.integer):
             min_val = arr.min(initial=0)
             max_val = arr.max(initial=0)
+            if 0 <= min_val <= 255 and 0 <= max_val <= 255:
+                return arr.astype(np.uint8, copy=False)
+        return img_as_ubyte(arr)
+
+    @staticmethod
+    def _ensure_uint8(array: np.ndarray) -> np.ndarray:
+        """Convert the provided array to uint8 without unnecessary warnings."""
+
+        arr = np.asarray(array)
+        if np.issubdtype(arr.dtype, np.integer):
+            min_val = arr.min(initial=0)
+            max_val = arr.max(initial=0)
             if 0 <= min_val and max_val <= 255:
                 return arr.astype(np.uint8, copy=False)
         return img_as_ubyte(arr)
 
-    def _prepare_cropped_image_array(  # noqa: C901, PLR0915, PLR0912
+    def _prepare_cropped_image_layers(  # noqa: C901, PLR0915, PLR0912
         self: CytoDataFrame_type,
         data_value: Any,  # noqa: ANN401
         bounding_box: Tuple[int, int, int, int],
         compartment_center_xy: Optional[Tuple[int, int]] = None,
         image_path: Optional[str] = None,
-    ) -> Optional[np.ndarray]:
-        """Return cropped image array for downstream consumers."""
+        include_original: bool = False,
+        include_mask_outline: bool = False,
+        include_composite: bool = True,
+    ) -> Dict[str, Optional[np.ndarray]]:
+        """Return requested cropped image layers for downstream consumers."""
 
         logger.debug(
             (
-                "Preparing cropped PNG bytes. Data value: %s, Bounding box: %s, "
+                "Preparing cropped layers. Data value: %s, Bounding box: %s, "
                 "Compartment center xy: %s, Image path: %s"
             ),
             data_value,
@@ -1164,18 +1219,23 @@ class CytoDataFrame(pd.DataFrame):
             image_path,
         )
 
-        if array := self._extract_array_from_ome_arrow(data_value):
-            return array
+        layers: Dict[str, Optional[np.ndarray]] = {}
 
-        # stringify the data value in case it isn't a string
+        if array := self._extract_array_from_ome_arrow(data_value):
+            if include_original:
+                layers["original"] = array
+            if include_mask_outline:
+                layers["mask"] = array
+            if include_composite:
+                layers["composite"] = array
+            return layers
+
         data_value = str(data_value)
         candidate_path = None
 
-        # normalize NaN image paths to None
         if image_path is not None and pd.isna(image_path):
             image_path = None
 
-        # Get the pattern map for segmentation file regex
         pattern_map = self._custom_attrs.get("segmentation_file_regex")
 
         provided_path = pathlib.Path(data_value)
@@ -1203,15 +1263,14 @@ class CytoDataFrame(pd.DataFrame):
             candidate_path = candidate_paths[0]
         else:
             logger.debug("No candidate file found for: %s", data_value)
-            return None
+            return layers
 
         try:
             orig_image_array = imageio.imread(candidate_path)
         except (FileNotFoundError, ValueError) as exc:
             logger.error(exc)
-            return None
+            return layers
 
-        # Adjust the image with image adjustment callable or adaptive histogram eq
         if self._custom_attrs["image_adjustment"] is not None:
             logger.debug("Adjusting image with custom image adjustment function.")
             orig_image_array = self._custom_attrs["image_adjustment"](
@@ -1224,8 +1283,11 @@ class CytoDataFrame(pd.DataFrame):
                 brightness=self._custom_attrs["_widget_state"]["scale"],
             )
 
-        # Normalize to 0-255 for image saving
         orig_image_array = self._ensure_uint8(orig_image_array)
+
+        original_image_copy = (
+            orig_image_array.copy() if include_original else None
+        )
 
         prepared_image = self.search_for_mask_or_outline(
             data_value=data_value,
@@ -1236,6 +1298,7 @@ class CytoDataFrame(pd.DataFrame):
             mask=True,
         )
 
+        mask_overlay_image = None
         if prepared_image is None:
             prepared_image = self.search_for_mask_or_outline(
                 data_value=data_value,
@@ -1248,6 +1311,9 @@ class CytoDataFrame(pd.DataFrame):
 
         if prepared_image is None:
             prepared_image = orig_image_array
+        else:
+            if include_mask_outline:
+                mask_overlay_image = prepared_image.copy()
 
         if (
             compartment_center_xy is not None
@@ -1298,6 +1364,17 @@ class CytoDataFrame(pd.DataFrame):
                 )
 
             cropped_img_array = prepared_image[y_min:y_max, x_min:x_max]
+
+            cropped_original = (
+                original_image_copy[y_min:y_max, x_min:x_max]
+                if include_original and original_image_copy is not None
+                else None
+            )
+            cropped_mask = (
+                mask_overlay_image[y_min:y_max, x_min:x_max]
+                if include_mask_outline and mask_overlay_image is not None
+                else None
+            )
 
             try:
                 display_options = self._custom_attrs.get("display_options", {}) or {}
@@ -1387,7 +1464,30 @@ class CytoDataFrame(pd.DataFrame):
 
         logger.debug("Cropped image array shape: %s", cropped_img_array.shape)
 
-        return cropped_img_array
+        if include_composite:
+            layers["composite"] = cropped_img_array
+        if include_original:
+            layers["original"] = cropped_original
+        if include_mask_outline:
+            layers["mask"] = cropped_mask
+
+        return layers
+
+    def _prepare_cropped_image_array(
+        self: CytoDataFrame_type,
+        data_value: Any,  # noqa: ANN401
+        bounding_box: Tuple[int, int, int, int],
+        compartment_center_xy: Optional[Tuple[int, int]] = None,
+        image_path: Optional[str] = None,
+    ) -> Optional[np.ndarray]:
+        layers = self._prepare_cropped_image_layers(
+            data_value=data_value,
+            bounding_box=bounding_box,
+            compartment_center_xy=compartment_center_xy,
+            image_path=image_path,
+            include_composite=True,
+        )
+        return layers.get("composite")
 
     def _image_array_to_html(self: CytoDataFrame_type, image_array: np.ndarray) -> str:
         """Encode an image array as an HTML <img> tag."""

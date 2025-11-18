@@ -3,8 +3,12 @@ Tests cosmicqc CytoDataFrame module
 """
 
 import pathlib
+import sys
+import types
 
+import imageio.v2 as imageio
 import nbformat
+import numpy as np
 import pandas as pd
 import pytest
 from _pytest.monkeypatch import MonkeyPatch
@@ -15,6 +19,112 @@ from cytodataframe.frame import CytoDataFrame
 from tests.utils import (
     cytodataframe_image_display_contains_pixels,
 )
+
+
+def test_to_ome_parquet_adds_arrow_column(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    image_dir = tmp_path / "images"
+    image_dir.mkdir()
+    image_path = image_dir / "sample.tiff"
+    imageio.imwrite(image_path, np.zeros((10, 10), dtype=np.uint8))
+
+    data = pd.DataFrame(
+        {
+            "Image_FileName_DNA": [image_path.name],
+            "Image_PathName_DNA": [str(image_dir)],
+            "Cells_AreaShape_BoundingBoxMinimum_X": [0],
+            "Cells_AreaShape_BoundingBoxMinimum_Y": [0],
+            "Cells_AreaShape_BoundingBoxMaximum_X": [10],
+            "Cells_AreaShape_BoundingBoxMaximum_Y": [10],
+        }
+    )
+
+    cdf = CytoDataFrame(data=data)
+
+    class DummyOMEArrow:
+        def __init__(self, data: str):  # noqa: ANN204
+            self.data = data
+
+    dummy_module = types.SimpleNamespace(OMEArrow=DummyOMEArrow)
+    monkeypatch.setitem(sys.modules, "ome_arrow", dummy_module)
+
+    captured: dict = {}
+
+    def fake_to_parquet(self, file_path, **kwargs):  # noqa: ANN001, ANN202, ANN003
+        captured["df"] = self.copy()
+        captured["file_path"] = file_path
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(pd.DataFrame, "to_parquet", fake_to_parquet, raising=False)
+
+    output_path = tmp_path / "out.parquet"
+    cdf.to_ome_parquet(output_path)
+
+    arrow_col = "Image_FileName_DNA_OMEArrow"
+    assert arrow_col in captured["df"].columns
+    arrow_value = captured["df"].loc[0, arrow_col]
+    assert isinstance(arrow_value, str)
+    assert arrow_value.endswith(".tiff")
+    assert captured["file_path"] == output_path
+    assert captured["kwargs"].get("engine") == "pyarrow"
+
+
+def test_to_ome_parquet_real_data(
+    tmp_path: pathlib.Path, cytotable_NF1_data_parquet_shrunken: str
+) -> None:
+    pytest.importorskip(
+        "ome_arrow", reason="to_ome_parquet real-data test requires ome-arrow"
+    )
+
+    parquet_path = pathlib.Path(cytotable_NF1_data_parquet_shrunken)
+    image_dir = parquet_path.parent / "Plate_2_images"
+    mask_dir = parquet_path.parent / "Plate_2_masks"
+
+    cdf = CytoDataFrame(
+        data=cytotable_NF1_data_parquet_shrunken,
+        data_context_dir=str(image_dir),
+        data_mask_context_dir=str(mask_dir),
+    )
+
+    output_path = tmp_path / "nf1.ome.parquet"
+    image_cols = cdf.find_image_columns()
+
+    cdf.to_ome_parquet(output_path)
+
+    assert output_path.exists()
+    table = parquet.read_table(output_path)
+    expected_arrow_cols = [f"{col}_OMEArrow" for col in image_cols]
+    for column in expected_arrow_cols:
+        assert column in table.column_names
+
+
+def test_ome_arrow_columns_render_html(
+    tmp_path: pathlib.Path, cytotable_NF1_data_parquet_shrunken: str
+) -> None:
+    pytest.importorskip(
+        "ome_arrow", reason="OME-Arrow rendering test requires ome-arrow"
+    )
+
+    parquet_path = pathlib.Path(cytotable_NF1_data_parquet_shrunken)
+    image_dir = parquet_path.parent / "Plate_2_images"
+    mask_dir = parquet_path.parent / "Plate_2_masks"
+
+    raw_cdf = CytoDataFrame(
+        data=cytotable_NF1_data_parquet_shrunken,
+        data_context_dir=str(image_dir),
+        data_mask_context_dir=str(mask_dir),
+    )
+
+    ome_path = tmp_path / "nf1.arrow.parquet"
+    raw_cdf.to_ome_parquet(ome_path)
+
+    arrow_cdf = CytoDataFrame(data=ome_path)
+    arrow_cols = [col for col in arrow_cdf.columns if col.endswith("_OMEArrow")]
+    assert arrow_cols
+
+    html_output = arrow_cdf[arrow_cols]._repr_html_(debug=True)
+    assert "data:image/png;base64" in html_output
 
 
 def test_cytodataframe_input(

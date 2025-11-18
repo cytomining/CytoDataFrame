@@ -7,6 +7,8 @@ import logging
 import pathlib
 import re
 import sys
+import tempfile
+import uuid
 import warnings
 from io import BytesIO, StringIO
 from typing import (
@@ -639,6 +641,191 @@ class CytoDataFrame(pd.DataFrame):
         else:
             raise ValueError("Unsupported file format for export.")
 
+    def to_ome_parquet(  # noqa: PLR0915, PLR0912, C901
+        self: CytoDataFrame_type,
+        file_path: Union[str, pathlib.Path],
+        arrow_column_suffix: str = "_OMEArrow",
+        **kwargs: Dict[str, Any],
+    ) -> None:
+        """Export the dataframe with cropped images encoded as OMEArrow structs."""
+
+        try:
+            from ome_arrow import OMEArrow
+        except ImportError as exc:
+            raise ImportError(
+                "CytoDataFrame.to_ome_parquet requires the optional 'ome-arrow' "
+                "dependency. Install it via `pip install ome-arrow`."
+            ) from exc
+
+        image_cols = self.find_image_columns() or []
+        if not image_cols:
+            logger.debug(
+                "No image filename columns detected. Falling back to to_parquet()."
+            )
+            self.to_parquet(file_path, **kwargs)
+            return
+
+        bounding_box_df = self._custom_attrs.get("data_bounding_box")
+        if bounding_box_df is None:
+            raise ValueError(
+                "to_ome_parquet requires bounding box metadata to crop images."
+            )
+
+        bounding_box_cols = bounding_box_df.columns.tolist()
+        bbox_column_map = {
+            "x_min": next(
+                (col for col in bounding_box_cols if "Minimum_X" in str(col)), None
+            ),
+            "y_min": next(
+                (col for col in bounding_box_cols if "Minimum_Y" in str(col)), None
+            ),
+            "x_max": next(
+                (col for col in bounding_box_cols if "Maximum_X" in str(col)), None
+            ),
+            "y_max": next(
+                (col for col in bounding_box_cols if "Maximum_Y" in str(col)), None
+            ),
+        }
+
+        if any(value is None for value in bbox_column_map.values()):
+            raise ValueError(
+                "Unable to identify all bounding box coordinate columns for export."
+            )
+
+        working_df = self.copy()
+
+        missing_bbox_cols = [
+            col for col in bounding_box_cols if col not in working_df.columns
+        ]
+        if missing_bbox_cols:
+            working_df = working_df.join(bounding_box_df[missing_bbox_cols])
+
+        comp_center_df = self._custom_attrs.get("compartment_center_xy")
+        comp_center_cols: List[str] = []
+        missing_comp_cols: List[str] = []
+        if comp_center_df is not None:
+            comp_center_cols = comp_center_df.columns.tolist()
+            missing_comp_cols = [
+                col for col in comp_center_cols if col not in working_df.columns
+            ]
+            if missing_comp_cols:
+                working_df = working_df.join(comp_center_df[missing_comp_cols])
+
+        image_path_df = self._custom_attrs.get("data_image_paths")
+        missing_path_cols: List[str] = []
+        if image_path_df is not None:
+            image_path_cols_all = image_path_df.columns.tolist()
+            missing_path_cols = [
+                col for col in image_path_cols_all if col not in working_df.columns
+            ]
+            if missing_path_cols:
+                working_df = working_df.join(image_path_df[missing_path_cols])
+
+        all_cols_str, all_cols_back = self._normalize_labels(working_df.columns)
+        image_cols_str = [str(col) for col in image_cols]
+        image_path_cols_str = self.find_image_path_columns(
+            image_cols=image_cols_str, all_cols=all_cols_str
+        )
+        image_path_cols = {}
+        for image_col in image_cols:
+            key = str(image_col)
+            if key in image_path_cols_str:
+                mapped_col = image_path_cols_str[key]
+                image_path_cols[image_col] = all_cols_back.get(
+                    str(mapped_col), mapped_col
+                )
+
+        comp_center_x = next((col for col in comp_center_cols if "X" in str(col)), None)
+        comp_center_y = next((col for col in comp_center_cols if "Y" in str(col)), None)
+
+        kwargs.setdefault("engine", "pyarrow")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = pathlib.Path(tmpdir)
+            for image_col in image_cols:
+                arrow_col_name = f"{image_col}{arrow_column_suffix}"
+                ome_values: List[Optional[OMEArrow]] = []
+                image_path_col = image_path_cols.get(image_col)
+
+                for _, row in working_df.iterrows():
+                    image_value = row.get(image_col)
+                    if image_value is None or pd.isna(image_value):
+                        ome_values.append(None)
+                        continue
+
+                    try:
+                        bbox_values = (
+                            row[bbox_column_map["x_min"]],
+                            row[bbox_column_map["y_min"]],
+                            row[bbox_column_map["x_max"]],
+                            row[bbox_column_map["y_max"]],
+                        )
+                    except KeyError:
+                        ome_values.append(None)
+                        continue
+
+                    if any(pd.isna(value) for value in bbox_values):
+                        ome_values.append(None)
+                        continue
+
+                    bounding_box = tuple(int(value) for value in bbox_values)
+
+                    compartment_center = None
+                    if comp_center_x and comp_center_y:
+                        center_vals = (row.get(comp_center_x), row.get(comp_center_y))
+                        if not any(val is None or pd.isna(val) for val in center_vals):
+                            compartment_center = tuple(int(v) for v in center_vals)
+
+                    image_path_value = (
+                        row.get(image_path_col) if image_path_col is not None else None
+                    )
+
+                    cropped_img_array = self._prepare_cropped_image_array(
+                        data_value=image_value,
+                        bounding_box=bounding_box,
+                        compartment_center_xy=compartment_center,
+                        image_path=image_path_value,
+                    )
+
+                    if cropped_img_array is None:
+                        ome_values.append(None)
+                        continue
+
+                    sanitized_col = re.sub(r"[^A-Za-z0-9_.-]", "_", str(image_col))
+                    temp_path = tmpdir_path / f"{sanitized_col}_{uuid.uuid4().hex}.tiff"
+                    try:
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore", UserWarning)
+                            imageio.imwrite(temp_path, cropped_img_array, format="tiff")
+                    except Exception as exc:
+                        logger.error(
+                            "Failed to write temporary TIFF for OMEArrow: %s", exc
+                        )
+                        ome_values.append(None)
+                        continue
+                    try:
+                        ome_struct = OMEArrow(data=str(temp_path)).data
+                        if hasattr(ome_struct, "as_py"):
+                            ome_struct = ome_struct.as_py()
+                    except Exception as exc:
+                        logger.error("Failed to create OMEArrow struct: %s", exc)
+                        ome_values.append(None)
+                        continue
+                    ome_values.append(ome_struct)
+
+                working_df[arrow_col_name] = ome_values
+
+        if missing_bbox_cols:
+            working_df = working_df.drop(columns=missing_bbox_cols)
+
+        if missing_comp_cols:
+            working_df = working_df.drop(columns=missing_comp_cols)
+
+        if missing_path_cols:
+            working_df = working_df.drop(columns=missing_path_cols)
+
+        working_df.to_parquet(file_path, **kwargs)
+
     @staticmethod
     def is_notebook_or_lab() -> bool:
         """
@@ -702,6 +889,33 @@ class CytoDataFrame(pd.DataFrame):
         logger.debug("Found image columns: %s", image_cols)
 
         return image_cols
+
+    @staticmethod
+    def _is_ome_arrow_value(value: Any) -> bool:  # noqa: ANN401
+        """Check whether a value looks like an OME-Arrow struct."""
+
+        return (
+            isinstance(value, dict)
+            and value.get("type") == "ome.arrow"
+            and value.get("planes") is not None
+            and value.get("pixels_meta") is not None
+        )
+
+    def find_ome_arrow_columns(
+        self: CytoDataFrame_type, data: pd.DataFrame
+    ) -> List[str]:
+        """Identify columns that contain OME-Arrow structs."""
+
+        ome_cols: List[str] = []
+        for column in data.columns:
+            series = data[column]
+            if series.apply(self._is_ome_arrow_value).any():
+                ome_cols.append(column)
+
+        if ome_cols:
+            logger.debug("Found OME-Arrow columns: %s", ome_cols)
+
+        return ome_cols
 
     def get_image_paths_from_data(
         self: CytoDataFrame_type, image_cols: List[str]
@@ -872,7 +1086,342 @@ class CytoDataFrame(pd.DataFrame):
 
         return None
 
-    def process_image_data_as_html_display(  # noqa: PLR0912, C901, PLR0915
+    def _extract_array_from_ome_arrow(  # noqa: PLR0911, ANN401
+        self: CytoDataFrame_type, data_value: Any
+    ) -> Optional[np.ndarray]:
+        """Convert an OME-Arrow struct (dict) into an ndarray."""
+
+        if not self._is_ome_arrow_value(data_value):
+            return None
+
+        try:
+            pixels_meta = data_value.get("pixels_meta", {})
+            size_x = int(pixels_meta.get("size_x"))
+            size_y = int(pixels_meta.get("size_y"))
+            planes = data_value.get("planes")
+
+            if size_x <= 0 or size_y <= 0 or planes is None:
+                return None
+
+            if isinstance(planes, np.ndarray):
+                plane_entries = planes.tolist()
+            else:
+                plane_entries = list(planes)
+
+            if not plane_entries:
+                return None
+
+            plane = plane_entries[0]
+            pixels = plane.get("pixels")
+            if pixels is None:
+                return None
+
+            np_pixels = np.asarray(pixels)
+            base = size_x * size_y
+            if base <= 0 or np_pixels.size == 0 or np_pixels.size % base != 0:
+                return None
+
+            channel_count = np_pixels.size // base
+            if channel_count == 1:
+                array = np_pixels.reshape((size_y, size_x))
+            else:
+                array = np_pixels.reshape((size_y, size_x, channel_count))
+
+            return img_as_ubyte(array)
+        except Exception as exc:
+            logger.debug("Unable to decode OME-Arrow struct: %s", exc)
+            return None
+
+    def _prepare_cropped_image_array(  # noqa: C901, PLR0915, PLR0912
+        self: CytoDataFrame_type,
+        data_value: Any,  # noqa: ANN401
+        bounding_box: Tuple[int, int, int, int],
+        compartment_center_xy: Optional[Tuple[int, int]] = None,
+        image_path: Optional[str] = None,
+    ) -> Optional[np.ndarray]:
+        """Return cropped image array for downstream consumers."""
+
+        logger.debug(
+            (
+                "Preparing cropped PNG bytes. Data value: %s, Bounding box: %s, "
+                "Compartment center xy: %s, Image path: %s"
+            ),
+            data_value,
+            bounding_box,
+            compartment_center_xy,
+            image_path,
+        )
+
+        if array := self._extract_array_from_ome_arrow(data_value):
+            return array
+
+        # stringify the data value in case it isn't a string
+        data_value = str(data_value)
+        candidate_path = None
+
+        # normalize NaN image paths to None
+        if image_path is not None and pd.isna(image_path):
+            image_path = None
+
+        # Get the pattern map for segmentation file regex
+        pattern_map = self._custom_attrs.get("segmentation_file_regex")
+
+        provided_path = pathlib.Path(data_value)
+        if provided_path.is_file():
+            candidate_path = provided_path
+        elif (
+            self._custom_attrs["data_context_dir"] is None
+            and image_path is not None
+            and (
+                existing_image_from_path := pathlib.Path(image_path)
+                / pathlib.Path(data_value)
+            ).is_file()
+        ):
+            logger.debug("Found existing image from path: %s", existing_image_from_path)
+            candidate_path = existing_image_from_path
+        elif self._custom_attrs["data_context_dir"] is not None and (
+            candidate_paths := list(
+                pathlib.Path(self._custom_attrs["data_context_dir"]).rglob(data_value)
+            )
+        ):
+            logger.debug(
+                "Found candidate paths (and attempting to use the first): %s",
+                candidate_paths,
+            )
+            candidate_path = candidate_paths[0]
+        else:
+            logger.debug("No candidate file found for: %s", data_value)
+            return None
+
+        try:
+            orig_image_array = imageio.imread(candidate_path)
+        except (FileNotFoundError, ValueError) as exc:
+            logger.error(exc)
+            return None
+
+        # Adjust the image with image adjustment callable or adaptive histogram eq
+        if self._custom_attrs["image_adjustment"] is not None:
+            logger.debug("Adjusting image with custom image adjustment function.")
+            orig_image_array = self._custom_attrs["image_adjustment"](
+                orig_image_array, self._custom_attrs["_widget_state"]["scale"]
+            )
+        else:
+            logger.debug("Adjusting image with adaptive histogram equalization.")
+            orig_image_array = adjust_with_adaptive_histogram_equalization(
+                image=orig_image_array,
+                brightness=self._custom_attrs["_widget_state"]["scale"],
+            )
+
+        # Normalize to 0-255 for image saving
+        orig_image_array = img_as_ubyte(orig_image_array)
+
+        prepared_image = self.search_for_mask_or_outline(
+            data_value=data_value,
+            pattern_map=pattern_map,
+            file_dir=self._custom_attrs["data_mask_context_dir"],
+            candidate_path=candidate_path,
+            orig_image=orig_image_array,
+            mask=True,
+        )
+
+        if prepared_image is None:
+            prepared_image = self.search_for_mask_or_outline(
+                data_value=data_value,
+                pattern_map=pattern_map,
+                file_dir=self._custom_attrs["data_outline_context_dir"],
+                candidate_path=candidate_path,
+                orig_image=orig_image_array,
+                mask=False,
+            )
+
+        if prepared_image is None:
+            prepared_image = orig_image_array
+
+        if (
+            compartment_center_xy is not None
+            and self._custom_attrs.get("display_options", None) is None
+        ) or (
+            self._custom_attrs.get("display_options", None) is not None
+            and self._custom_attrs["display_options"].get("center_dot", True)
+        ):
+            center_x, center_y = map(int, compartment_center_xy)
+
+            if len(prepared_image.shape) == 2:  # noqa: PLR2004
+                prepared_image = skimage.color.gray2rgb(prepared_image)
+
+            if (
+                0 <= center_y < prepared_image.shape[0]
+                and 0 <= center_x < prepared_image.shape[1]
+            ):
+                x_min, y_min, x_max, y_max = map(int, bounding_box)
+                box_width = x_max - x_min
+                box_height = y_max - y_min
+                radius = max(1, int(min(box_width, box_height) * 0.03))
+
+                rr, cc = skimage.draw.disk(
+                    (center_y, center_x), radius=radius, shape=prepared_image.shape[:2]
+                )
+                prepared_image[rr, cc] = [255, 0, 0]
+
+        try:
+            x_min, y_min, x_max, y_max = map(int, bounding_box)
+
+            if self._custom_attrs.get("display_options", None) and self._custom_attrs[
+                "display_options"
+            ].get("offset_bounding_box", None):
+                center_x, center_y = map(int, compartment_center_xy)
+
+                offset_bounding_box = self._custom_attrs["display_options"].get(
+                    "offset_bounding_box"
+                )
+                x_min, y_min, x_max, y_max = get_pixel_bbox_from_offsets(
+                    center_x=center_x,
+                    center_y=center_y,
+                    rel_bbox=(
+                        offset_bounding_box["x_min"],
+                        offset_bounding_box["y_min"],
+                        offset_bounding_box["x_max"],
+                        offset_bounding_box["y_max"],
+                    ),
+                )
+
+            cropped_img_array = prepared_image[y_min:y_max, x_min:x_max]
+
+            try:
+                display_options = self._custom_attrs.get("display_options", {}) or {}
+                scale_cfg = display_options.get("scale_bar", None)
+
+                if scale_cfg:
+                    um_per_pixel = None
+                    if isinstance(scale_cfg, dict):
+                        um_per_pixel = scale_cfg.get("um_per_pixel") or scale_cfg.get(
+                            "pixel_size_um"
+                        )
+                    if um_per_pixel is None:
+                        um_per_pixel = display_options.get(
+                            "um_per_pixel"
+                        ) or display_options.get("pixel_size_um")
+
+                    if um_per_pixel is None:
+                        ppu = None
+                        if isinstance(scale_cfg, dict):
+                            ppu = scale_cfg.get("pixels_per_um") or scale_cfg.get(
+                                "pixel_per_um"
+                            )
+                        if ppu is None:
+                            ppu = display_options.get(
+                                "pixels_per_um"
+                            ) or display_options.get("pixel_per_um")
+                        if ppu:
+                            try:
+                                ppu = float(ppu)
+                                if ppu > 0:
+                                    um_per_pixel = 1.0 / ppu
+                            except (TypeError, ValueError):
+                                pass
+
+                    if um_per_pixel:
+                        params = {
+                            "length_um": 10.0,
+                            "thickness_px": 4,
+                            "color": (255, 255, 255),
+                            "location": "lower right",
+                            "margin_px": 10,
+                            "font_size_px": 14,
+                        }
+                        if isinstance(scale_cfg, dict):
+                            params.update(
+                                {
+                                    k: v
+                                    for k, v in scale_cfg.items()
+                                    if k in params
+                                    or k
+                                    in (
+                                        "um_per_pixel",
+                                        "pixel_size_um",
+                                        "pixels_per_um",
+                                        "pixel_per_um",
+                                    )
+                                }
+                            )
+
+                        cropped_img_array = add_image_scale_bar(
+                            cropped_img_array,
+                            um_per_pixel=float(um_per_pixel),
+                            **{
+                                k: v
+                                for k, v in params.items()
+                                if k
+                                not in (
+                                    "um_per_pixel",
+                                    "pixel_size_um",
+                                    "pixels_per_um",
+                                    "pixel_per_um",
+                                )
+                            },
+                        )
+            except Exception as exc:
+                logger.debug("Skipping scale bar due to error: %s", exc)
+
+        except ValueError as exc:
+            raise ValueError(
+                f"Bounding box contains invalid values: {bounding_box}"
+            ) from exc
+        except IndexError as exc:
+            raise IndexError(
+                f"Bounding box {bounding_box} is out of bounds for image dimensions "
+                f"{prepared_image.shape}"
+            ) from exc
+
+        logger.debug("Cropped image array shape: %s", cropped_img_array.shape)
+
+        return cropped_img_array
+
+    def _image_array_to_html(self: CytoDataFrame_type, image_array: np.ndarray) -> str:
+        """Encode an image array as an HTML <img> tag."""
+
+        try:
+            png_bytes_io = BytesIO()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                imageio.imwrite(png_bytes_io, image_array, format="png")
+            png_bytes = png_bytes_io.getvalue()
+        except (FileNotFoundError, ValueError) as exc:
+            logger.error(exc)
+            raise
+
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        width = display_options.get("width", "300px")
+        height = display_options.get("height")
+
+        html_style = [f"width:{width}"]
+        if height is not None:
+            html_style.append(f"height:{height}")
+
+        html_style_joined = ";".join(html_style)
+        base64_image_bytes = base64.b64encode(png_bytes).decode("utf-8")
+
+        return (
+            '<img src="data:image/png;base64,'
+            f'{base64_image_bytes}" style="{html_style_joined}"/>'
+        )
+
+    def process_ome_arrow_data_as_html_display(
+        self: CytoDataFrame_type,
+        data_value: Any,  # noqa: ANN401
+    ) -> str:
+        """Render an OME-Arrow struct as an HTML <img> element."""
+
+        array = self._extract_array_from_ome_arrow(data_value)
+        if array is None:
+            return data_value
+
+        try:
+            return self._image_array_to_html(array)
+        except Exception:
+            return data_value
+
+    def process_image_data_as_html_display(
         self: CytoDataFrame_type,
         data_value: Any,  # noqa: ANN401
         bounding_box: Tuple[int, int, int, int],
@@ -913,304 +1462,23 @@ class CytoDataFrame(pd.DataFrame):
             image_path,
         )
 
-        # stringify the data value in case it isn't a string
         data_value = str(data_value)
-
-        candidate_path = None
-        # Get the pattern map for segmentation file regex
-        pattern_map = self._custom_attrs.get("segmentation_file_regex")
-
-        # Step 1: Find the candidate file if the data value is not already a file
-        if not pathlib.Path(data_value).is_file():
-            # determine if we have a file from the path (dir) + filename
-            if (
-                self._custom_attrs["data_context_dir"] is None
-                and image_path is not None
-                and (
-                    existing_image_from_path := pathlib.Path(
-                        f"{image_path}/{data_value}"
-                    )
-                ).is_file()
-            ):
-                logger.debug(
-                    "Found existing image from path: %s", existing_image_from_path
-                )
-                candidate_path = existing_image_from_path
-
-            # Search for the data value in the data context directory
-            elif self._custom_attrs["data_context_dir"] is not None and (
-                candidate_paths := list(
-                    pathlib.Path(self._custom_attrs["data_context_dir"]).rglob(
-                        data_value
-                    )
-                )
-            ):
-                logger.debug(
-                    "Found candidate paths (and attempting to use the first): %s",
-                    candidate_paths,
-                )
-                # If a candidate file is found, use the first one
-                candidate_path = candidate_paths[0]
-
-            else:
-                logger.debug("No candidate file found for: %s", data_value)
-                # If no candidate file is found, return the original data value
-                return data_value
-
-        # read the image as an array
-        orig_image_array = imageio.imread(candidate_path)
-
-        # Adjust the image with image adjustment callable
-        # or adaptive histogram equalization
-        if self._custom_attrs["image_adjustment"] is not None:
-            logger.debug("Adjusting image with custom image adjustment function.")
-            orig_image_array = self._custom_attrs["image_adjustment"](
-                orig_image_array, self._custom_attrs["_widget_state"]["scale"]
-            )
-        else:
-            logger.debug("Adjusting image with adaptive histogram equalization.")
-            orig_image_array = adjust_with_adaptive_histogram_equalization(
-                image=orig_image_array,
-                brightness=self._custom_attrs["_widget_state"]["scale"],
-            )
-
-        # Normalize to 0-255 for image saving
-        orig_image_array = img_as_ubyte(orig_image_array)
-
-        prepared_image = None
-        # Step 2: Search for a mask
-        prepared_image = self.search_for_mask_or_outline(
+        cropped_img_array = self._prepare_cropped_image_array(
             data_value=data_value,
-            pattern_map=pattern_map,
-            file_dir=self._custom_attrs["data_mask_context_dir"],
-            candidate_path=candidate_path,
-            orig_image=orig_image_array,
-            mask=True,
+            bounding_box=bounding_box,
+            compartment_center_xy=compartment_center_xy,
+            image_path=image_path,
         )
 
-        # If no mask is found, proceed to search for an outline
-        if prepared_image is None:
-            # Step 3: Search for an outline if no mask was found
-            prepared_image = self.search_for_mask_or_outline(
-                data_value=data_value,
-                pattern_map=pattern_map,
-                file_dir=self._custom_attrs["data_outline_context_dir"],
-                candidate_path=candidate_path,
-                orig_image=orig_image_array,
-                mask=False,
-            )
-
-        # Step 4: If neither mask nor outline is found, use the original image array
-        if prepared_image is None:
-            prepared_image = orig_image_array
-
-        # Step 5: Add a red dot for the compartment center before cropping
-        if (
-            compartment_center_xy is not None
-            and self._custom_attrs.get("display_options", None) is None
-        ) or (
-            self._custom_attrs.get("display_options", None) is not None
-            and self._custom_attrs["display_options"].get("center_dot", True)
-        ):
-            center_x, center_y = map(int, compartment_center_xy)  # Ensure integers
-
-            # Convert grayscale image to RGB if necessary
-            # Check if the image is grayscale
-            if len(prepared_image.shape) == 2:  # noqa: PLR2004
-                prepared_image = skimage.color.gray2rgb(prepared_image)
-
-            if (
-                0 <= center_y < prepared_image.shape[0]
-                and 0 <= center_x < prepared_image.shape[1]
-            ):
-                # Calculate the radius as a fraction of the bounding box size
-                x_min, y_min, x_max, y_max = map(int, bounding_box)
-                box_width = x_max - x_min
-                box_height = y_max - y_min
-                radius = max(
-                    1, int(min(box_width, box_height) * 0.03)
-                )  # 3% of the smaller dimension
-
-                rr, cc = skimage.draw.disk(
-                    (center_y, center_x), radius=radius, shape=prepared_image.shape[:2]
-                )
-                prepared_image[rr, cc] = [255, 0, 0]  # Red color in RGB
-
-        # Step 6: Crop the image based on the bounding box and encode it to PNG format
-        try:
-            # set a default bounding box
-            x_min, y_min, x_max, y_max = map(int, bounding_box)
-
-            # if we have custom offset bounding box information, use it
-            if self._custom_attrs.get("display_options", None) and self._custom_attrs[
-                "display_options"
-            ].get("offset_bounding_box", None):
-                try:
-                    # note: this will default to the nuclei centers based
-                    # on earlier input for this parameter.
-                    center_x, center_y = map(int, compartment_center_xy)
-
-                    offset_bounding_box = self._custom_attrs["display_options"].get(
-                        "offset_bounding_box"
-                    )
-                    # generate offset bounding box positions
-                    x_min, y_min, x_max, y_max = get_pixel_bbox_from_offsets(
-                        center_x=center_x,
-                        center_y=center_y,
-                        rel_bbox=(
-                            offset_bounding_box["x_min"],
-                            offset_bounding_box["y_min"],
-                            offset_bounding_box["x_max"],
-                            offset_bounding_box["y_max"],
-                        ),
-                    )
-                except IndexError:
-                    logger.debug(
-                        (
-                            "Bounding box %s is out of bounds for image %s ."
-                            " Defaulting to use bounding box from data."
-                        ),
-                        (x_min, y_min, x_max, y_max),
-                        image_path,
-                    )
-
-            cropped_img_array = prepared_image[
-                y_min:y_max, x_min:x_max
-            ]  # Perform slicing
-
-            # Optionally add a scale bar to the cropped image
-            try:
-                display_options = self._custom_attrs.get("display_options", {}) or {}
-                scale_cfg = display_options.get("scale_bar", None)
-
-                # Accept either a boolean (True -> use defaults) or a dict of options.
-                if scale_cfg:
-                    # microns-per-pixel can live in scale_cfg or in
-                    # display_options for convenience
-                    um_per_pixel = None
-                    if isinstance(scale_cfg, dict):
-                        um_per_pixel = scale_cfg.get("um_per_pixel") or scale_cfg.get(
-                            "pixel_size_um"
-                        )
-                    if um_per_pixel is None:
-                        um_per_pixel = display_options.get(
-                            "um_per_pixel"
-                        ) or display_options.get("pixel_size_um")
-
-                    # NEW: simple fallback for pixels_per_um / pixel_per_um (reciprocal)
-                    if um_per_pixel is None:
-                        ppu = None
-                        if isinstance(scale_cfg, dict):
-                            ppu = scale_cfg.get("pixels_per_um") or scale_cfg.get(
-                                "pixel_per_um"
-                            )
-                        if ppu is None:
-                            ppu = display_options.get(
-                                "pixels_per_um"
-                            ) or display_options.get("pixel_per_um")
-                        if ppu:
-                            try:
-                                ppu = float(ppu)
-                                if ppu > 0:
-                                    um_per_pixel = 1.0 / ppu
-                            except (TypeError, ValueError):
-                                pass  # ignore bad input and skip adding a scale bar
-
-                    if um_per_pixel:
-                        # Default knobs (you can expose more)
-                        params = {
-                            "length_um": 10.0,
-                            "thickness_px": 4,
-                            "color": (255, 255, 255),
-                            "location": "lower right",
-                            "margin_px": 10,
-                            "font_size_px": 14,
-                        }
-                        if isinstance(scale_cfg, dict):
-                            params.update(
-                                {
-                                    k: v
-                                    for k, v in scale_cfg.items()
-                                    if k in params
-                                    or k
-                                    in (
-                                        "um_per_pixel",
-                                        "pixel_size_um",
-                                        "pixels_per_um",
-                                        "pixel_per_um",
-                                    )
-                                }
-                            )
-
-                        cropped_img_array = add_image_scale_bar(
-                            cropped_img_array,
-                            um_per_pixel=float(um_per_pixel),
-                            **{
-                                k: v
-                                for k, v in params.items()
-                                if k
-                                not in (
-                                    "um_per_pixel",
-                                    "pixel_size_um",
-                                    "pixels_per_um",
-                                    "pixel_per_um",
-                                )
-                            },
-                        )
-            except Exception as e:
-                logger.debug("Skipping scale bar due to error: %s", e)
-
-        except ValueError as e:
-            raise ValueError(
-                f"Bounding box contains invalid values: {bounding_box}"
-            ) from e
-        except IndexError as e:
-            raise IndexError(
-                f"Bounding box {bounding_box} is out of bounds for image dimensions "
-                f"{prepared_image.shape}"
-            ) from e
-
-        logger.debug("Cropped image array shape: %s", cropped_img_array.shape)
-
-        # Step 7:
-        try:
-            # Save cropped image to buffer
-            png_bytes_io = BytesIO()
-
-            # catch warnings about low contrast images and avoid displaying them
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", UserWarning)
-                imageio.imwrite(png_bytes_io, cropped_img_array, format="png")
-            png_bytes = png_bytes_io.getvalue()
-
-        except (FileNotFoundError, ValueError) as exc:
-            # Handle errors if image processing fails
-            logger.error(exc)
+        if cropped_img_array is None:
             return data_value
 
         logger.debug("Image processed successfully and being sent to HTML for display.")
 
-        # Step 8: Return HTML image display as a base64-encoded PNG
-        # we dynamically style the image so that it will be displayed based
-        # on automatic or user-based settings from the display_options custom
-        # attribute.
-        display_options = self._custom_attrs.get("display_options", {})
-        if display_options is None:
-            display_options = {}
-        width = display_options.get("width", "300px")
-        height = display_options.get("height")
-
-        html_style = [f"width:{width}"]
-        if height is not None:
-            html_style.append(f"height:{height}")
-
-        html_style_joined = ";".join(html_style)
-        base64_image_bytes = base64.b64encode(png_bytes).decode("utf-8")
-
-        return (
-            '<img src="data:image/png;base64,'
-            f'{base64_image_bytes}" style="{html_style_joined}"/>'
-        )
+        try:
+            return self._image_array_to_html(cropped_img_array)
+        except Exception:
+            return data_value
 
     def get_displayed_rows(self: CytoDataFrame_type) -> List[int]:
         """
@@ -1487,6 +1755,13 @@ class CytoDataFrame(pd.DataFrame):
                 data = data.drop(
                     self._custom_attrs["data_image_paths"].columns.tolist(), axis=1
                 )
+
+            ome_arrow_cols = self.find_ome_arrow_columns(data)
+            if ome_arrow_cols:
+                for ome_col in ome_arrow_cols:
+                    data.loc[display_indices, ome_col] = data.loc[
+                        display_indices, ome_col
+                    ].apply(self.process_ome_arrow_data_as_html_display)
 
             if self._custom_attrs["is_transposed"]:
                 # retranspose to return the

@@ -1127,10 +1127,22 @@ class CytoDataFrame(pd.DataFrame):
             else:
                 array = np_pixels.reshape((size_y, size_x, channel_count))
 
-            return img_as_ubyte(array)
+            return self._ensure_uint8(array)
         except Exception as exc:
             logger.debug("Unable to decode OME-Arrow struct: %s", exc)
             return None
+
+    @staticmethod
+    def _ensure_uint8(array: np.ndarray) -> np.ndarray:
+        """Convert the provided array to uint8 without unnecessary warnings."""
+
+        arr = np.asarray(array)
+        if np.issubdtype(arr.dtype, np.integer):
+            min_val = arr.min(initial=0)
+            max_val = arr.max(initial=0)
+            if 0 <= min_val and max_val <= 255:
+                return arr.astype(np.uint8, copy=False)
+        return img_as_ubyte(arr)
 
     def _prepare_cropped_image_array(  # noqa: C901, PLR0915, PLR0912
         self: CytoDataFrame_type,
@@ -1213,7 +1225,7 @@ class CytoDataFrame(pd.DataFrame):
             )
 
         # Normalize to 0-255 for image saving
-        orig_image_array = img_as_ubyte(orig_image_array)
+        orig_image_array = self._ensure_uint8(orig_image_array)
 
         prepared_image = self.search_for_mask_or_outline(
             data_value=data_value,

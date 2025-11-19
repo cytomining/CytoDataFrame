@@ -116,7 +116,7 @@ lint.select = [
 ]
 # Ignore `E402` and `F401` (unused imports) in all `__init__.py` files
 lint.per-file-ignores."__init__.py" = [ "E402", "F401" ]
-lint.per-file-ignores."src/cytodataframe/*.py" = [ "PLC0415" ]
+lint.per-file-ignores."src/cytodataframe/*.py" = [ "ANN401", "PLC0415" ]
 lint.per-file-ignores."src/cytodataframe/image.py" = [ "PLR2004" ]
 # ignore typing rules for tests
 lint.per-file-ignores."tests/*" = [ "ANN201", "PLR0913", "PLR2004", "SIM105" ]

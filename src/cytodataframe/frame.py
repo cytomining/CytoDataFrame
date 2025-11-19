@@ -287,7 +287,7 @@ class CytoDataFrame(pd.DataFrame):
         # instead of Pandas DataFrames.
         self._wrap_methods()
 
-    def __getitem__(self: CytoDataFrame_type, key: Union[int, str]) -> Any:  # noqa: ANN401
+    def __getitem__(self: CytoDataFrame_type, key: Union[int, str]) -> Any:
         """
         Returns an element or a slice of the underlying pandas DataFrame.
 
@@ -332,7 +332,7 @@ class CytoDataFrame(pd.DataFrame):
         method_name: str,
         *args: Tuple[Any, ...],
         **kwargs: Dict[str, Any],
-    ) -> Any:  # noqa: ANN401
+    ) -> Any:
         """
         Wraps a given method to ensure that the returned result
         is an CytoDataFrame if applicable.
@@ -402,7 +402,7 @@ class CytoDataFrame(pd.DataFrame):
                 the result is a CytoDataFrame.
         """
 
-        def wrapper(*args: Tuple[Any, ...], **kwargs: Dict[str, Any]) -> Any:  # noqa: ANN401
+        def wrapper(*args: Tuple[Any, ...], **kwargs: Dict[str, Any]) -> Any:
             """
             Wraps the specified method to ensure
             it returns a CytoDataFrame.
@@ -784,7 +784,9 @@ class CytoDataFrame(pd.DataFrame):
                         ("mask", f"{image_col}{arrow_column_suffix}_LABL")
                     )
                 if include_composite:
-                    layer_configs.append(("composite", f"{image_col}{arrow_column_suffix}_COMP"))
+                    layer_configs.append(
+                        ("composite", f"{image_col}{arrow_column_suffix}_COMP")
+                    )
 
                 column_values = {col_name: [] for _, col_name in layer_configs}
 
@@ -901,7 +903,11 @@ class CytoDataFrame(pd.DataFrame):
             existing = table.schema.metadata or {}
             new_metadata = {
                 **existing,
-                **{str(k).encode(): str(v).encode() for k, v in merged_metadata.items() if v is not None},
+                **{
+                    str(k).encode(): str(v).encode()
+                    for k, v in merged_metadata.items()
+                    if v is not None
+                },
             }
             table = table.replace_schema_metadata(new_metadata)
             pq.write_table(table, file_path, **final_kwargs)
@@ -977,7 +983,7 @@ class CytoDataFrame(pd.DataFrame):
         return image_cols
 
     @staticmethod
-    def _is_ome_arrow_value(value: Any) -> bool:  # noqa: ANN401
+    def _is_ome_arrow_value(value: Any) -> bool:
         """Check whether a value looks like an OME-Arrow struct."""
 
         return (
@@ -1184,8 +1190,9 @@ class CytoDataFrame(pd.DataFrame):
 
         return None, None
 
-    def _extract_array_from_ome_arrow(  # noqa: PLR0911, ANN401
-        self: CytoDataFrame_type, data_value: Any
+    def _extract_array_from_ome_arrow(  # noqa: PLR0911
+        self: CytoDataFrame_type,
+        data_value: Any,
     ) -> Optional[np.ndarray]:
         """Convert an OME-Arrow struct (dict) into an ndarray."""
 
@@ -1238,7 +1245,7 @@ class CytoDataFrame(pd.DataFrame):
         if np.issubdtype(arr.dtype, np.integer):
             min_val = arr.min(initial=0)
             max_val = arr.max(initial=0)
-            if 0 <= min_val <= 255 and 0 <= max_val <= 255:
+            if 0 <= min_val <= 255 and 0 <= max_val <= 255:  # noqa: PLR2004
                 return arr.astype(np.uint8, copy=False)
         return img_as_ubyte(arr)
 
@@ -1250,13 +1257,13 @@ class CytoDataFrame(pd.DataFrame):
         if np.issubdtype(arr.dtype, np.integer):
             min_val = arr.min(initial=0)
             max_val = arr.max(initial=0)
-            if 0 <= min_val and max_val <= 255:
+            if min_val >= 0 and max_val <= 255:  # noqa: PLR2004
                 return arr.astype(np.uint8, copy=False)
         return img_as_ubyte(arr)
 
-    def _prepare_cropped_image_layers(  # noqa: C901, PLR0915, PLR0912
+    def _prepare_cropped_image_layers(  # noqa: C901, PLR0915, PLR0912, PLR0913
         self: CytoDataFrame_type,
-        data_value: Any,  # noqa: ANN401
+        data_value: Any,
         bounding_box: Tuple[int, int, int, int],
         compartment_center_xy: Optional[Tuple[int, int]] = None,
         image_path: Optional[str] = None,
@@ -1343,9 +1350,7 @@ class CytoDataFrame(pd.DataFrame):
 
         orig_image_array = self._ensure_uint8(orig_image_array)
 
-        original_image_copy = (
-            orig_image_array.copy() if include_original else None
-        )
+        original_image_copy = orig_image_array.copy() if include_original else None
 
         prepared_image, mask_source_path = self.search_for_mask_or_outline(
             data_value=data_value,
@@ -1373,7 +1378,7 @@ class CytoDataFrame(pd.DataFrame):
         if include_mask_outline and mask_source_path is not None:
             try:
                 loaded_mask = imageio.imread(mask_source_path)
-                if loaded_mask.ndim == 3:
+                if loaded_mask.ndim == 3:  # noqa: PLR2004
                     mask_gray = np.max(loaded_mask[..., :3], axis=2)
                 else:
                     mask_gray = loaded_mask
@@ -1445,7 +1450,7 @@ class CytoDataFrame(pd.DataFrame):
             if include_mask_outline and mask_source_array is not None:
                 try:
                     cropped_mask = mask_source_array[y_min:y_max, x_min:x_max]
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.debug(
                         "Failed to crop mask/outline array for %s: %s",
                         mask_source_path,
@@ -1554,7 +1559,7 @@ class CytoDataFrame(pd.DataFrame):
 
     def _prepare_cropped_image_array(
         self: CytoDataFrame_type,
-        data_value: Any,  # noqa: ANN401
+        data_value: Any,
         bounding_box: Tuple[int, int, int, int],
         compartment_center_xy: Optional[Tuple[int, int]] = None,
         image_path: Optional[str] = None,
@@ -1599,7 +1604,7 @@ class CytoDataFrame(pd.DataFrame):
 
     def process_ome_arrow_data_as_html_display(
         self: CytoDataFrame_type,
-        data_value: Any,  # noqa: ANN401
+        data_value: Any,
     ) -> str:
         """Render an OME-Arrow struct as an HTML <img> element."""
 
@@ -1614,7 +1619,7 @@ class CytoDataFrame(pd.DataFrame):
 
     def process_image_data_as_html_display(
         self: CytoDataFrame_type,
-        data_value: Any,  # noqa: ANN401
+        data_value: Any,
         bounding_box: Tuple[int, int, int, int],
         compartment_center_xy: Optional[Tuple[int, int]] = None,
         image_path: Optional[str] = None,

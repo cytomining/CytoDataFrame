@@ -60,9 +60,7 @@ def test_to_ome_parquet_adds_arrow_column(
         captured["file_path"] = file_path
         captured["kwargs"] = kwargs
 
-    monkeypatch.setattr(
-        "pyarrow.parquet.write_table", fake_write_table, raising=False
-    )
+    monkeypatch.setattr("pyarrow.parquet.write_table", fake_write_table, raising=False)
 
     output_path = tmp_path / "out.parquet"
     cdf.to_ome_parquet(output_path)
@@ -161,9 +159,7 @@ def test_to_ome_parquet_layer_flags(
     def fake_write_table(table, file_path, **kwargs):  # noqa: ANN001, ANN202, ANN003
         captured["df"] = table.to_pandas()
 
-    monkeypatch.setattr(
-        "pyarrow.parquet.write_table", fake_write_table, raising=False
-    )
+    monkeypatch.setattr("pyarrow.parquet.write_table", fake_write_table, raising=False)
 
     cdf.to_ome_parquet(
         tmp_path / "out.parquet",

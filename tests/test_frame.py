@@ -61,9 +61,9 @@ def test_to_ome_parquet_adds_arrow_column(
     output_path = tmp_path / "out.parquet"
     cdf.to_ome_parquet(output_path)
 
-    composite_col = "Image_FileName_DNA_OMEArrow"
-    orig_col = "Image_FileName_DNA_OMEArrowOriginal"
-    mask_col = "Image_FileName_DNA_OMEArrowMask"
+    composite_col = "Image_FileName_DNA_OMEArrow_COMP"
+    orig_col = "Image_FileName_DNA_OMEArrow_ORIG"
+    mask_col = "Image_FileName_DNA_OMEArrow_LABL"
     for column in (composite_col, orig_col, mask_col):
         assert column in captured["df"].columns
 
@@ -106,15 +106,15 @@ def test_to_ome_parquet_real_data(
     for col in image_cols:
         expected_arrow_cols.extend(
             [
-                f"{col}_OMEArrow",
-                f"{col}_OMEArrowOriginal",
-                f"{col}_OMEArrowMask",
+                f"{col}_OMEArrow_COMP",
+                f"{col}_OMEArrow_ORIG",
+                f"{col}_OMEArrow_LABL",
             ]
         )
     for column in expected_arrow_cols:
         assert column in table.column_names
 
-    mask_cols = [f"{col}_OMEArrowMask" for col in image_cols]
+    mask_cols = [f"{col}_OMEArrow_LABL" for col in image_cols]
     mask_df = table.select(mask_cols).to_pandas()
     assert mask_df.notna().any().any()
 
@@ -162,9 +162,9 @@ def test_to_ome_parquet_layer_flags(
     )
 
     columns = captured["df"].columns
-    assert "Image_FileName_DNA_OMEArrow" in columns
-    assert "Image_FileName_DNA_OMEArrowOriginal" not in columns
-    assert "Image_FileName_DNA_OMEArrowMask" not in columns
+    assert "Image_FileName_DNA_OMEArrow_COMP" in columns
+    assert "Image_FileName_DNA_OMEArrow_ORIG" not in columns
+    assert "Image_FileName_DNA_OMEArrow_LABL" not in columns
 
 
 def test_ome_arrow_columns_render_html(
@@ -188,7 +188,7 @@ def test_ome_arrow_columns_render_html(
     raw_cdf.to_ome_parquet(ome_path)
 
     arrow_cdf = CytoDataFrame(data=ome_path)
-    arrow_cols = [col for col in arrow_cdf.columns if col.endswith("_OMEArrow")]
+    arrow_cols = [col for col in arrow_cdf.columns if col.endswith("_OMEArrow_COMP")]
     assert arrow_cols
 
     html_output = arrow_cdf[arrow_cols]._repr_html_(debug=True)

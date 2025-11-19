@@ -757,14 +757,14 @@ class CytoDataFrame(pd.DataFrame):
                 layer_configs: List[Tuple[str, str]] = []
                 if include_original:
                     layer_configs.append(
-                        ("original", f"{image_col}{arrow_column_suffix}Original")
+                        ("original", f"{image_col}{arrow_column_suffix}_ORIG")
                     )
                 if include_mask_outline:
                     layer_configs.append(
-                        ("mask", f"{image_col}{arrow_column_suffix}Mask")
+                        ("mask", f"{image_col}{arrow_column_suffix}_LABL")
                     )
                 if include_composite:
-                    layer_configs.append(("composite", f"{image_col}{arrow_column_suffix}"))
+                    layer_configs.append(("composite", f"{image_col}{arrow_column_suffix}_COMP"))
 
                 column_values = {col_name: [] for _, col_name in layer_configs}
 

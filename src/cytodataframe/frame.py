@@ -1988,17 +1988,15 @@ class CytoDataFrame(pd.DataFrame):
 
         # if we're in a notebook process as though in a jupyter environment
         if get_option("display.notebook_repr_html") and not debug:
-            # Mount the VBox (slider + output) exactly once
-            if not self._custom_attrs["_widget_state"]["shown"]:
-                display(
-                    widgets.VBox(
-                        [
-                            self._custom_attrs["_scale_slider"],
-                            self._custom_attrs["_output"],
-                        ]
-                    )
+            display(
+                widgets.VBox(
+                    [
+                        self._custom_attrs["_scale_slider"],
+                        self._custom_attrs["_output"],
+                    ]
                 )
-                self._custom_attrs["_widget_state"]["shown"] = True
+            )
+            self._custom_attrs["_widget_state"]["shown"] = True
 
             # Attach the slider observer exactly once
             if not self._custom_attrs["_widget_state"]["observing"]:

@@ -653,12 +653,23 @@ class CytoDataFrame(pd.DataFrame):
         """Export the dataframe with cropped images encoded as OMEArrow structs."""
 
         try:
-            from ome_arrow import OMEArrow
+            from ome_arrow import OMEArrow  # type: ignore
         except ImportError as exc:
             raise ImportError(
                 "CytoDataFrame.to_ome_parquet requires the optional 'ome-arrow' "
                 "dependency. Install it via `pip install ome-arrow`."
             ) from exc
+
+        try:
+            import importlib.metadata as importlib_metadata
+        except ImportError:  # pragma: no cover
+            import importlib_metadata  # type: ignore
+
+        try:
+            ome_arrow_version = importlib_metadata.version("ome-arrow")
+        except importlib_metadata.PackageNotFoundError:
+            module = sys.modules.get("ome_arrow")
+            ome_arrow_version = getattr(module, "__version__", None)
 
         if not any((include_original, include_mask_outline, include_composite)):
             raise ValueError(
@@ -748,6 +759,15 @@ class CytoDataFrame(pd.DataFrame):
         comp_center_y = next((col for col in comp_center_cols if "Y" in str(col)), None)
 
         kwargs.setdefault("engine", "pyarrow")
+
+        from cytodataframe import __version__ as cytodataframe_version
+
+        metadata = {
+            "cytodataframe:data-producer": "https://github.com/cytomining/CytoDataFrame",
+            "cytodataframe:data-producer-version": cytodataframe_version,
+        }
+        if ome_arrow_version is not None:
+            metadata["cytodataframe:ome-arrow-version"] = ome_arrow_version
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir_path = pathlib.Path(tmpdir)
@@ -864,7 +884,33 @@ class CytoDataFrame(pd.DataFrame):
         if missing_path_cols:
             working_df = working_df.drop(columns=missing_path_cols)
 
-        working_df.to_parquet(file_path, **kwargs)
+        final_kwargs = kwargs.copy()
+        engine = final_kwargs.pop("engine", None)
+        existing_metadata = final_kwargs.pop("metadata", {}) or {}
+        merged_metadata = {**metadata, **existing_metadata}
+
+        index_arg = final_kwargs.pop("index", None)
+        if merged_metadata:
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+
+            table = pa.Table.from_pandas(
+                working_df,
+                preserve_index=True if index_arg is None else index_arg,
+            )
+            existing = table.schema.metadata or {}
+            new_metadata = {
+                **existing,
+                **{str(k).encode(): str(v).encode() for k, v in merged_metadata.items() if v is not None},
+            }
+            table = table.replace_schema_metadata(new_metadata)
+            pq.write_table(table, file_path, **final_kwargs)
+        else:
+            if index_arg is not None:
+                final_kwargs["index"] = index_arg
+            if engine is not None:
+                final_kwargs["engine"] = engine
+            working_df.to_parquet(file_path, **final_kwargs)
 
     @staticmethod
     def is_notebook_or_lab() -> bool:

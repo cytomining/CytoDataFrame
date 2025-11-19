@@ -46,17 +46,23 @@ def test_to_ome_parquet_adds_arrow_column(
         def __init__(self, data: str):  # noqa: ANN204
             self.data = data
 
-    dummy_module = types.SimpleNamespace(OMEArrow=DummyOMEArrow)
+    dummy_module = types.SimpleNamespace(
+        OMEArrow=DummyOMEArrow,
+        __version__="test",
+        __spec__=types.SimpleNamespace(loader=None),
+    )
     monkeypatch.setitem(sys.modules, "ome_arrow", dummy_module)
 
     captured: dict = {}
 
-    def fake_to_parquet(self, file_path, **kwargs):  # noqa: ANN001, ANN202, ANN003
-        captured["df"] = self.copy()
+    def fake_write_table(table, file_path, **kwargs):  # noqa: ANN001, ANN202, ANN003
+        captured["df"] = table.to_pandas()
         captured["file_path"] = file_path
         captured["kwargs"] = kwargs
 
-    monkeypatch.setattr(pd.DataFrame, "to_parquet", fake_to_parquet, raising=False)
+    monkeypatch.setattr(
+        "pyarrow.parquet.write_table", fake_write_table, raising=False
+    )
 
     output_path = tmp_path / "out.parquet"
     cdf.to_ome_parquet(output_path)
@@ -75,7 +81,6 @@ def test_to_ome_parquet_adds_arrow_column(
     assert isinstance(orig_value, str) and orig_value.endswith(".tiff")
     assert mask_value is None
     assert captured["file_path"] == output_path
-    assert captured["kwargs"].get("engine") == "pyarrow"
 
 
 def test_to_ome_parquet_real_data(
@@ -144,15 +149,21 @@ def test_to_ome_parquet_layer_flags(
         def __init__(self, data: str):  # noqa: ANN204
             self.data = data
 
-    dummy_module = types.SimpleNamespace(OMEArrow=DummyOMEArrow)
+    dummy_module = types.SimpleNamespace(
+        OMEArrow=DummyOMEArrow,
+        __version__="test",
+        __spec__=types.SimpleNamespace(loader=None),
+    )
     monkeypatch.setitem(sys.modules, "ome_arrow", dummy_module)
 
     captured: dict = {}
 
-    def fake_to_parquet(self, file_path, **kwargs):  # noqa: ANN001, ANN202, ANN003
-        captured["df"] = self.copy()
+    def fake_write_table(table, file_path, **kwargs):  # noqa: ANN001, ANN202, ANN003
+        captured["df"] = table.to_pandas()
 
-    monkeypatch.setattr(pd.DataFrame, "to_parquet", fake_to_parquet, raising=False)
+    monkeypatch.setattr(
+        "pyarrow.parquet.write_table", fake_write_table, raising=False
+    )
 
     cdf.to_ome_parquet(
         tmp_path / "out.parquet",

@@ -1326,7 +1326,15 @@ class CytoDataFrame(pd.DataFrame):
         mask_source_array = None
         if include_mask_outline and mask_source_path is not None:
             try:
-                mask_source_array = self._ensure_uint8(imageio.imread(mask_source_path))
+                loaded_mask = imageio.imread(mask_source_path)
+                if loaded_mask.ndim == 3:
+                    mask_gray = np.max(loaded_mask[..., :3], axis=2)
+                else:
+                    mask_gray = loaded_mask
+                mask_binary = mask_gray > 0
+                mask_uint8 = np.zeros(mask_binary.shape, dtype=np.uint8)
+                mask_uint8[mask_binary] = 255
+                mask_source_array = mask_uint8
             except (FileNotFoundError, ValueError) as exc:
                 logger.error(
                     "Unable to read mask/outline image %s: %s", mask_source_path, exc

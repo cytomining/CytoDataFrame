@@ -42,16 +42,16 @@ def test_to_ome_parquet_adds_arrow_column(
 
     cdf = CytoDataFrame(data=data)
 
-    class DummyOMEArrow:
+    class TestOMEArrow:
         def __init__(self, data: str):  # noqa: ANN204
             self.data = data
 
-    dummy_module = types.SimpleNamespace(
-        OMEArrow=DummyOMEArrow,
+    test_module = types.SimpleNamespace(
+        OMEArrow=TestOMEArrow,
         __version__="test",
         __spec__=types.SimpleNamespace(loader=None),
     )
-    monkeypatch.setitem(sys.modules, "ome_arrow", dummy_module)
+    monkeypatch.setitem(sys.modules, "ome_arrow", test_module)
 
     captured: dict = {}
 
@@ -147,16 +147,16 @@ def test_to_ome_parquet_layer_flags(
 
     cdf = CytoDataFrame(data=data)
 
-    class DummyOMEArrow:
+    class TestOMEArrow:
         def __init__(self, data: str):  # noqa: ANN204
             self.data = data
 
-    dummy_module = types.SimpleNamespace(
-        OMEArrow=DummyOMEArrow,
+    test_module = types.SimpleNamespace(
+        OMEArrow=TestOMEArrow,
         __version__="test",
         __spec__=types.SimpleNamespace(loader=None),
     )
-    monkeypatch.setitem(sys.modules, "ome_arrow", dummy_module)
+    monkeypatch.setitem(sys.modules, "ome_arrow", test_module)
 
     captured: dict = {}
 
@@ -629,7 +629,7 @@ def test_slider_updates_state(monkeypatch: MonkeyPatch):
     widget state and triggers the render method.
     """
 
-    # Minimal dummy dataframe
+    # Minimal test dataframe
     df = pd.DataFrame({"Image_FileName_DNA": ["example.tif"]})
     cdf = CytoDataFrame(df)
 

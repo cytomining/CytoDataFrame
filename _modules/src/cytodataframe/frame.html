@@ -405,6 +405,8 @@
 <span class="kn">import</span> <span class="nn">pathlib</span>
 <span class="kn">import</span> <span class="nn">re</span>
 <span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">tempfile</span>
+<span class="kn">import</span> <span class="nn">uuid</span>
 <span class="kn">import</span> <span class="nn">warnings</span>
 <span class="kn">from</span> <span class="nn">io</span> <span class="kn">import</span> <span class="n">BytesIO</span><span class="p">,</span> <span class="n">StringIO</span>
 <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="p">(</span>
@@ -685,7 +687,7 @@
         <span class="c1"># instead of Pandas DataFrames.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_wrap_methods</span><span class="p">()</span>
 
-    <span class="k">def</span> <span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>  <span class="c1"># noqa: ANN401</span>
+    <span class="k">def</span> <span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns an element or a slice of the underlying pandas DataFrame.</span>
 
@@ -732,7 +734,7 @@
         <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
         <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>  <span class="c1"># noqa: ANN401</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Wraps a given method to ensure that the returned result</span>
 <span class="sd">        is an CytoDataFrame if applicable.</span>
@@ -805,7 +807,7 @@
 <span class="sd">                the result is a CytoDataFrame.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
-        <span class="k">def</span> <span class="nf">wrapper</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>  <span class="c1"># noqa: ANN401</span>
+        <span class="k">def</span> <span class="nf">wrapper</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <span class="w">            </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">            Wraps the specified method to ensure</span>
 <span class="sd">            it returns a CytoDataFrame.</span>
@@ -1060,6 +1062,286 @@
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Unsupported file format for export.&quot;</span><span class="p">)</span></div>
 
 
+<div class="viewcode-block" id="CytoDataFrame.to_ome_parquet">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame.to_ome_parquet">[docs]</a>
+    <span class="k">def</span> <span class="nf">to_ome_parquet</span><span class="p">(</span>  <span class="c1"># noqa: PLR0915, PLR0912, C901</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
+        <span class="n">file_path</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">],</span>
+        <span class="n">arrow_column_suffix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;_OMEArrow&quot;</span><span class="p">,</span>
+        <span class="n">include_original</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">include_mask_outline</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">include_composite</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Export the dataframe with cropped images encoded as OMEArrow structs.&quot;&quot;&quot;</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span> <span class="nn">ome_arrow</span> <span class="kn">import</span> <span class="n">OMEArrow</span>  <span class="c1"># type: ignore</span>
+        <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+                <span class="s2">&quot;CytoDataFrame.to_ome_parquet requires the optional &#39;ome-arrow&#39; &quot;</span>
+                <span class="s2">&quot;dependency. Install it via `pip install ome-arrow`.&quot;</span>
+            <span class="p">)</span> <span class="kn">from</span> <span class="nn">exc</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">import</span> <span class="nn">importlib.metadata</span> <span class="k">as</span> <span class="nn">importlib_metadata</span>
+        <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>  <span class="c1"># pragma: no cover</span>
+            <span class="kn">import</span> <span class="nn">importlib_metadata</span>  <span class="c1"># type: ignore</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">ome_arrow_version</span> <span class="o">=</span> <span class="n">importlib_metadata</span><span class="o">.</span><span class="n">version</span><span class="p">(</span><span class="s2">&quot;ome-arrow&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">importlib_metadata</span><span class="o">.</span><span class="n">PackageNotFoundError</span><span class="p">:</span>
+            <span class="n">module</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ome_arrow&quot;</span><span class="p">)</span>
+            <span class="n">ome_arrow_version</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="s2">&quot;__version__&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">((</span><span class="n">include_original</span><span class="p">,</span> <span class="n">include_mask_outline</span><span class="p">,</span> <span class="n">include_composite</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;At least one of include_original, include_mask_outline, or &quot;</span>
+                <span class="s2">&quot;include_composite must be True.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">image_cols</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">find_image_columns</span><span class="p">()</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">image_cols</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">&quot;No image filename columns detected. Falling back to to_parquet().&quot;</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">to_parquet</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="n">bounding_box_df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data_bounding_box&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">bounding_box_df</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;to_ome_parquet requires bounding box metadata to crop images.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">bounding_box_cols</span> <span class="o">=</span> <span class="n">bounding_box_df</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="n">bbox_column_map</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;x_min&quot;</span><span class="p">:</span> <span class="nb">next</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span> <span class="k">if</span> <span class="s2">&quot;Minimum_X&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)),</span> <span class="kc">None</span>
+            <span class="p">),</span>
+            <span class="s2">&quot;y_min&quot;</span><span class="p">:</span> <span class="nb">next</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span> <span class="k">if</span> <span class="s2">&quot;Minimum_Y&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)),</span> <span class="kc">None</span>
+            <span class="p">),</span>
+            <span class="s2">&quot;x_max&quot;</span><span class="p">:</span> <span class="nb">next</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span> <span class="k">if</span> <span class="s2">&quot;Maximum_X&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)),</span> <span class="kc">None</span>
+            <span class="p">),</span>
+            <span class="s2">&quot;y_max&quot;</span><span class="p">:</span> <span class="nb">next</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span> <span class="k">if</span> <span class="s2">&quot;Maximum_Y&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)),</span> <span class="kc">None</span>
+            <span class="p">),</span>
+        <span class="p">}</span>
+
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">bbox_column_map</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Unable to identify all bounding box coordinate columns for export.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">working_df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="n">missing_bbox_cols</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span> <span class="k">if</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">working_df</span><span class="o">.</span><span class="n">columns</span>
+        <span class="p">]</span>
+        <span class="k">if</span> <span class="n">missing_bbox_cols</span><span class="p">:</span>
+            <span class="n">working_df</span> <span class="o">=</span> <span class="n">working_df</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">bounding_box_df</span><span class="p">[</span><span class="n">missing_bbox_cols</span><span class="p">])</span>
+
+        <span class="n">comp_center_df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;compartment_center_xy&quot;</span><span class="p">)</span>
+        <span class="n">comp_center_cols</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">missing_comp_cols</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">comp_center_df</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">comp_center_cols</span> <span class="o">=</span> <span class="n">comp_center_df</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="n">missing_comp_cols</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">comp_center_cols</span> <span class="k">if</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">working_df</span><span class="o">.</span><span class="n">columns</span>
+            <span class="p">]</span>
+            <span class="k">if</span> <span class="n">missing_comp_cols</span><span class="p">:</span>
+                <span class="n">working_df</span> <span class="o">=</span> <span class="n">working_df</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">comp_center_df</span><span class="p">[</span><span class="n">missing_comp_cols</span><span class="p">])</span>
+
+        <span class="n">image_path_df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data_image_paths&quot;</span><span class="p">)</span>
+        <span class="n">missing_path_cols</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">image_path_df</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">image_path_cols_all</span> <span class="o">=</span> <span class="n">image_path_df</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="n">missing_path_cols</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">image_path_cols_all</span> <span class="k">if</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">working_df</span><span class="o">.</span><span class="n">columns</span>
+            <span class="p">]</span>
+            <span class="k">if</span> <span class="n">missing_path_cols</span><span class="p">:</span>
+                <span class="n">working_df</span> <span class="o">=</span> <span class="n">working_df</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">image_path_df</span><span class="p">[</span><span class="n">missing_path_cols</span><span class="p">])</span>
+
+        <span class="n">all_cols_str</span><span class="p">,</span> <span class="n">all_cols_back</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_labels</span><span class="p">(</span><span class="n">working_df</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span>
+        <span class="n">image_cols_str</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">image_cols</span><span class="p">]</span>
+        <span class="n">image_path_cols_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">find_image_path_columns</span><span class="p">(</span>
+            <span class="n">image_cols</span><span class="o">=</span><span class="n">image_cols_str</span><span class="p">,</span> <span class="n">all_cols</span><span class="o">=</span><span class="n">all_cols_str</span>
+        <span class="p">)</span>
+        <span class="n">image_path_cols</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">image_col</span> <span class="ow">in</span> <span class="n">image_cols</span><span class="p">:</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">image_col</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">image_path_cols_str</span><span class="p">:</span>
+                <span class="n">mapped_col</span> <span class="o">=</span> <span class="n">image_path_cols_str</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+                <span class="n">image_path_cols</span><span class="p">[</span><span class="n">image_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">all_cols_back</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                    <span class="nb">str</span><span class="p">(</span><span class="n">mapped_col</span><span class="p">),</span> <span class="n">mapped_col</span>
+                <span class="p">)</span>
+
+        <span class="n">comp_center_x</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">comp_center_cols</span> <span class="k">if</span> <span class="s2">&quot;X&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)),</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">comp_center_y</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">comp_center_cols</span> <span class="k">if</span> <span class="s2">&quot;Y&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)),</span> <span class="kc">None</span><span class="p">)</span>
+
+        <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;engine&quot;</span><span class="p">,</span> <span class="s2">&quot;pyarrow&quot;</span><span class="p">)</span>
+
+        <span class="kn">from</span> <span class="nn">cytodataframe</span> <span class="kn">import</span> <span class="n">__version__</span> <span class="k">as</span> <span class="n">cytodataframe_version</span>
+
+        <span class="n">metadata</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;cytodataframe:data-producer&quot;</span><span class="p">:</span> <span class="s2">&quot;https://github.com/cytomining/CytoDataFrame&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;cytodataframe:data-producer-version&quot;</span><span class="p">:</span> <span class="n">cytodataframe_version</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="k">if</span> <span class="n">ome_arrow_version</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;cytodataframe:ome-arrow-version&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ome_arrow_version</span>
+
+        <span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">TemporaryDirectory</span><span class="p">()</span> <span class="k">as</span> <span class="n">tmpdir</span><span class="p">:</span>
+            <span class="n">tmpdir_path</span> <span class="o">=</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">tmpdir</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">image_col</span> <span class="ow">in</span> <span class="n">image_cols</span><span class="p">:</span>
+                <span class="n">image_path_col</span> <span class="o">=</span> <span class="n">image_path_cols</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">image_col</span><span class="p">)</span>
+
+                <span class="n">layer_configs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="k">if</span> <span class="n">include_original</span><span class="p">:</span>
+                    <span class="n">layer_configs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="p">(</span><span class="s2">&quot;original&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">image_col</span><span class="si">}{</span><span class="n">arrow_column_suffix</span><span class="si">}</span><span class="s2">_ORIG&quot;</span><span class="p">)</span>
+                    <span class="p">)</span>
+                <span class="k">if</span> <span class="n">include_mask_outline</span><span class="p">:</span>
+                    <span class="n">layer_configs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="p">(</span><span class="s2">&quot;mask&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">image_col</span><span class="si">}{</span><span class="n">arrow_column_suffix</span><span class="si">}</span><span class="s2">_LABL&quot;</span><span class="p">)</span>
+                    <span class="p">)</span>
+                <span class="k">if</span> <span class="n">include_composite</span><span class="p">:</span>
+                    <span class="n">layer_configs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="p">(</span><span class="s2">&quot;composite&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">image_col</span><span class="si">}{</span><span class="n">arrow_column_suffix</span><span class="si">}</span><span class="s2">_COMP&quot;</span><span class="p">)</span>
+                    <span class="p">)</span>
+
+                <span class="n">column_values</span> <span class="o">=</span> <span class="p">{</span><span class="n">col_name</span><span class="p">:</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">col_name</span> <span class="ow">in</span> <span class="n">layer_configs</span><span class="p">}</span>
+
+                <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">working_df</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
+                    <span class="n">image_value</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">image_col</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">image_value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">pd</span><span class="o">.</span><span class="n">isna</span><span class="p">(</span><span class="n">image_value</span><span class="p">):</span>
+                        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">col_name</span> <span class="ow">in</span> <span class="n">layer_configs</span><span class="p">:</span>
+                            <span class="n">column_values</span><span class="p">[</span><span class="n">col_name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+                        <span class="k">continue</span>
+
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">bbox_values</span> <span class="o">=</span> <span class="p">(</span>
+                            <span class="n">row</span><span class="p">[</span><span class="n">bbox_column_map</span><span class="p">[</span><span class="s2">&quot;x_min&quot;</span><span class="p">]],</span>
+                            <span class="n">row</span><span class="p">[</span><span class="n">bbox_column_map</span><span class="p">[</span><span class="s2">&quot;y_min&quot;</span><span class="p">]],</span>
+                            <span class="n">row</span><span class="p">[</span><span class="n">bbox_column_map</span><span class="p">[</span><span class="s2">&quot;x_max&quot;</span><span class="p">]],</span>
+                            <span class="n">row</span><span class="p">[</span><span class="n">bbox_column_map</span><span class="p">[</span><span class="s2">&quot;y_max&quot;</span><span class="p">]],</span>
+                        <span class="p">)</span>
+                    <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+                        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">col_name</span> <span class="ow">in</span> <span class="n">layer_configs</span><span class="p">:</span>
+                            <span class="n">column_values</span><span class="p">[</span><span class="n">col_name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+                        <span class="k">continue</span>
+
+                    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">isna</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">bbox_values</span><span class="p">):</span>
+                        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">col_name</span> <span class="ow">in</span> <span class="n">layer_configs</span><span class="p">:</span>
+                            <span class="n">column_values</span><span class="p">[</span><span class="n">col_name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+                        <span class="k">continue</span>
+
+                    <span class="n">bounding_box</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">bbox_values</span><span class="p">)</span>
+
+                    <span class="n">compartment_center</span> <span class="o">=</span> <span class="kc">None</span>
+                    <span class="k">if</span> <span class="n">comp_center_x</span> <span class="ow">and</span> <span class="n">comp_center_y</span><span class="p">:</span>
+                        <span class="n">center_vals</span> <span class="o">=</span> <span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">comp_center_x</span><span class="p">),</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">comp_center_y</span><span class="p">))</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span><span class="n">val</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">pd</span><span class="o">.</span><span class="n">isna</span><span class="p">(</span><span class="n">val</span><span class="p">)</span> <span class="k">for</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">center_vals</span><span class="p">):</span>
+                            <span class="n">compartment_center</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">center_vals</span><span class="p">)</span>
+
+                    <span class="n">image_path_value</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">image_path_col</span><span class="p">)</span> <span class="k">if</span> <span class="n">image_path_col</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+                    <span class="p">)</span>
+
+                    <span class="n">layers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_cropped_image_layers</span><span class="p">(</span>
+                        <span class="n">data_value</span><span class="o">=</span><span class="n">image_value</span><span class="p">,</span>
+                        <span class="n">bounding_box</span><span class="o">=</span><span class="n">bounding_box</span><span class="p">,</span>
+                        <span class="n">compartment_center_xy</span><span class="o">=</span><span class="n">compartment_center</span><span class="p">,</span>
+                        <span class="n">image_path</span><span class="o">=</span><span class="n">image_path_value</span><span class="p">,</span>
+                        <span class="n">include_original</span><span class="o">=</span><span class="n">include_original</span><span class="p">,</span>
+                        <span class="n">include_mask_outline</span><span class="o">=</span><span class="n">include_mask_outline</span><span class="p">,</span>
+                        <span class="n">include_composite</span><span class="o">=</span><span class="n">include_composite</span><span class="p">,</span>
+                    <span class="p">)</span>
+
+                    <span class="n">sanitized_col</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;[^A-Za-z0-9_.-]&quot;</span><span class="p">,</span> <span class="s2">&quot;_&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">image_col</span><span class="p">))</span>
+
+                    <span class="k">for</span> <span class="n">layer_key</span><span class="p">,</span> <span class="n">col_name</span> <span class="ow">in</span> <span class="n">layer_configs</span><span class="p">:</span>
+                        <span class="n">layer_array</span> <span class="o">=</span> <span class="n">layers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">layer_key</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">layer_array</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                            <span class="n">column_values</span><span class="p">[</span><span class="n">col_name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+                            <span class="k">continue</span>
+
+                        <span class="n">temp_path</span> <span class="o">=</span> <span class="p">(</span>
+                            <span class="n">tmpdir_path</span>
+                            <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">sanitized_col</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">layer_key</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">hex</span><span class="si">}</span><span class="s2">.tiff&quot;</span>
+                        <span class="p">)</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">():</span>
+                                <span class="n">warnings</span><span class="o">.</span><span class="n">simplefilter</span><span class="p">(</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="ne">UserWarning</span><span class="p">)</span>
+                                <span class="n">imageio</span><span class="o">.</span><span class="n">imwrite</span><span class="p">(</span><span class="n">temp_path</span><span class="p">,</span> <span class="n">layer_array</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;tiff&quot;</span><span class="p">)</span>
+                        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                                <span class="s2">&quot;Failed to write temporary TIFF for OMEArrow (</span><span class="si">%s</span><span class="s2">): </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+                                <span class="n">layer_key</span><span class="p">,</span>
+                                <span class="n">exc</span><span class="p">,</span>
+                            <span class="p">)</span>
+                            <span class="n">column_values</span><span class="p">[</span><span class="n">col_name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+                            <span class="k">continue</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="n">ome_struct</span> <span class="o">=</span> <span class="n">OMEArrow</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">temp_path</span><span class="p">))</span><span class="o">.</span><span class="n">data</span>
+                            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">ome_struct</span><span class="p">,</span> <span class="s2">&quot;as_py&quot;</span><span class="p">):</span>
+                                <span class="n">ome_struct</span> <span class="o">=</span> <span class="n">ome_struct</span><span class="o">.</span><span class="n">as_py</span><span class="p">()</span>
+                        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                                <span class="s2">&quot;Failed to create OMEArrow struct for </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+                                <span class="n">layer_key</span><span class="p">,</span>
+                                <span class="n">exc</span><span class="p">,</span>
+                            <span class="p">)</span>
+                            <span class="n">column_values</span><span class="p">[</span><span class="n">col_name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+                            <span class="k">continue</span>
+                        <span class="n">column_values</span><span class="p">[</span><span class="n">col_name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ome_struct</span><span class="p">)</span>
+
+                <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">col_name</span> <span class="ow">in</span> <span class="n">layer_configs</span><span class="p">:</span>
+                    <span class="n">working_df</span><span class="p">[</span><span class="n">col_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">column_values</span><span class="p">[</span><span class="n">col_name</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">missing_bbox_cols</span><span class="p">:</span>
+            <span class="n">working_df</span> <span class="o">=</span> <span class="n">working_df</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">missing_bbox_cols</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">missing_comp_cols</span><span class="p">:</span>
+            <span class="n">working_df</span> <span class="o">=</span> <span class="n">working_df</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">missing_comp_cols</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">missing_path_cols</span><span class="p">:</span>
+            <span class="n">working_df</span> <span class="o">=</span> <span class="n">working_df</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">missing_path_cols</span><span class="p">)</span>
+
+        <span class="n">final_kwargs</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">engine</span> <span class="o">=</span> <span class="n">final_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;engine&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">existing_metadata</span> <span class="o">=</span> <span class="n">final_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;metadata&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">merged_metadata</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">metadata</span><span class="p">,</span> <span class="o">**</span><span class="n">existing_metadata</span><span class="p">}</span>
+
+        <span class="n">index_arg</span> <span class="o">=</span> <span class="n">final_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;index&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">merged_metadata</span><span class="p">:</span>
+            <span class="kn">import</span> <span class="nn">pyarrow</span> <span class="k">as</span> <span class="nn">pa</span>
+            <span class="kn">import</span> <span class="nn">pyarrow.parquet</span> <span class="k">as</span> <span class="nn">pq</span>
+
+            <span class="n">table</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">Table</span><span class="o">.</span><span class="n">from_pandas</span><span class="p">(</span>
+                <span class="n">working_df</span><span class="p">,</span>
+                <span class="n">preserve_index</span><span class="o">=</span><span class="kc">True</span> <span class="k">if</span> <span class="n">index_arg</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">index_arg</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">existing</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">metadata</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="n">new_metadata</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="o">**</span><span class="n">existing</span><span class="p">,</span>
+                <span class="o">**</span><span class="p">{</span>
+                    <span class="nb">str</span><span class="p">(</span><span class="n">k</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">():</span> <span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">()</span>
+                    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">merged_metadata</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                    <span class="k">if</span> <span class="n">v</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="p">},</span>
+            <span class="p">}</span>
+            <span class="n">table</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">replace_schema_metadata</span><span class="p">(</span><span class="n">new_metadata</span><span class="p">)</span>
+            <span class="n">pq</span><span class="o">.</span><span class="n">write_table</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="n">file_path</span><span class="p">,</span> <span class="o">**</span><span class="n">final_kwargs</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">index_arg</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">final_kwargs</span><span class="p">[</span><span class="s2">&quot;index&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">index_arg</span>
+            <span class="k">if</span> <span class="n">engine</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">final_kwargs</span><span class="p">[</span><span class="s2">&quot;engine&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">engine</span>
+            <span class="n">working_df</span><span class="o">.</span><span class="n">to_parquet</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="o">**</span><span class="n">final_kwargs</span><span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="CytoDataFrame.is_notebook_or_lab">
 <a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame.is_notebook_or_lab">[docs]</a>
     <span class="nd">@staticmethod</span>
@@ -1128,6 +1410,39 @@
         <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Found image columns: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">image_cols</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="n">image_cols</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._is_ome_arrow_value">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._is_ome_arrow_value">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_is_ome_arrow_value</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check whether a value looks like an OME-Arrow struct.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">value</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;type&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;ome.arrow&quot;</span>
+            <span class="ow">and</span> <span class="n">value</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;planes&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">value</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pixels_meta&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame.find_ome_arrow_columns">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame.find_ome_arrow_columns">[docs]</a>
+    <span class="k">def</span> <span class="nf">find_ome_arrow_columns</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Identify columns that contain OME-Arrow structs.&quot;&quot;&quot;</span>
+
+        <span class="n">ome_cols</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">column</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">series</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">column</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">series</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_is_ome_arrow_value</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+                <span class="n">ome_cols</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">column</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">ome_cols</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Found OME-Arrow columns: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">ome_cols</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">ome_cols</span></div>
 
 
 <div class="viewcode-block" id="CytoDataFrame.get_image_paths_from_data">
@@ -1206,7 +1521,7 @@
         <span class="n">candidate_path</span><span class="p">:</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">,</span>
         <span class="n">orig_image</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">mask</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Search for a mask or outline image file based on the</span>
 <span class="sd">        provided patterns and apply it to the target image.</span>
@@ -1240,7 +1555,7 @@
 
         <span class="k">if</span> <span class="n">file_dir</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;No mask or outline directory specified.&quot;</span><span class="p">)</span>
-            <span class="k">return</span> <span class="kc">None</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
 
         <span class="k">if</span> <span class="n">pattern_map</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">matching_mask_file</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
@@ -1258,18 +1573,24 @@
                 <span class="n">outline_color</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;outline_color&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
 
                 <span class="k">if</span> <span class="n">mask</span><span class="p">:</span>
-                    <span class="k">return</span> <span class="n">draw_outline_on_image_from_mask</span><span class="p">(</span>
-                        <span class="n">orig_image</span><span class="o">=</span><span class="n">orig_image</span><span class="p">,</span>
-                        <span class="n">mask_image_path</span><span class="o">=</span><span class="n">matching_mask_file</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
-                        <span class="n">outline_color</span><span class="o">=</span><span class="n">outline_color</span><span class="p">,</span>
+                    <span class="k">return</span> <span class="p">(</span>
+                        <span class="n">draw_outline_on_image_from_mask</span><span class="p">(</span>
+                            <span class="n">orig_image</span><span class="o">=</span><span class="n">orig_image</span><span class="p">,</span>
+                            <span class="n">mask_image_path</span><span class="o">=</span><span class="n">matching_mask_file</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                            <span class="n">outline_color</span><span class="o">=</span><span class="n">outline_color</span><span class="p">,</span>
+                        <span class="p">),</span>
+                        <span class="n">matching_mask_file</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
                     <span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
-                    <span class="k">return</span> <span class="n">draw_outline_on_image_from_outline</span><span class="p">(</span>
-                        <span class="n">orig_image</span><span class="o">=</span><span class="n">orig_image</span><span class="p">,</span>
-                        <span class="n">outline_image_path</span><span class="o">=</span><span class="n">matching_mask_file</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
-                        <span class="n">outline_color</span><span class="o">=</span><span class="n">outline_color</span><span class="p">,</span>
+                    <span class="k">return</span> <span class="p">(</span>
+                        <span class="n">draw_outline_on_image_from_outline</span><span class="p">(</span>
+                            <span class="n">orig_image</span><span class="o">=</span><span class="n">orig_image</span><span class="p">,</span>
+                            <span class="n">outline_image_path</span><span class="o">=</span><span class="n">matching_mask_file</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                            <span class="n">outline_color</span><span class="o">=</span><span class="n">outline_color</span><span class="p">,</span>
+                        <span class="p">),</span>
+                        <span class="n">matching_mask_file</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
                     <span class="p">)</span>
-            <span class="k">return</span> <span class="kc">None</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
 
         <span class="k">for</span> <span class="n">file_pattern</span><span class="p">,</span> <span class="n">original_pattern</span> <span class="ow">in</span> <span class="n">pattern_map</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">if</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">original_pattern</span><span class="p">,</span> <span class="n">data_value</span><span class="p">):</span>
@@ -1291,58 +1612,123 @@
                     <span class="c1"># gather the outline color if specified</span>
                     <span class="n">outline_color</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;outline_color&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
                     <span class="k">if</span> <span class="n">mask</span><span class="p">:</span>
-                        <span class="k">return</span> <span class="n">draw_outline_on_image_from_mask</span><span class="p">(</span>
-                            <span class="n">orig_image</span><span class="o">=</span><span class="n">orig_image</span><span class="p">,</span>
-                            <span class="n">mask_image_path</span><span class="o">=</span><span class="n">matching_files</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
-                            <span class="n">outline_color</span><span class="o">=</span><span class="n">outline_color</span><span class="p">,</span>
+                        <span class="k">return</span> <span class="p">(</span>
+                            <span class="n">draw_outline_on_image_from_mask</span><span class="p">(</span>
+                                <span class="n">orig_image</span><span class="o">=</span><span class="n">orig_image</span><span class="p">,</span>
+                                <span class="n">mask_image_path</span><span class="o">=</span><span class="n">matching_files</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                                <span class="n">outline_color</span><span class="o">=</span><span class="n">outline_color</span><span class="p">,</span>
+                            <span class="p">),</span>
+                            <span class="n">matching_files</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
                         <span class="p">)</span>
                     <span class="k">else</span><span class="p">:</span>
-                        <span class="k">return</span> <span class="n">draw_outline_on_image_from_outline</span><span class="p">(</span>
-                            <span class="n">orig_image</span><span class="o">=</span><span class="n">orig_image</span><span class="p">,</span>
-                            <span class="n">outline_image_path</span><span class="o">=</span><span class="n">matching_files</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
-                            <span class="n">outline_color</span><span class="o">=</span><span class="n">outline_color</span><span class="p">,</span>
+                        <span class="k">return</span> <span class="p">(</span>
+                            <span class="n">draw_outline_on_image_from_outline</span><span class="p">(</span>
+                                <span class="n">orig_image</span><span class="o">=</span><span class="n">orig_image</span><span class="p">,</span>
+                                <span class="n">outline_image_path</span><span class="o">=</span><span class="n">matching_files</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                                <span class="n">outline_color</span><span class="o">=</span><span class="n">outline_color</span><span class="p">,</span>
+                            <span class="p">),</span>
+                            <span class="n">matching_files</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
                         <span class="p">)</span>
 
         <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;No mask or outline found for: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">data_value</span><span class="p">)</span>
 
-        <span class="k">return</span> <span class="kc">None</span></div>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span></div>
 
 
-<div class="viewcode-block" id="CytoDataFrame.process_image_data_as_html_display">
-<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame.process_image_data_as_html_display">[docs]</a>
-    <span class="k">def</span> <span class="nf">process_image_data_as_html_display</span><span class="p">(</span>  <span class="c1"># noqa: PLR0912, C901, PLR0915</span>
+<div class="viewcode-block" id="CytoDataFrame._extract_array_from_ome_arrow">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._extract_array_from_ome_arrow">[docs]</a>
+    <span class="k">def</span> <span class="nf">_extract_array_from_ome_arrow</span><span class="p">(</span>  <span class="c1"># noqa: PLR0911</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
-        <span class="n">data_value</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>  <span class="c1"># noqa: ANN401</span>
+        <span class="n">data_value</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Convert an OME-Arrow struct (dict) into an ndarray.&quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_ome_arrow_value</span><span class="p">(</span><span class="n">data_value</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">pixels_meta</span> <span class="o">=</span> <span class="n">data_value</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pixels_meta&quot;</span><span class="p">,</span> <span class="p">{})</span>
+            <span class="n">size_x</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">pixels_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;size_x&quot;</span><span class="p">))</span>
+            <span class="n">size_y</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">pixels_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;size_y&quot;</span><span class="p">))</span>
+            <span class="n">planes</span> <span class="o">=</span> <span class="n">data_value</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;planes&quot;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">size_x</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">size_y</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">planes</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">planes</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+                <span class="n">plane_entries</span> <span class="o">=</span> <span class="n">planes</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">plane_entries</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">planes</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">plane_entries</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+
+            <span class="n">plane</span> <span class="o">=</span> <span class="n">plane_entries</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">pixels</span> <span class="o">=</span> <span class="n">plane</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pixels&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">pixels</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+
+            <span class="n">np_pixels</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">pixels</span><span class="p">)</span>
+            <span class="n">base</span> <span class="o">=</span> <span class="n">size_x</span> <span class="o">*</span> <span class="n">size_y</span>
+            <span class="k">if</span> <span class="n">base</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">size</span> <span class="o">%</span> <span class="n">base</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+
+            <span class="n">channel_count</span> <span class="o">=</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">size</span> <span class="o">//</span> <span class="n">base</span>
+            <span class="k">if</span> <span class="n">channel_count</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">array</span> <span class="o">=</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">size_y</span><span class="p">,</span> <span class="n">size_x</span><span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">array</span> <span class="o">=</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">size_y</span><span class="p">,</span> <span class="n">size_x</span><span class="p">,</span> <span class="n">channel_count</span><span class="p">))</span>
+
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_uint8</span><span class="p">(</span><span class="n">array</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Unable to decode OME-Arrow struct: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_ensure_uint8</span><span class="p">(</span><span class="n">array</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Convert the provided array to uint8 without unnecessary warnings.&quot;&quot;&quot;</span>
+
+        <span class="n">arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">array</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">issubdtype</span><span class="p">(</span><span class="n">arr</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">):</span>
+            <span class="n">min_val</span> <span class="o">=</span> <span class="n">arr</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">max_val</span> <span class="o">=</span> <span class="n">arr</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">min_val</span> <span class="o">&lt;=</span> <span class="mi">255</span> <span class="ow">and</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">max_val</span> <span class="o">&lt;=</span> <span class="mi">255</span><span class="p">:</span>  <span class="c1"># noqa: PLR2004</span>
+                <span class="k">return</span> <span class="n">arr</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">img_as_ubyte</span><span class="p">(</span><span class="n">arr</span><span class="p">)</span>
+
+<div class="viewcode-block" id="CytoDataFrame._ensure_uint8">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._ensure_uint8">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_ensure_uint8</span><span class="p">(</span><span class="n">array</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Convert the provided array to uint8 without unnecessary warnings.&quot;&quot;&quot;</span>
+
+        <span class="n">arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">array</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">issubdtype</span><span class="p">(</span><span class="n">arr</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">):</span>
+            <span class="n">min_val</span> <span class="o">=</span> <span class="n">arr</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">max_val</span> <span class="o">=</span> <span class="n">arr</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">min_val</span> <span class="o">&gt;=</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">max_val</span> <span class="o">&lt;=</span> <span class="mi">255</span><span class="p">:</span>  <span class="c1"># noqa: PLR2004</span>
+                <span class="k">return</span> <span class="n">arr</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">img_as_ubyte</span><span class="p">(</span><span class="n">arr</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._prepare_cropped_image_layers">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._prepare_cropped_image_layers">[docs]</a>
+    <span class="k">def</span> <span class="nf">_prepare_cropped_image_layers</span><span class="p">(</span>  <span class="c1"># noqa: C901, PLR0915, PLR0912, PLR0913</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
+        <span class="n">data_value</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">bounding_box</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
         <span class="n">compartment_center_xy</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">image_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Process the image data based on the provided data value</span>
-<span class="sd">        and bounding box, applying masks or outlines where</span>
-<span class="sd">        applicable, and return an HTML representation of the</span>
-<span class="sd">        cropped image for display.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            data_value (Any):</span>
-<span class="sd">                The value to search for in the file system or as the image data.</span>
-<span class="sd">            bounding_box (Tuple[int, int, int, int]):</span>
-<span class="sd">                The bounding box to crop the image.</span>
-<span class="sd">            compartment_center_xy (Optional[Tuple[int, int]]):</span>
-<span class="sd">                The center coordinates of the compartment.</span>
-<span class="sd">            image_path (Optional[str]):</span>
-<span class="sd">                The path to the image file.</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            str:</span>
-<span class="sd">                The HTML image display string, or the unmodified data</span>
-<span class="sd">                value if the image cannot be processed.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">include_original</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">include_mask_outline</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">include_composite</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return requested cropped image layers for downstream consumers.&quot;&quot;&quot;</span>
 
         <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
             <span class="p">(</span>
-                <span class="s2">&quot;Processing image data as HTML for display.&quot;</span>
-                <span class="s2">&quot; Data value: </span><span class="si">%s</span><span class="s2"> , Bounding box: </span><span class="si">%s</span><span class="s2"> , &quot;</span>
+                <span class="s2">&quot;Preparing cropped layers. Data value: </span><span class="si">%s</span><span class="s2">, Bounding box: </span><span class="si">%s</span><span class="s2">, &quot;</span>
                 <span class="s2">&quot;Compartment center xy: </span><span class="si">%s</span><span class="s2">, Image path: </span><span class="si">%s</span><span class="s2">&quot;</span>
             <span class="p">),</span>
             <span class="n">data_value</span><span class="p">,</span>
@@ -1351,55 +1737,58 @@
             <span class="n">image_path</span><span class="p">,</span>
         <span class="p">)</span>
 
-        <span class="c1"># stringify the data value in case it isn&#39;t a string</span>
-        <span class="n">data_value</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">data_value</span><span class="p">)</span>
+        <span class="n">layers</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
 
+        <span class="k">if</span> <span class="n">array</span> <span class="o">:=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_extract_array_from_ome_arrow</span><span class="p">(</span><span class="n">data_value</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">include_original</span><span class="p">:</span>
+                <span class="n">layers</span><span class="p">[</span><span class="s2">&quot;original&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">array</span>
+            <span class="k">if</span> <span class="n">include_mask_outline</span><span class="p">:</span>
+                <span class="n">layers</span><span class="p">[</span><span class="s2">&quot;mask&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">array</span>
+            <span class="k">if</span> <span class="n">include_composite</span><span class="p">:</span>
+                <span class="n">layers</span><span class="p">[</span><span class="s2">&quot;composite&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">array</span>
+            <span class="k">return</span> <span class="n">layers</span>
+
+        <span class="n">data_value</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">data_value</span><span class="p">)</span>
         <span class="n">candidate_path</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="c1"># Get the pattern map for segmentation file regex</span>
+
+        <span class="k">if</span> <span class="n">image_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">pd</span><span class="o">.</span><span class="n">isna</span><span class="p">(</span><span class="n">image_path</span><span class="p">):</span>
+            <span class="n">image_path</span> <span class="o">=</span> <span class="kc">None</span>
+
         <span class="n">pattern_map</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;segmentation_file_regex&quot;</span><span class="p">)</span>
 
-        <span class="c1"># Step 1: Find the candidate file if the data value is not already a file</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">data_value</span><span class="p">)</span><span class="o">.</span><span class="n">is_file</span><span class="p">():</span>
-            <span class="c1"># determine if we have a file from the path (dir) + filename</span>
-            <span class="k">if</span> <span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_context_dir&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span>
-                <span class="ow">and</span> <span class="n">image_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                <span class="ow">and</span> <span class="p">(</span>
-                    <span class="n">existing_image_from_path</span> <span class="o">:=</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span>
-                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">image_path</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">data_value</span><span class="si">}</span><span class="s2">&quot;</span>
-                    <span class="p">)</span>
-                <span class="p">)</span><span class="o">.</span><span class="n">is_file</span><span class="p">()</span>
-            <span class="p">):</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
-                    <span class="s2">&quot;Found existing image from path: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">existing_image_from_path</span>
-                <span class="p">)</span>
-                <span class="n">candidate_path</span> <span class="o">=</span> <span class="n">existing_image_from_path</span>
+        <span class="n">provided_path</span> <span class="o">=</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">data_value</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">provided_path</span><span class="o">.</span><span class="n">is_file</span><span class="p">():</span>
+            <span class="n">candidate_path</span> <span class="o">=</span> <span class="n">provided_path</span>
+        <span class="k">elif</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_context_dir&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">image_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="p">(</span>
+                <span class="n">existing_image_from_path</span> <span class="o">:=</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">image_path</span><span class="p">)</span>
+                <span class="o">/</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">data_value</span><span class="p">)</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">is_file</span><span class="p">()</span>
+        <span class="p">):</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Found existing image from path: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">existing_image_from_path</span><span class="p">)</span>
+            <span class="n">candidate_path</span> <span class="o">=</span> <span class="n">existing_image_from_path</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_context_dir&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span>
+            <span class="n">candidate_paths</span> <span class="o">:=</span> <span class="nb">list</span><span class="p">(</span>
+                <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_context_dir&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">rglob</span><span class="p">(</span><span class="n">data_value</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">):</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">&quot;Found candidate paths (and attempting to use the first): </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="n">candidate_paths</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">candidate_path</span> <span class="o">=</span> <span class="n">candidate_paths</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;No candidate file found for: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">data_value</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">layers</span>
 
-            <span class="c1"># Search for the data value in the data context directory</span>
-            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_context_dir&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span>
-                <span class="n">candidate_paths</span> <span class="o">:=</span> <span class="nb">list</span><span class="p">(</span>
-                    <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_context_dir&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">rglob</span><span class="p">(</span>
-                        <span class="n">data_value</span>
-                    <span class="p">)</span>
-                <span class="p">)</span>
-            <span class="p">):</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
-                    <span class="s2">&quot;Found candidate paths (and attempting to use the first): </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
-                    <span class="n">candidate_paths</span><span class="p">,</span>
-                <span class="p">)</span>
-                <span class="c1"># If a candidate file is found, use the first one</span>
-                <span class="n">candidate_path</span> <span class="o">=</span> <span class="n">candidate_paths</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">orig_image_array</span> <span class="o">=</span> <span class="n">imageio</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">candidate_path</span><span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">FileNotFoundError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">layers</span>
 
-            <span class="k">else</span><span class="p">:</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;No candidate file found for: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">data_value</span><span class="p">)</span>
-                <span class="c1"># If no candidate file is found, return the original data value</span>
-                <span class="k">return</span> <span class="n">data_value</span>
-
-        <span class="c1"># read the image as an array</span>
-        <span class="n">orig_image_array</span> <span class="o">=</span> <span class="n">imageio</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">candidate_path</span><span class="p">)</span>
-
-        <span class="c1"># Adjust the image with image adjustment callable</span>
-        <span class="c1"># or adaptive histogram equalization</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;image_adjustment&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Adjusting image with custom image adjustment function.&quot;</span><span class="p">)</span>
             <span class="n">orig_image_array</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;image_adjustment&quot;</span><span class="p">](</span>
@@ -1412,12 +1801,11 @@
                 <span class="n">brightness</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;scale&quot;</span><span class="p">],</span>
             <span class="p">)</span>
 
-        <span class="c1"># Normalize to 0-255 for image saving</span>
-        <span class="n">orig_image_array</span> <span class="o">=</span> <span class="n">img_as_ubyte</span><span class="p">(</span><span class="n">orig_image_array</span><span class="p">)</span>
+        <span class="n">orig_image_array</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_uint8</span><span class="p">(</span><span class="n">orig_image_array</span><span class="p">)</span>
 
-        <span class="n">prepared_image</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="c1"># Step 2: Search for a mask</span>
-        <span class="n">prepared_image</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">search_for_mask_or_outline</span><span class="p">(</span>
+        <span class="n">original_image_copy</span> <span class="o">=</span> <span class="n">orig_image_array</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span> <span class="k">if</span> <span class="n">include_original</span> <span class="k">else</span> <span class="kc">None</span>
+
+        <span class="n">prepared_image</span><span class="p">,</span> <span class="n">mask_source_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">search_for_mask_or_outline</span><span class="p">(</span>
             <span class="n">data_value</span><span class="o">=</span><span class="n">data_value</span><span class="p">,</span>
             <span class="n">pattern_map</span><span class="o">=</span><span class="n">pattern_map</span><span class="p">,</span>
             <span class="n">file_dir</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_mask_context_dir&quot;</span><span class="p">],</span>
@@ -1426,10 +1814,8 @@
             <span class="n">mask</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="p">)</span>
 
-        <span class="c1"># If no mask is found, proceed to search for an outline</span>
         <span class="k">if</span> <span class="n">prepared_image</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="c1"># Step 3: Search for an outline if no mask was found</span>
-            <span class="n">prepared_image</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">search_for_mask_or_outline</span><span class="p">(</span>
+            <span class="n">prepared_image</span><span class="p">,</span> <span class="n">mask_source_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">search_for_mask_or_outline</span><span class="p">(</span>
                 <span class="n">data_value</span><span class="o">=</span><span class="n">data_value</span><span class="p">,</span>
                 <span class="n">pattern_map</span><span class="o">=</span><span class="n">pattern_map</span><span class="p">,</span>
                 <span class="n">file_dir</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_outline_context_dir&quot;</span><span class="p">],</span>
@@ -1438,11 +1824,27 @@
                 <span class="n">mask</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
             <span class="p">)</span>
 
-        <span class="c1"># Step 4: If neither mask nor outline is found, use the original image array</span>
         <span class="k">if</span> <span class="n">prepared_image</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">prepared_image</span> <span class="o">=</span> <span class="n">orig_image_array</span>
 
-        <span class="c1"># Step 5: Add a red dot for the compartment center before cropping</span>
+        <span class="n">mask_source_array</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">include_mask_outline</span> <span class="ow">and</span> <span class="n">mask_source_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">loaded_mask</span> <span class="o">=</span> <span class="n">imageio</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">mask_source_path</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">loaded_mask</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>  <span class="c1"># noqa: PLR2004</span>
+                    <span class="n">mask_gray</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">loaded_mask</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">:</span><span class="mi">3</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">mask_gray</span> <span class="o">=</span> <span class="n">loaded_mask</span>
+                <span class="n">mask_binary</span> <span class="o">=</span> <span class="n">mask_gray</span> <span class="o">&gt;</span> <span class="mi">0</span>
+                <span class="n">mask_uint8</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">mask_binary</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
+                <span class="n">mask_uint8</span><span class="p">[</span><span class="n">mask_binary</span><span class="p">]</span> <span class="o">=</span> <span class="mi">255</span>
+                <span class="n">mask_source_array</span> <span class="o">=</span> <span class="n">mask_uint8</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">FileNotFoundError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                    <span class="s2">&quot;Unable to read mask/outline image </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">mask_source_path</span><span class="p">,</span> <span class="n">exc</span>
+                <span class="p">)</span>
+                <span class="n">mask_source_array</span> <span class="o">=</span> <span class="kc">None</span>
+
         <span class="k">if</span> <span class="p">(</span>
             <span class="n">compartment_center_xy</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span>
@@ -1450,10 +1852,8 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;display_options&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;center_dot&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
         <span class="p">):</span>
-            <span class="n">center_x</span><span class="p">,</span> <span class="n">center_y</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">compartment_center_xy</span><span class="p">)</span>  <span class="c1"># Ensure integers</span>
+            <span class="n">center_x</span><span class="p">,</span> <span class="n">center_y</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">compartment_center_xy</span><span class="p">)</span>
 
-            <span class="c1"># Convert grayscale image to RGB if necessary</span>
-            <span class="c1"># Check if the image is grayscale</span>
             <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">prepared_image</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>  <span class="c1"># noqa: PLR2004</span>
                 <span class="n">prepared_image</span> <span class="o">=</span> <span class="n">skimage</span><span class="o">.</span><span class="n">color</span><span class="o">.</span><span class="n">gray2rgb</span><span class="p">(</span><span class="n">prepared_image</span><span class="p">)</span>
 
@@ -1461,70 +1861,63 @@
                 <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">center_y</span> <span class="o">&lt;</span> <span class="n">prepared_image</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
                 <span class="ow">and</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">center_x</span> <span class="o">&lt;</span> <span class="n">prepared_image</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
             <span class="p">):</span>
-                <span class="c1"># Calculate the radius as a fraction of the bounding box size</span>
                 <span class="n">x_min</span><span class="p">,</span> <span class="n">y_min</span><span class="p">,</span> <span class="n">x_max</span><span class="p">,</span> <span class="n">y_max</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">bounding_box</span><span class="p">)</span>
                 <span class="n">box_width</span> <span class="o">=</span> <span class="n">x_max</span> <span class="o">-</span> <span class="n">x_min</span>
                 <span class="n">box_height</span> <span class="o">=</span> <span class="n">y_max</span> <span class="o">-</span> <span class="n">y_min</span>
-                <span class="n">radius</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
-                    <span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">box_width</span><span class="p">,</span> <span class="n">box_height</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.03</span><span class="p">)</span>
-                <span class="p">)</span>  <span class="c1"># 3% of the smaller dimension</span>
+                <span class="n">radius</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">box_width</span><span class="p">,</span> <span class="n">box_height</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.03</span><span class="p">))</span>
 
                 <span class="n">rr</span><span class="p">,</span> <span class="n">cc</span> <span class="o">=</span> <span class="n">skimage</span><span class="o">.</span><span class="n">draw</span><span class="o">.</span><span class="n">disk</span><span class="p">(</span>
                     <span class="p">(</span><span class="n">center_y</span><span class="p">,</span> <span class="n">center_x</span><span class="p">),</span> <span class="n">radius</span><span class="o">=</span><span class="n">radius</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="n">prepared_image</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span>
                 <span class="p">)</span>
-                <span class="n">prepared_image</span><span class="p">[</span><span class="n">rr</span><span class="p">,</span> <span class="n">cc</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>  <span class="c1"># Red color in RGB</span>
+                <span class="n">prepared_image</span><span class="p">[</span><span class="n">rr</span><span class="p">,</span> <span class="n">cc</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
 
-        <span class="c1"># Step 6: Crop the image based on the bounding box and encode it to PNG format</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="c1"># set a default bounding box</span>
             <span class="n">x_min</span><span class="p">,</span> <span class="n">y_min</span><span class="p">,</span> <span class="n">x_max</span><span class="p">,</span> <span class="n">y_max</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">bounding_box</span><span class="p">)</span>
 
-            <span class="c1"># if we have custom offset bounding box information, use it</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span>
                 <span class="s2">&quot;display_options&quot;</span>
             <span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;offset_bounding_box&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
+                <span class="n">center_x</span><span class="p">,</span> <span class="n">center_y</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">compartment_center_xy</span><span class="p">)</span>
+
+                <span class="n">offset_bounding_box</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;display_options&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                    <span class="s2">&quot;offset_bounding_box&quot;</span>
+                <span class="p">)</span>
+                <span class="n">x_min</span><span class="p">,</span> <span class="n">y_min</span><span class="p">,</span> <span class="n">x_max</span><span class="p">,</span> <span class="n">y_max</span> <span class="o">=</span> <span class="n">get_pixel_bbox_from_offsets</span><span class="p">(</span>
+                    <span class="n">center_x</span><span class="o">=</span><span class="n">center_x</span><span class="p">,</span>
+                    <span class="n">center_y</span><span class="o">=</span><span class="n">center_y</span><span class="p">,</span>
+                    <span class="n">rel_bbox</span><span class="o">=</span><span class="p">(</span>
+                        <span class="n">offset_bounding_box</span><span class="p">[</span><span class="s2">&quot;x_min&quot;</span><span class="p">],</span>
+                        <span class="n">offset_bounding_box</span><span class="p">[</span><span class="s2">&quot;y_min&quot;</span><span class="p">],</span>
+                        <span class="n">offset_bounding_box</span><span class="p">[</span><span class="s2">&quot;x_max&quot;</span><span class="p">],</span>
+                        <span class="n">offset_bounding_box</span><span class="p">[</span><span class="s2">&quot;y_max&quot;</span><span class="p">],</span>
+                    <span class="p">),</span>
+                <span class="p">)</span>
+
+            <span class="n">cropped_img_array</span> <span class="o">=</span> <span class="n">prepared_image</span><span class="p">[</span><span class="n">y_min</span><span class="p">:</span><span class="n">y_max</span><span class="p">,</span> <span class="n">x_min</span><span class="p">:</span><span class="n">x_max</span><span class="p">]</span>
+
+            <span class="n">cropped_original</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">original_image_copy</span><span class="p">[</span><span class="n">y_min</span><span class="p">:</span><span class="n">y_max</span><span class="p">,</span> <span class="n">x_min</span><span class="p">:</span><span class="n">x_max</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">include_original</span> <span class="ow">and</span> <span class="n">original_image_copy</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="k">else</span> <span class="kc">None</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">include_mask_outline</span> <span class="ow">and</span> <span class="n">mask_source_array</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">try</span><span class="p">:</span>
-                    <span class="c1"># note: this will default to the nuclei centers based</span>
-                    <span class="c1"># on earlier input for this parameter.</span>
-                    <span class="n">center_x</span><span class="p">,</span> <span class="n">center_y</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">compartment_center_xy</span><span class="p">)</span>
-
-                    <span class="n">offset_bounding_box</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;display_options&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
-                        <span class="s2">&quot;offset_bounding_box&quot;</span>
-                    <span class="p">)</span>
-                    <span class="c1"># generate offset bounding box positions</span>
-                    <span class="n">x_min</span><span class="p">,</span> <span class="n">y_min</span><span class="p">,</span> <span class="n">x_max</span><span class="p">,</span> <span class="n">y_max</span> <span class="o">=</span> <span class="n">get_pixel_bbox_from_offsets</span><span class="p">(</span>
-                        <span class="n">center_x</span><span class="o">=</span><span class="n">center_x</span><span class="p">,</span>
-                        <span class="n">center_y</span><span class="o">=</span><span class="n">center_y</span><span class="p">,</span>
-                        <span class="n">rel_bbox</span><span class="o">=</span><span class="p">(</span>
-                            <span class="n">offset_bounding_box</span><span class="p">[</span><span class="s2">&quot;x_min&quot;</span><span class="p">],</span>
-                            <span class="n">offset_bounding_box</span><span class="p">[</span><span class="s2">&quot;y_min&quot;</span><span class="p">],</span>
-                            <span class="n">offset_bounding_box</span><span class="p">[</span><span class="s2">&quot;x_max&quot;</span><span class="p">],</span>
-                            <span class="n">offset_bounding_box</span><span class="p">[</span><span class="s2">&quot;y_max&quot;</span><span class="p">],</span>
-                        <span class="p">),</span>
-                    <span class="p">)</span>
-                <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+                    <span class="n">cropped_mask</span> <span class="o">=</span> <span class="n">mask_source_array</span><span class="p">[</span><span class="n">y_min</span><span class="p">:</span><span class="n">y_max</span><span class="p">,</span> <span class="n">x_min</span><span class="p">:</span><span class="n">x_max</span><span class="p">]</span>
+                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
                     <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
-                        <span class="p">(</span>
-                            <span class="s2">&quot;Bounding box </span><span class="si">%s</span><span class="s2"> is out of bounds for image </span><span class="si">%s</span><span class="s2"> .&quot;</span>
-                            <span class="s2">&quot; Defaulting to use bounding box from data.&quot;</span>
-                        <span class="p">),</span>
-                        <span class="p">(</span><span class="n">x_min</span><span class="p">,</span> <span class="n">y_min</span><span class="p">,</span> <span class="n">x_max</span><span class="p">,</span> <span class="n">y_max</span><span class="p">),</span>
-                        <span class="n">image_path</span><span class="p">,</span>
+                        <span class="s2">&quot;Failed to crop mask/outline array for </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+                        <span class="n">mask_source_path</span><span class="p">,</span>
+                        <span class="n">exc</span><span class="p">,</span>
                     <span class="p">)</span>
+                    <span class="n">cropped_mask</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">cropped_mask</span> <span class="o">=</span> <span class="kc">None</span>
 
-            <span class="n">cropped_img_array</span> <span class="o">=</span> <span class="n">prepared_image</span><span class="p">[</span>
-                <span class="n">y_min</span><span class="p">:</span><span class="n">y_max</span><span class="p">,</span> <span class="n">x_min</span><span class="p">:</span><span class="n">x_max</span>
-            <span class="p">]</span>  <span class="c1"># Perform slicing</span>
-
-            <span class="c1"># Optionally add a scale bar to the cropped image</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
                 <span class="n">scale_cfg</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;scale_bar&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
 
-                <span class="c1"># Accept either a boolean (True -&gt; use defaults) or a dict of options.</span>
                 <span class="k">if</span> <span class="n">scale_cfg</span><span class="p">:</span>
-                    <span class="c1"># microns-per-pixel can live in scale_cfg or in</span>
-                    <span class="c1"># display_options for convenience</span>
                     <span class="n">um_per_pixel</span> <span class="o">=</span> <span class="kc">None</span>
                     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">scale_cfg</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
                         <span class="n">um_per_pixel</span> <span class="o">=</span> <span class="n">scale_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;um_per_pixel&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">scale_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
@@ -1535,7 +1928,6 @@
                             <span class="s2">&quot;um_per_pixel&quot;</span>
                         <span class="p">)</span> <span class="ow">or</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pixel_size_um&quot;</span><span class="p">)</span>
 
-                    <span class="c1"># NEW: simple fallback for pixels_per_um / pixel_per_um (reciprocal)</span>
                     <span class="k">if</span> <span class="n">um_per_pixel</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                         <span class="n">ppu</span> <span class="o">=</span> <span class="kc">None</span>
                         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">scale_cfg</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
@@ -1552,10 +1944,9 @@
                                 <span class="k">if</span> <span class="n">ppu</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
                                     <span class="n">um_per_pixel</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">ppu</span>
                             <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
-                                <span class="k">pass</span>  <span class="c1"># ignore bad input and skip adding a scale bar</span>
+                                <span class="k">pass</span>
 
                     <span class="k">if</span> <span class="n">um_per_pixel</span><span class="p">:</span>
-                        <span class="c1"># Default knobs (you can expose more)</span>
                         <span class="n">params</span> <span class="o">=</span> <span class="p">{</span>
                             <span class="s2">&quot;length_um&quot;</span><span class="p">:</span> <span class="mf">10.0</span><span class="p">,</span>
                             <span class="s2">&quot;thickness_px&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
@@ -1595,46 +1986,66 @@
                                 <span class="p">)</span>
                             <span class="p">},</span>
                         <span class="p">)</span>
-            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Skipping scale bar due to error: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Skipping scale bar due to error: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
 
-        <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Bounding box contains invalid values: </span><span class="si">{</span><span class="n">bounding_box</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="p">)</span> <span class="kn">from</span> <span class="nn">e</span>
-        <span class="k">except</span> <span class="ne">IndexError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="p">)</span> <span class="kn">from</span> <span class="nn">exc</span>
+        <span class="k">except</span> <span class="ne">IndexError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">IndexError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Bounding box </span><span class="si">{</span><span class="n">bounding_box</span><span class="si">}</span><span class="s2"> is out of bounds for image dimensions &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prepared_image</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="p">)</span> <span class="kn">from</span> <span class="nn">e</span>
+            <span class="p">)</span> <span class="kn">from</span> <span class="nn">exc</span>
 
         <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Cropped image array shape: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">cropped_img_array</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
 
-        <span class="c1"># Step 7:</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="c1"># Save cropped image to buffer</span>
-            <span class="n">png_bytes_io</span> <span class="o">=</span> <span class="n">BytesIO</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">include_composite</span><span class="p">:</span>
+            <span class="n">layers</span><span class="p">[</span><span class="s2">&quot;composite&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">cropped_img_array</span>
+        <span class="k">if</span> <span class="n">include_original</span><span class="p">:</span>
+            <span class="n">layers</span><span class="p">[</span><span class="s2">&quot;original&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">cropped_original</span>
+        <span class="k">if</span> <span class="n">include_mask_outline</span><span class="p">:</span>
+            <span class="n">layers</span><span class="p">[</span><span class="s2">&quot;mask&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">cropped_mask</span>
 
-            <span class="c1"># catch warnings about low contrast images and avoid displaying them</span>
+        <span class="k">return</span> <span class="n">layers</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._prepare_cropped_image_array">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._prepare_cropped_image_array">[docs]</a>
+    <span class="k">def</span> <span class="nf">_prepare_cropped_image_array</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
+        <span class="n">data_value</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">bounding_box</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
+        <span class="n">compartment_center_xy</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">image_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+        <span class="n">layers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_cropped_image_layers</span><span class="p">(</span>
+            <span class="n">data_value</span><span class="o">=</span><span class="n">data_value</span><span class="p">,</span>
+            <span class="n">bounding_box</span><span class="o">=</span><span class="n">bounding_box</span><span class="p">,</span>
+            <span class="n">compartment_center_xy</span><span class="o">=</span><span class="n">compartment_center_xy</span><span class="p">,</span>
+            <span class="n">image_path</span><span class="o">=</span><span class="n">image_path</span><span class="p">,</span>
+            <span class="n">include_composite</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">layers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;composite&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._image_array_to_html">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._image_array_to_html">[docs]</a>
+    <span class="k">def</span> <span class="nf">_image_array_to_html</span><span class="p">(</span><span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span> <span class="n">image_array</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Encode an image array as an HTML &lt;img&gt; tag.&quot;&quot;&quot;</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">png_bytes_io</span> <span class="o">=</span> <span class="n">BytesIO</span><span class="p">()</span>
             <span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">():</span>
                 <span class="n">warnings</span><span class="o">.</span><span class="n">simplefilter</span><span class="p">(</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="ne">UserWarning</span><span class="p">)</span>
-                <span class="n">imageio</span><span class="o">.</span><span class="n">imwrite</span><span class="p">(</span><span class="n">png_bytes_io</span><span class="p">,</span> <span class="n">cropped_img_array</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;png&quot;</span><span class="p">)</span>
+                <span class="n">imageio</span><span class="o">.</span><span class="n">imwrite</span><span class="p">(</span><span class="n">png_bytes_io</span><span class="p">,</span> <span class="n">image_array</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;png&quot;</span><span class="p">)</span>
             <span class="n">png_bytes</span> <span class="o">=</span> <span class="n">png_bytes_io</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
-
         <span class="k">except</span> <span class="p">(</span><span class="ne">FileNotFoundError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-            <span class="c1"># Handle errors if image processing fails</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">data_value</span>
+            <span class="k">raise</span>
 
-        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Image processed successfully and being sent to HTML for display.&quot;</span><span class="p">)</span>
-
-        <span class="c1"># Step 8: Return HTML image display as a base64-encoded PNG</span>
-        <span class="c1"># we dynamically style the image so that it will be displayed based</span>
-        <span class="c1"># on automatic or user-based settings from the display_options custom</span>
-        <span class="c1"># attribute.</span>
-        <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span>
-        <span class="k">if</span> <span class="n">display_options</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">display_options</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
         <span class="n">width</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;width&quot;</span><span class="p">,</span> <span class="s2">&quot;300px&quot;</span><span class="p">)</span>
         <span class="n">height</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;height&quot;</span><span class="p">)</span>
 
@@ -1649,6 +2060,86 @@
             <span class="s1">&#39;&lt;img src=&quot;data:image/png;base64,&#39;</span>
             <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">base64_image_bytes</span><span class="si">}</span><span class="s1">&quot; style=&quot;</span><span class="si">{</span><span class="n">html_style_joined</span><span class="si">}</span><span class="s1">&quot;/&gt;&#39;</span>
         <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame.process_ome_arrow_data_as_html_display">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame.process_ome_arrow_data_as_html_display">[docs]</a>
+    <span class="k">def</span> <span class="nf">process_ome_arrow_data_as_html_display</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
+        <span class="n">data_value</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Render an OME-Arrow struct as an HTML &lt;img&gt; element.&quot;&quot;&quot;</span>
+
+        <span class="n">array</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_extract_array_from_ome_arrow</span><span class="p">(</span><span class="n">data_value</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">array</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">data_value</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_image_array_to_html</span><span class="p">(</span><span class="n">array</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">data_value</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame.process_image_data_as_html_display">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame.process_image_data_as_html_display">[docs]</a>
+    <span class="k">def</span> <span class="nf">process_image_data_as_html_display</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
+        <span class="n">data_value</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">bounding_box</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
+        <span class="n">compartment_center_xy</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">image_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Process the image data based on the provided data value</span>
+<span class="sd">        and bounding box, applying masks or outlines where</span>
+<span class="sd">        applicable, and return an HTML representation of the</span>
+<span class="sd">        cropped image for display.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            data_value (Any):</span>
+<span class="sd">                The value to search for in the file system or as the image data.</span>
+<span class="sd">            bounding_box (Tuple[int, int, int, int]):</span>
+<span class="sd">                The bounding box to crop the image.</span>
+<span class="sd">            compartment_center_xy (Optional[Tuple[int, int]]):</span>
+<span class="sd">                The center coordinates of the compartment.</span>
+<span class="sd">            image_path (Optional[str]):</span>
+<span class="sd">                The path to the image file.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            str:</span>
+<span class="sd">                The HTML image display string, or the unmodified data</span>
+<span class="sd">                value if the image cannot be processed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="s2">&quot;Processing image data as HTML for display.&quot;</span>
+                <span class="s2">&quot; Data value: </span><span class="si">%s</span><span class="s2"> , Bounding box: </span><span class="si">%s</span><span class="s2"> , &quot;</span>
+                <span class="s2">&quot;Compartment center xy: </span><span class="si">%s</span><span class="s2">, Image path: </span><span class="si">%s</span><span class="s2">&quot;</span>
+            <span class="p">),</span>
+            <span class="n">data_value</span><span class="p">,</span>
+            <span class="n">bounding_box</span><span class="p">,</span>
+            <span class="n">compartment_center_xy</span><span class="p">,</span>
+            <span class="n">image_path</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">data_value</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">data_value</span><span class="p">)</span>
+        <span class="n">cropped_img_array</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_cropped_image_array</span><span class="p">(</span>
+            <span class="n">data_value</span><span class="o">=</span><span class="n">data_value</span><span class="p">,</span>
+            <span class="n">bounding_box</span><span class="o">=</span><span class="n">bounding_box</span><span class="p">,</span>
+            <span class="n">compartment_center_xy</span><span class="o">=</span><span class="n">compartment_center_xy</span><span class="p">,</span>
+            <span class="n">image_path</span><span class="o">=</span><span class="n">image_path</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">cropped_img_array</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">data_value</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Image processed successfully and being sent to HTML for display.&quot;</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_image_array_to_html</span><span class="p">(</span><span class="n">cropped_img_array</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">data_value</span></div>
 
 
 <div class="viewcode-block" id="CytoDataFrame.get_displayed_rows">
@@ -1935,6 +2426,13 @@
                     <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_image_paths&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span>
                 <span class="p">)</span>
 
+            <span class="n">ome_arrow_cols</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">find_ome_arrow_columns</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">ome_arrow_cols</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">ome_col</span> <span class="ow">in</span> <span class="n">ome_arrow_cols</span><span class="p">:</span>
+                    <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">display_indices</span><span class="p">,</span> <span class="n">ome_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+                        <span class="n">display_indices</span><span class="p">,</span> <span class="n">ome_col</span>
+                    <span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">process_ome_arrow_data_as_html_display</span><span class="p">)</span>
+
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;is_transposed&quot;</span><span class="p">]:</span>
                 <span class="c1"># retranspose to return the</span>
                 <span class="c1"># data in the shape expected</span>
@@ -2029,17 +2527,15 @@
 
         <span class="c1"># if we&#39;re in a notebook process as though in a jupyter environment</span>
         <span class="k">if</span> <span class="n">get_option</span><span class="p">(</span><span class="s2">&quot;display.notebook_repr_html&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">debug</span><span class="p">:</span>
-            <span class="c1"># Mount the VBox (slider + output) exactly once</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;shown&quot;</span><span class="p">]:</span>
-                <span class="n">display</span><span class="p">(</span>
-                    <span class="n">widgets</span><span class="o">.</span><span class="n">VBox</span><span class="p">(</span>
-                        <span class="p">[</span>
-                            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_scale_slider&quot;</span><span class="p">],</span>
-                            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">],</span>
-                        <span class="p">]</span>
-                    <span class="p">)</span>
+            <span class="n">display</span><span class="p">(</span>
+                <span class="n">widgets</span><span class="o">.</span><span class="n">VBox</span><span class="p">(</span>
+                    <span class="p">[</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_scale_slider&quot;</span><span class="p">],</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">],</span>
+                    <span class="p">]</span>
                 <span class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;shown&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;shown&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
 
             <span class="c1"># Attach the slider observer exactly once</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;observing&quot;</span><span class="p">]:</span>

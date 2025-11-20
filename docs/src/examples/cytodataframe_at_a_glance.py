@@ -54,7 +54,7 @@ frame
 
 # %%time
 # view JUMP plate BR00117006 with images and overlaid outlines for segmentation
-CytoDataFrame(
+frame = CytoDataFrame(
     data=f"{jump_data_path}/BR00117006_shrunken.parquet",
     data_context_dir=f"{jump_data_path}/images/orig",
     data_outline_context_dir=f"{jump_data_path}/images/outlines",
@@ -67,6 +67,7 @@ CytoDataFrame(
         "Image_FileName_OrigRNA",
     ]
 ][:3]
+frame
 
 
 # %%time
@@ -183,6 +184,16 @@ CytoDataFrame(
     ]
 ][:5].T
 
+# +
+# %%time
+# export to OME Parquet, a format which uses OME Arrow
+# to store OME-spec images as values within the table.
+frame.to_ome_parquet(file_path="example.ome.parquet")
+
+# read OME Parquet file into the CytoDataFrame
+CytoDataFrame(data="example.ome.parquet")
+# -
+
 # %%time
 # view JUMP plate BR00117006 with images, changing the bounding box
 # using offsets so each image has roughly the same size.
@@ -225,7 +236,7 @@ CytoDataFrame(
 
 # %%time
 # view NF1 Cell Painting data with images and overlaid outlines from masks
-CytoDataFrame(
+frame = CytoDataFrame(
     data=f"{nf1_cellpainting_path}/Plate_2_with_image_data_shrunken.parquet",
     data_context_dir=f"{nf1_cellpainting_path}/Plate_2_images",
     data_mask_context_dir=f"{nf1_cellpainting_path}/Plate_2_masks",
@@ -238,6 +249,7 @@ CytoDataFrame(
         "Image_FileName_DAPI",
     ]
 ][:3]
+frame
 
 # +
 # %%time
@@ -266,6 +278,15 @@ CytoDataFrame(
         "Image_FileName_DAPI",
     ]
 ][:3]
+
+# +
+# %%time
+# export to OME Parquet, a format which uses OME Arrow
+# to store OME-spec images as values within the table.
+frame.to_ome_parquet(file_path="example.ome.parquet")
+
+# read OME Parquet file into the CytoDataFrame
+CytoDataFrame(data="example.ome.parquet")
 # -
 
 # %%time
@@ -308,3 +329,12 @@ cdf
 # show that we can use the cytodataframe again
 # by quick variable reference.
 cdf
+
+# +
+# %%time
+# export to OME Parquet, a format which uses OME Arrow
+# to store OME-spec images as values within the table.
+cdf.to_ome_parquet(file_path="example.ome.parquet")
+
+# read OME Parquet file into the CytoDataFrame
+CytoDataFrame(data="example.ome.parquet")

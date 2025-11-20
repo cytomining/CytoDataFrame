@@ -7,6 +7,7 @@ import sys
 import types
 
 import imageio.v2 as imageio
+import nbformat
 import numpy as np
 import pandas as pd
 import pytest

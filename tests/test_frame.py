@@ -7,7 +7,6 @@ import sys
 import types
 
 import imageio.v2 as imageio
-import nbformat
 import numpy as np
 import pandas as pd
 import pytest
@@ -59,6 +58,7 @@ def test_to_ome_parquet_adds_arrow_column(
         captured["df"] = table.to_pandas()
         captured["file_path"] = file_path
         captured["kwargs"] = kwargs
+        captured["metadata"] = table.schema.metadata or {}
 
     monkeypatch.setattr("pyarrow.parquet.write_table", fake_write_table, raising=False)
 
@@ -79,6 +79,9 @@ def test_to_ome_parquet_adds_arrow_column(
     assert isinstance(orig_value, str) and orig_value.endswith(".tiff")
     assert mask_value is None
     assert captured["file_path"] == output_path
+    metadata = captured["metadata"]
+    assert metadata[b"cytodataframe:data-producer"]
+    assert metadata[b"cytodataframe:data-producer-version"]
 
 
 def test_to_ome_parquet_real_data(
@@ -200,6 +203,47 @@ def test_ome_arrow_columns_render_html(
 
     html_output = arrow_cdf[arrow_cols]._repr_html_(debug=True)
     assert "data:image/png;base64" in html_output
+
+
+def test_prepare_layers_mask_binary(tmp_path: pathlib.Path) -> None:
+    image_array = np.zeros((6, 6), dtype=np.uint8)
+    image_path = tmp_path / "cell.tiff"
+    imageio.imwrite(image_path, image_array)
+
+    mask_array = np.zeros((6, 6, 3), dtype=np.uint8)
+    mask_array[1:4, 1:4] = (0, 255, 0)
+    mask_path = tmp_path / "cell_mask.png"
+    imageio.imwrite(mask_path, mask_array)
+
+    data = pd.DataFrame(
+        {
+            "Image_FileName_DNA": ["cell.tiff"],
+            "Image_PathName_DNA": [str(tmp_path)],
+            "Cells_AreaShape_BoundingBoxMinimum_X": [0],
+            "Cells_AreaShape_BoundingBoxMinimum_Y": [0],
+            "Cells_AreaShape_BoundingBoxMaximum_X": [6],
+            "Cells_AreaShape_BoundingBoxMaximum_Y": [6],
+        }
+    )
+
+    cdf = CytoDataFrame(
+        data=data,
+        data_context_dir=str(tmp_path),
+        data_mask_context_dir=str(tmp_path),
+    )
+
+    layers = cdf._prepare_cropped_image_layers(
+        data_value="cell.tiff",
+        bounding_box=(0, 0, 6, 6),
+        include_mask_outline=True,
+        include_original=False,
+        include_composite=False,
+    )
+
+    mask_layer = layers["mask"]
+    assert mask_layer is not None
+    assert mask_layer.dtype == np.uint8
+    assert set(np.unique(mask_layer).tolist()).issubset({0, 255})
 
 
 def test_cytodataframe_input(

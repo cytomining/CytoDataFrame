@@ -41,6 +41,7 @@ imagecodecs = ">=2024.9.22,<2026.0.0"
 matplotlib = "^3.9.3"
 ipywidgets = "^8.1.7"
 imageio = "^2.37.0"
+ome-arrow = "^0.0.3"
 
 [tool.poetry.group.dev.dependencies]
 # provides testing capabilities for project

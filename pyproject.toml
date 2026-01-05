@@ -37,7 +37,7 @@ pywavelets = [
 ]
 # used for image modifications in cytodataframe
 opencv-python = "^4.10.0.84"
-imagecodecs = ">=2024.9.22,<2026.0.0"
+imagecodecs = ">=2024.9.22,<2027.0.0"
 matplotlib = "^3.9.3"
 ipywidgets = "^8.1.7"
 imageio = "^2.37.0"

@@ -37,7 +37,7 @@ pywavelets = [
 ]
 # used for image modifications in cytodataframe
 opencv-python = "^4.10.0.84"
-imagecodecs = ">=2024.9.22,<2026.0.0"
+imagecodecs = ">=2024.9.22,<2027.0.0"
 matplotlib = "^3.9.3"
 ipywidgets = "^8.1.7"
 imageio = "^2.37.0"
@@ -58,7 +58,7 @@ jupyterlab-code-formatter = "^3.0.2"
 duckdb = "^1.1.3"
 # version specifications below used to help surpass 3.13-based installations
 cosmicqc = { version = ">=1.0.1", markers = "python_version < '3.13' and python_version >= '3.10'" }
-poethepoet = ">=0.37,<0.40"
+poethepoet = ">=0.37,<0.41"
 
 [tool.poetry.group.docs.dependencies]
 # used for rendering docs into docsite

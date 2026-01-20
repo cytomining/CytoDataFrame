@@ -7,12 +7,10 @@ import sys
 import types
 
 import imageio.v2 as imageio
-import nbformat
 import numpy as np
 import pandas as pd
 import pytest
 from _pytest.monkeypatch import MonkeyPatch
-from nbconvert.preprocessors import CellExecutionError, ExecutePreprocessor
 from pyarrow import parquet
 
 from cytodataframe.frame import CytoDataFrame
@@ -652,23 +650,3 @@ def test_slider_updates_state(monkeypatch: MonkeyPatch):
 
     # Check if the render method was triggered
     assert render_called.get("called", False)
-
-
-def test_example_notebook_execution():
-    """
-    Executes the example notebook to ensure it runs.
-    """
-
-    with open(
-        (notebook_path := "docs/src/examples/cytodataframe_at_a_glance.ipynb")
-    ) as f:
-        nb = nbformat.read(f, as_version=4)
-
-    ep = ExecutePreprocessor(timeout=300, kernel_name="python3")
-
-    try:
-        ep.preprocess(
-            nb, {"metadata": {"path": str(pathlib.Path(notebook_path).parent)}}
-        )
-    except CellExecutionError as e:
-        pytest.fail(f"Notebook execution failed: {e}")

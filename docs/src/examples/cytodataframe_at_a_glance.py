@@ -5,9 +5,9 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.18.1
+#       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: cytodataframe-shAZamSV-py3.12
 #     language: python
 #     name: python3
 # ---
@@ -338,3 +338,33 @@ cdf.to_ome_parquet(file_path="example.ome.parquet")
 
 # read OME Parquet file into the CytoDataFrame
 CytoDataFrame(data="example.ome.parquet")
+
+# +
+import pathlib
+import pandas as pd
+from IPython.display import display
+from cytodataframe import CytoDataFrame
+from ome_arrow import OMEArrow
+
+# Path to your Zarr
+zarr_path = "tests/data/idr0062A/6001240_labels.zarr"
+
+# Build an OME-Arrow struct from the Zarr
+ome_struct = OMEArrow(data=zarr_path).data
+if hasattr(ome_struct, "as_py"):
+    ome_struct = ome_struct.as_py()
+
+# Minimal test dataset
+df = pd.DataFrame({"LabelVolume": [ome_struct]})
+
+# Create CytoDataFrame with desired viewer size
+cdf = CytoDataFrame(
+    df,
+    display_options={"width": "500px", "height": "500px"},
+)
+
+# Render in notebook
+display(cdf)
+# -
+
+

@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 import skimage
 from IPython import get_ipython
-from IPython.display import HTML, display
+from IPython.display import HTML, Javascript, display
 from pandas._config import (
     get_option,
 )
@@ -44,6 +44,13 @@ from .image import (
     draw_outline_on_image_from_mask,
     draw_outline_on_image_from_outline,
     get_pixel_bbox_from_offsets,
+)
+from .volume import (
+    build_3d_html_from_path,
+    build_3d_image_html_stub,
+    build_3d_image_html_view,
+    build_3d_vtk_js_initializer,
+    extract_volume_from_ome_arrow,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,6 +79,7 @@ class CytoDataFrame(pd.DataFrame):
     """
 
     _metadata: ClassVar = ["_custom_attrs"]
+    _HTML_3D_STUB_KEY: ClassVar[str] = "_cyto_3d_html_stub"
 
     def __init__(  # noqa: PLR0913
         self: CytoDataFrame_type,
@@ -1203,9 +1211,12 @@ class CytoDataFrame(pd.DataFrame):
             pixels_meta = data_value.get("pixels_meta", {})
             size_x = int(pixels_meta.get("size_x"))
             size_y = int(pixels_meta.get("size_y"))
+            size_z = int(pixels_meta.get("size_z") or 1)
             planes = data_value.get("planes")
 
             if size_x <= 0 or size_y <= 0 or planes is None:
+                return None
+            if size_z > 1:
                 return None
 
             if isinstance(planes, np.ndarray):
@@ -1248,6 +1259,12 @@ class CytoDataFrame(pd.DataFrame):
             if 0 <= min_val <= 255 and 0 <= max_val <= 255:  # noqa: PLR2004
                 return arr.astype(np.uint8, copy=False)
         return img_as_ubyte(arr)
+
+    @staticmethod
+    def _is_3d_image_array(array: np.ndarray) -> bool:
+        return array.ndim >= 3 and not (  # noqa: PLR2004
+            array.ndim == 3 and array.shape[-1] in (1, 3, 4)  # noqa: PLR2004
+        )
 
     @staticmethod
     def _ensure_uint8(array: np.ndarray) -> np.ndarray:
@@ -1334,6 +1351,29 @@ class CytoDataFrame(pd.DataFrame):
             orig_image_array = imageio.imread(candidate_path)
         except (FileNotFoundError, ValueError) as exc:
             logger.error(exc)
+            return layers
+
+        if self._is_3d_image_array(orig_image_array):
+            logger.debug(
+                "Detected 3D image at %s; returning HTML view.", candidate_path
+            )
+            html_view = build_3d_html_from_path(
+                data_value=data_value,
+                candidate_path=candidate_path,
+                display_options=self._custom_attrs.get("display_options"),
+                ensure_uint8=self._ensure_uint8,
+                is_ome_arrow_value=self._is_ome_arrow_value,
+                logger=logger,
+            )
+            layers[self._HTML_3D_STUB_KEY] = (
+                html_view
+                if html_view is not None
+                else build_3d_image_html_stub(
+                    data_value=data_value,
+                    candidate_path=candidate_path,
+                    display_options=self._custom_attrs.get("display_options"),
+                )
+            )
             return layers
 
         if self._custom_attrs["image_adjustment"] is not None:
@@ -1563,7 +1603,7 @@ class CytoDataFrame(pd.DataFrame):
         bounding_box: Tuple[int, int, int, int],
         compartment_center_xy: Optional[Tuple[int, int]] = None,
         image_path: Optional[str] = None,
-    ) -> Optional[np.ndarray]:
+    ) -> Tuple[Optional[np.ndarray], Optional[str]]:
         layers = self._prepare_cropped_image_layers(
             data_value=data_value,
             bounding_box=bounding_box,
@@ -1571,7 +1611,7 @@ class CytoDataFrame(pd.DataFrame):
             image_path=image_path,
             include_composite=True,
         )
-        return layers.get("composite")
+        return layers.get("composite"), layers.get(self._HTML_3D_STUB_KEY)
 
     def _image_array_to_html(self: CytoDataFrame_type, image_array: np.ndarray) -> str:
         """Encode an image array as an HTML <img> tag."""
@@ -1610,7 +1650,22 @@ class CytoDataFrame(pd.DataFrame):
 
         array = self._extract_array_from_ome_arrow(data_value)
         if array is None:
-            return data_value
+            volume_data = extract_volume_from_ome_arrow(
+                data_value,
+                self._ensure_uint8,
+                self._is_ome_arrow_value,
+                logger,
+            )
+            if volume_data is None:
+                return data_value
+            volume, dims = volume_data
+            return build_3d_image_html_view(
+                volume=volume,
+                dims=dims,
+                data_value="ome-arrow",
+                candidate_path=pathlib.Path("ome-arrow"),
+                display_options=self._custom_attrs.get("display_options"),
+            )
 
         try:
             return self._image_array_to_html(array)
@@ -1659,12 +1714,15 @@ class CytoDataFrame(pd.DataFrame):
         )
 
         data_value = str(data_value)
-        cropped_img_array = self._prepare_cropped_image_array(
+        cropped_img_array, html_stub = self._prepare_cropped_image_array(
             data_value=data_value,
             bounding_box=bounding_box,
             compartment_center_xy=compartment_center_xy,
             image_path=image_path,
         )
+
+        if html_stub is not None:
+            return html_stub
 
         if cropped_img_array is None:
             return data_value
@@ -1675,6 +1733,355 @@ class CytoDataFrame(pd.DataFrame):
             return self._image_array_to_html(cropped_img_array)
         except Exception:
             return data_value
+
+    def _get_3d_volume_from_cell(
+        self: CytoDataFrame_type,
+        row: Any,
+        column: Any,
+    ) -> Tuple[np.ndarray, Tuple[int, int, int]]:
+        try:
+            value = self.loc[row, column]
+        except Exception:
+            value = self.iloc[row][column]
+
+        volume = None
+        dims = None
+
+        if isinstance(value, np.ndarray) and self._is_3d_image_array(value):
+            volume = self._ensure_uint8(value)
+            dims = (volume.shape[2], volume.shape[1], volume.shape[0])
+        elif self._is_ome_arrow_value(value):
+            volume_data = extract_volume_from_ome_arrow(
+                value,
+                self._ensure_uint8,
+                self._is_ome_arrow_value,
+                logger,
+            )
+            if volume_data is not None:
+                volume, dims = volume_data
+        elif isinstance(value, (str, pathlib.Path)):
+            try:
+                from ome_arrow import OMEArrow  # type: ignore
+
+                ome_struct = OMEArrow(data=str(value)).data
+                if hasattr(ome_struct, "as_py"):
+                    ome_struct = ome_struct.as_py()
+                volume_data = extract_volume_from_ome_arrow(
+                    ome_struct,
+                    self._ensure_uint8,
+                    self._is_ome_arrow_value,
+                    logger,
+                )
+                if volume_data is not None:
+                    volume, dims = volume_data
+            except Exception as exc:
+                raise RuntimeError(
+                    "Unable to load OME-Arrow data for 3D rendering."
+                ) from exc
+
+        if volume is None or dims is None:
+            raise ValueError("Selected cell does not contain a 3D volume.")
+
+        return volume, dims
+
+    def _build_pyvista_viewer(
+        self: CytoDataFrame_type,
+        volume: np.ndarray,
+        dims: Tuple[int, int, int],
+        backend: str,
+        widget_height: str,
+        widget_width: str = "100%",
+        spacing: Tuple[float, float, float] = (1.0, 1.0, 1.0),
+        opacity: Any = "sigmoid",
+        shade: bool = False,
+        **kwargs: Any,
+    ) -> Any:
+        try:
+            import pyvista as pv  # type: ignore
+        except Exception as exc:
+            raise RuntimeError(
+                "PyVista is required for trame-based 3D rendering."
+            ) from exc
+
+        grid = pv.ImageData(dimensions=dims, spacing=spacing)
+        grid.point_data["values"] = np.transpose(volume, (2, 1, 0)).ravel(order="F")
+
+        plotter = pv.Plotter(notebook=True)
+        plotter.add_volume(
+            grid,
+            scalars="values",
+            opacity=opacity,
+            shade=shade,
+            show_scalar_bar=False,
+        )
+        jupyter_kwargs = kwargs.pop("jupyter_kwargs", {})
+        jupyter_kwargs.setdefault("width", "100%")
+        jupyter_kwargs.setdefault("height", "100%")
+        jupyter_kwargs.setdefault("add_menu", False)
+        jupyter_kwargs.setdefault("collapse_menu", True)
+        viewer = plotter.show(
+            jupyter_backend=backend,
+            return_viewer=True,
+            jupyter_kwargs=jupyter_kwargs,
+            **kwargs,
+        )
+        if hasattr(viewer, "layout"):
+            try:
+                import ipywidgets as widgets  # type: ignore
+
+                viewer.layout = widgets.Layout(
+                    width="100%",
+                    height="100%",
+                    min_height=widget_height,
+                    margin="0",
+                    padding="0",
+                )
+            except Exception:
+                pass
+        if hasattr(viewer, "value") and isinstance(viewer.value, str):
+            updated = viewer.value.replace("border: 1px solid", "border: 0 solid")
+            if "width:" in updated or "height:" in updated:
+                import re
+
+                updated = re.sub(r"width:\\s*[^;]+;", "width: 100%;", updated)
+                updated = re.sub(r"height:\\s*[^;]+;", "height: 100%;", updated)
+                updated = re.sub(
+                    r"class=\"pyvista\"",
+                    'class="pyvista" style="width: 100%; height: 100%; '
+                    'display: block; position: absolute; top: 0; left: 0;"',
+                    updated,
+                )
+            viewer.value = updated
+        return viewer
+
+    def show_3d(
+        self: CytoDataFrame_type,
+        row: Any,
+        column: Any,
+        backend: str = "trame",
+        **kwargs: Any,
+    ) -> Any:
+        """Render a 3D volume from the selected cell using PyVista."""
+
+        volume, dims = self._get_3d_volume_from_cell(row=row, column=column)
+
+        try:
+            import pyvista as pv  # type: ignore
+        except Exception as exc:
+            raise RuntimeError(
+                "PyVista is required for trame-based 3D rendering."
+            ) from exc
+
+        if hasattr(pv, "set_jupyter_backend"):
+            try:
+                pv.set_jupyter_backend(backend)
+            except Exception:
+                pass
+
+        spacing = kwargs.pop("spacing", (1.0, 1.0, 1.0))
+        opacity = kwargs.pop("opacity", "sigmoid")
+        shade = kwargs.pop("shade", False)
+        widget_height = kwargs.pop("widget_height", "500px")
+
+        return self._build_pyvista_viewer(
+            volume=volume,
+            dims=dims,
+            backend=backend,
+            widget_height=widget_height,
+            spacing=spacing,
+            opacity=opacity,
+            shade=shade,
+            **kwargs,
+        )
+
+    def show_trame(
+        self: CytoDataFrame_type,
+        row: Any,
+        column: Any,
+        backend: str = "trame",
+        **kwargs: Any,
+    ) -> Any:
+        """Render the dataframe HTML with a trame-backed 3D view."""
+
+        volume, dims = self._get_3d_volume_from_cell(row=row, column=column)
+        html_content = self._generate_jupyter_dataframe_html()
+
+        try:
+            import pyvista as pv  # type: ignore
+        except Exception as exc:
+            raise RuntimeError(
+                "PyVista is required for trame-based 3D rendering."
+            ) from exc
+
+        if hasattr(pv, "set_jupyter_backend"):
+            try:
+                pv.set_jupyter_backend(backend)
+            except Exception:
+                pass
+
+        spacing = kwargs.pop("spacing", (1.0, 1.0, 1.0))
+        opacity = kwargs.pop("opacity", "sigmoid")
+        shade = kwargs.pop("shade", False)
+        widget_height = kwargs.pop("widget_height", "700px")
+        table_width = kwargs.pop("table_width", "60%")
+        view_width = kwargs.pop("view_width", "40%")
+
+        try:
+            import ipywidgets as widgets  # type: ignore
+        except Exception as exc:
+            raise RuntimeError("ipywidgets is required for notebook layout.") from exc
+
+        viewer = self._build_pyvista_viewer(
+            volume=volume,
+            dims=dims,
+            backend=backend,
+            widget_height=widget_height,
+            spacing=spacing,
+            opacity=opacity,
+            shade=shade,
+        )
+
+        html_widget = widgets.HTML(
+            value=html_content,
+            layout=widgets.Layout(
+                width=table_width, overflow="auto", border="1px solid #e0e0e0"
+            ),
+        )
+        view_box = widgets.Box(
+            [viewer], layout=widgets.Layout(width=view_width)
+        )
+        container = widgets.HBox(
+            [html_widget, view_box], layout=widgets.Layout(width="100%")
+        )
+        return container
+
+    def show_widget_table(
+        self: CytoDataFrame_type,
+        column: Any,
+        rows: Optional[List[Any]] = None,
+        backend: str = "trame",
+        **kwargs: Any,
+    ) -> Any:
+        """Render a widget-based table with 3D views embedded in columns."""
+
+        try:
+            import ipywidgets as widgets  # type: ignore
+        except Exception as exc:
+            raise RuntimeError("ipywidgets is required for widget tables.") from exc
+
+        import html as html_lib
+
+        columns_3d = kwargs.pop("columns_3d", None)
+        if columns_3d is None:
+            columns_3d = [column]
+        if not columns_3d:
+            raise ValueError("columns_3d must include at least one column.")
+        target_columns = set(columns_3d)
+
+        display_rows = rows
+        if display_rows is None:
+            display_rows = self.get_displayed_rows()
+        max_rows = kwargs.pop("max_rows", 5)
+        if max_rows is not None:
+            display_rows = display_rows[:max_rows]
+
+        columns = kwargs.pop("columns", list(self.columns))
+        max_cols = kwargs.pop("max_columns", None)
+        if max_cols is not None and len(columns) > max_cols:
+            head = max_cols // 2
+            tail = max_cols - head
+            columns = columns[:head] + columns[-tail:]
+
+        display_options = self._custom_attrs.get("display_options") or {}
+        default_height = display_options.get("height") or display_options.get("width")
+        default_width = display_options.get("width") or "300px"
+        widget_height = kwargs.pop("widget_height", "100%")
+        cell_width = kwargs.pop("cell_width", "100%")
+        index_width = kwargs.pop("index_width", "140px")
+        row_height = kwargs.pop("row_height", default_height or "300px")
+        debug = kwargs.pop("debug", False)
+
+        grid = widgets.GridspecLayout(
+            len(display_rows) + 1,
+            len(columns) + 1,
+            layout=widgets.Layout(
+                width="auto",
+                max_width="100%",
+                max_height=kwargs.pop("table_max_height", "700px"),
+                overflow="auto",
+            ),
+        )
+        column_width = kwargs.pop("column_width", default_width)
+        grid.layout.grid_template_columns = (
+            f"{index_width} " + " ".join([column_width] * len(columns))
+        )
+        grid.layout.grid_auto_rows = row_height
+        grid.layout.grid_column_gap = kwargs.pop("column_gap", "12px")
+        grid.layout.grid_row_gap = kwargs.pop("row_gap", "8px")
+        grid.layout.align_items = "stretch"
+        grid.layout.justify_items = "flex-start"
+
+        grid[0, 0] = widgets.HTML(value="", layout=widgets.Layout(height="auto"))
+        for col_idx, col in enumerate(columns, start=1):
+            grid[0, col_idx] = widgets.HTML(
+                value=f"<b>{html_lib.escape(str(col))}</b>",
+                layout=widgets.Layout(height="auto"),
+            )
+
+        for row_idx, row_label in enumerate(display_rows, start=1):
+            grid[row_idx, 0] = widgets.HTML(
+                value=f"<b>{html_lib.escape(str(row_label))}</b>",
+                layout=widgets.Layout(height=row_height),
+            )
+            for col_idx, col in enumerate(columns, start=1):
+                if col in target_columns:
+                    try:
+                        volume, dims = self._get_3d_volume_from_cell(
+                            row=row_label, column=col
+                        )
+                        effective_height = (
+                            row_height if widget_height == "100%" else widget_height
+                        )
+                        viewer = self._build_pyvista_viewer(
+                            volume=volume,
+                            dims=dims,
+                            backend=backend,
+                            widget_height=effective_height,
+                            widget_width="100%",
+                        )
+                        grid[row_idx, col_idx] = widgets.Box(
+                            [viewer],
+                            layout=widgets.Layout(
+                                width="100%",
+                                height=row_height,
+                                position="relative",
+                                display="flex",
+                                align_items="stretch",
+                                justify_content="flex-start",
+                                overflow="hidden",
+                                margin="0",
+                                padding="0",
+                            ),
+                        )
+                        continue
+                    except Exception as exc:
+                        if debug:
+                            raise
+                        logger.debug("3D widget render failed: %s", exc)
+                        grid[row_idx, col_idx] = widgets.HTML(
+                            value="3D render failed",
+                            layout=widgets.Layout(width="100%", height=row_height),
+                        )
+                        continue
+
+                value = self.loc[row_label, col]
+                text_value = html_lib.escape(str(value))
+                grid[row_idx, col_idx] = widgets.HTML(
+                    value=text_value,
+                    layout=widgets.Layout(width=cell_width, height=row_height),
+                )
+
+        return grid
 
     def get_displayed_rows(self: CytoDataFrame_type) -> List[int]:
         """
@@ -1998,6 +2405,8 @@ class CytoDataFrame(pd.DataFrame):
 
         with self._custom_attrs["_output"]:
             display(HTML(html_content))
+            if "cyto-3d-image" in html_content and "data-volume" in html_content:
+                display(Javascript(build_3d_vtk_js_initializer()))
 
         # We duplicate the display so that the jupyter notebook
         # retains printable output (which appears in static exports

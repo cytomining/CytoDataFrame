@@ -1,0 +1,358 @@
+import base64
+import html
+import io
+import pathlib
+import uuid
+from typing import Any, Callable, Optional, Tuple
+
+import imageio.v2 as imageio
+import numpy as np
+
+
+def build_3d_image_html_stub(
+    data_value: str,
+    candidate_path: pathlib.Path,
+    display_options: Optional[dict],
+) -> str:
+    display_options = display_options or {}
+    width = display_options.get("width", "300px")
+    height = display_options.get("height", width)
+
+    html_style = [f"width:{width}"]
+    if height is not None:
+        html_style.append(f"height:{height}")
+    html_style.extend(
+        [
+            "display:flex",
+            "align-items:center",
+            "justify-content:center",
+            "background:#f6f6f6",
+            "border:1px solid #ddd",
+            "color:#555",
+            "font-size:12px",
+        ]
+    )
+
+    html_style_joined = ";".join(html_style)
+    path_attr = html.escape(str(candidate_path), quote=True)
+    value_attr = html.escape(str(data_value), quote=True)
+
+    return (
+        f'<div class="cyto-3d-image" data-image-path="{path_attr}" '
+        f'data-image-value="{value_attr}" style="{html_style_joined}">'
+        "3D image"
+        "</div>"
+    )
+
+
+def build_3d_image_html_view(
+    volume: np.ndarray,
+    dims: Tuple[int, int, int],
+    data_value: str,
+    candidate_path: pathlib.Path,
+    display_options: Optional[dict],
+) -> str:
+    display_options = display_options or {}
+    width = display_options.get("width", "300px")
+    height = display_options.get("height", width)
+
+    html_style = [
+        f"width:{width}",
+        f"height:{height}",
+        "background:#f6f6f6",
+        "border:1px solid #ddd",
+    ]
+    html_style_joined = ";".join(html_style)
+
+    volume_bytes = volume.astype(np.uint8, copy=False).tobytes()
+    volume_b64 = base64.b64encode(volume_bytes).decode("utf-8")
+    dims_attr = ",".join(str(value) for value in dims)
+    element_id = f"cyto-3d-{uuid.uuid4().hex}"
+    path_attr = html.escape(str(candidate_path), quote=True)
+    value_attr = html.escape(str(data_value), quote=True)
+
+    fallback_html = ""
+    try:
+        if volume.ndim >= 3:
+            fallback = volume.max(axis=0)
+            if fallback.ndim == 2:
+                png_bytes_io = io.BytesIO()
+                imageio.imwrite(png_bytes_io, fallback, format="png")
+                png_bytes = png_bytes_io.getvalue()
+                png_b64 = base64.b64encode(png_bytes).decode("utf-8")
+                fallback_html = (
+                    '<img class="cyto-3d-fallback" '
+                    f'src="data:image/png;base64,{png_b64}" '
+                    f'style="{html_style_joined}"/>'
+                )
+    except Exception:
+        fallback_html = ""
+
+    return (
+        f'<div id="{element_id}" class="cyto-3d-image" '
+        f'data-image-path="{path_attr}" data-image-value="{value_attr}" '
+        f'data-volume="{volume_b64}" data-dims="{dims_attr}" '
+        f'style="{html_style_joined}">'
+        f"{fallback_html}</div>"
+        + build_3d_vtk_js_script(element_id)
+    )
+
+
+def build_3d_vtk_js_script(element_id: str) -> str:
+    return (
+        "<script>"
+        "(function(){"
+        f"const container=document.getElementById('{element_id}');"
+        "if(!container){return;}"
+        "const init=function(){"
+        "if(container.dataset.vtkInit){return;}"
+        "container.dataset.vtkInit='1';"
+        "const dims=container.dataset.dims.split(',').map(Number);"
+        "const raw=atob(container.dataset.volume);"
+        "const bytes=new Uint8Array(raw.length);"
+        "for(let i=0;i<raw.length;i+=1){bytes[i]=raw.charCodeAt(i);}"
+        "const vtk=window.vtk;"
+        "const fallback=container.querySelector('.cyto-3d-fallback');"
+        "if(fallback){fallback.remove();}"
+        "const imageData=vtk.Common.DataModel.vtkImageData.newInstance();"
+        "imageData.setDimensions(dims);"
+        "imageData.getPointData().setScalars("
+        "vtk.Common.Core.vtkDataArray.newInstance({"
+        "name:'Scalars',values:bytes,numberOfComponents:1"
+        "})"
+        ");"
+        "const mapper=vtk.Rendering.Core.vtkVolumeMapper.newInstance();"
+        "mapper.setInputData(imageData);"
+        "const volume=vtk.Rendering.Core.vtkVolume.newInstance();"
+        "volume.setMapper(mapper);"
+        "const ctfun=vtk.Rendering.Core.vtkColorTransferFunction.newInstance();"
+        "ctfun.addRGBPoint(0,0,0,0);"
+        "ctfun.addRGBPoint(255,1,1,1);"
+        "const ofun=vtk.Common.DataModel.vtkPiecewiseFunction.newInstance();"
+        "ofun.addPoint(0,0.0);"
+        "ofun.addPoint(255,0.2);"
+        "volume.getProperty().setRGBTransferFunction(0,ctfun);"
+        "volume.getProperty().setScalarOpacity(0,ofun);"
+        "volume.getProperty().setShade(false);"
+        "volume.getProperty().setInterpolationTypeToFastLinear();"
+        "const renderer=vtk.Rendering.Core.vtkRenderer.newInstance({"
+        "background:[1,1,1]"
+        "});"
+        "const renderWindow=vtk.Rendering.Core.vtkRenderWindow.newInstance();"
+        "renderWindow.addRenderer(renderer);"
+        "const openGL=vtk.Rendering.OpenGL.vtkRenderWindow.newInstance();"
+        "openGL.setContainer(container);"
+        "renderWindow.addView(openGL);"
+        "const interactor=vtk.Rendering.Core.vtkRenderWindowInteractor.newInstance();"
+        "interactor.setView(openGL);"
+        "interactor.initialize();"
+        "interactor.bindEvents(container);"
+        "const style=vtk.Interaction.Style.vtkInteractorStyleTrackballCamera"
+        ".newInstance();"
+        "interactor.setInteractorStyle(style);"
+        "renderer.addVolume(volume);"
+        "renderer.resetCamera();"
+        "renderWindow.render();"
+        "};"
+        "if(window.vtk){init();return;}"
+        "if(!window._cytoVtkLoading){"
+        "window._cytoVtkLoading=true;"
+        "const script=document.createElement('script');"
+        "script.src='https://unpkg.com/vtk.js';"
+        "script.async=true;"
+        "script.onload=function(){init();};"
+        "document.head.appendChild(script);"
+        "}else{"
+        "const wait=setInterval(function(){"
+        "if(window.vtk){clearInterval(wait);init();}"
+        "},50);"
+        "setTimeout(function(){clearInterval(wait);},10000);"
+        "}"
+        "})();"
+        "</script>"
+    )
+
+
+def build_3d_vtk_js_initializer() -> str:
+    return (
+        "(function(){"
+        "const init=function(container){"
+        "if(!container||container.dataset.vtkInit){return;}"
+        "container.dataset.vtkInit='1';"
+        "const dims=container.dataset.dims.split(',').map(Number);"
+        "const raw=atob(container.dataset.volume);"
+        "const bytes=new Uint8Array(raw.length);"
+        "for(let i=0;i<raw.length;i+=1){bytes[i]=raw.charCodeAt(i);}"
+        "const vtk=window.vtk;"
+        "const fallback=container.querySelector('.cyto-3d-fallback');"
+        "if(fallback){fallback.remove();}"
+        "const imageData=vtk.Common.DataModel.vtkImageData.newInstance();"
+        "imageData.setDimensions(dims);"
+        "imageData.getPointData().setScalars("
+        "vtk.Common.Core.vtkDataArray.newInstance({"
+        "name:'Scalars',values:bytes,numberOfComponents:1"
+        "})"
+        ");"
+        "const mapper=vtk.Rendering.Core.vtkVolumeMapper.newInstance();"
+        "mapper.setInputData(imageData);"
+        "const volume=vtk.Rendering.Core.vtkVolume.newInstance();"
+        "volume.setMapper(mapper);"
+        "const ctfun=vtk.Rendering.Core.vtkColorTransferFunction.newInstance();"
+        "ctfun.addRGBPoint(0,0,0,0);"
+        "ctfun.addRGBPoint(1,1,1,1);"
+        "ctfun.addRGBPoint(255,1,1,1);"
+        "const ofun=vtk.Common.DataModel.vtkPiecewiseFunction.newInstance();"
+        "ofun.addPoint(0,0.0);"
+        "ofun.addPoint(1,0.15);"
+        "ofun.addPoint(255,0.2);"
+        "volume.getProperty().setRGBTransferFunction(0,ctfun);"
+        "volume.getProperty().setScalarOpacity(0,ofun);"
+        "volume.getProperty().setShade(false);"
+        "volume.getProperty().setInterpolationTypeToFastLinear();"
+        "const renderer=vtk.Rendering.Core.vtkRenderer.newInstance({"
+        "background:[1,1,1]"
+        "});"
+        "const renderWindow=vtk.Rendering.Core.vtkRenderWindow.newInstance();"
+        "renderWindow.addRenderer(renderer);"
+        "const openGL=vtk.Rendering.OpenGL.vtkRenderWindow.newInstance();"
+        "openGL.setContainer(container);"
+        "const width=container.clientWidth||300;"
+        "const height=container.clientHeight||300;"
+        "openGL.setSize(width,height);"
+        "renderWindow.addView(openGL);"
+        "const interactor=vtk.Rendering.Core.vtkRenderWindowInteractor.newInstance();"
+        "interactor.setView(openGL);"
+        "interactor.initialize();"
+        "interactor.bindEvents(container);"
+        "const style=vtk.Interaction.Style.vtkInteractorStyleTrackballCamera"
+        ".newInstance();"
+        "interactor.setInteractorStyle(style);"
+        "renderer.addVolume(volume);"
+        "renderer.resetCamera();"
+        "renderWindow.render();"
+        "};"
+        "const initAll=function(){"
+        "const containers=document.querySelectorAll("
+        "'.cyto-3d-image[data-volume][data-dims]');"
+        "containers.forEach(function(container){init(container);});"
+        "};"
+        "if(window.vtk){initAll();return;}"
+        "if(!window._cytoVtkLoading){"
+        "window._cytoVtkLoading=true;"
+        "const script=document.createElement('script');"
+        "script.src='https://unpkg.com/vtk.js';"
+        "script.async=true;"
+        "script.onload=function(){initAll();};"
+        "document.head.appendChild(script);"
+        "}else{"
+        "const wait=setInterval(function(){"
+        "if(window.vtk){clearInterval(wait);initAll();}"
+        "},50);"
+        "setTimeout(function(){clearInterval(wait);},10000);"
+        "}"
+        "})();"
+    )
+
+
+def extract_volume_from_ome_arrow(
+    data_value: Any,
+    ensure_uint8: Callable[[np.ndarray], np.ndarray],
+    is_ome_arrow_value: Callable[[Any], bool],
+    logger: Any,
+) -> Optional[Tuple[np.ndarray, Tuple[int, int, int]]]:
+    if not is_ome_arrow_value(data_value):
+        return None
+
+    try:
+        pixels_meta = data_value.get("pixels_meta", {})
+        size_x = int(pixels_meta.get("size_x") or 0)
+        size_y = int(pixels_meta.get("size_y") or 0)
+        size_z = int(pixels_meta.get("size_z") or 0)
+        size_c = int(pixels_meta.get("size_c") or 1)
+        size_t = int(pixels_meta.get("size_t") or 1)
+        planes = data_value.get("planes")
+
+        if size_x <= 0 or size_y <= 0 or size_z <= 1 or planes is None:
+            return None
+        if size_c > 1 or size_t > 1:
+            logger.debug("Skipping 3D OME-Arrow with c/t > 1.")
+            return None
+
+        if isinstance(planes, np.ndarray):
+            plane_entries = planes.tolist()
+        else:
+            plane_entries = list(planes)
+        if not plane_entries:
+            return None
+
+        base = size_x * size_y
+        volume = None
+        filled = 0
+
+        for plane_idx, plane in enumerate(plane_entries):
+            if not isinstance(plane, dict):
+                continue
+            c_val = int(plane.get("c") or 0)
+            t_val = int(plane.get("t") or 0)
+            if c_val != 0 or t_val != 0:
+                continue
+            z_val = plane.get("z")
+            z_idx = int(z_val) if z_val is not None else plane_idx
+            if z_idx < 0 or z_idx >= size_z:
+                continue
+            pixels = plane.get("pixels")
+            if pixels is None:
+                continue
+            np_pixels = np.asarray(pixels)
+            if np_pixels.size != base:
+                continue
+            if volume is None:
+                volume = np.zeros((size_z, size_y, size_x), dtype=np_pixels.dtype)
+            volume[z_idx] = np_pixels.reshape((size_y, size_x))
+            filled += 1
+
+        if filled == 0 or volume is None:
+            return None
+
+        return ensure_uint8(volume), (size_x, size_y, size_z)
+    except Exception as exc:
+        logger.debug("Unable to decode 3D OME-Arrow struct: %s", exc)
+        return None
+
+
+def build_3d_html_from_path(
+    data_value: str,
+    candidate_path: pathlib.Path,
+    display_options: Optional[dict],
+    ensure_uint8: Callable[[np.ndarray], np.ndarray],
+    is_ome_arrow_value: Callable[[Any], bool],
+    logger: Any,
+) -> Optional[str]:
+    try:
+        from ome_arrow import OMEArrow  # type: ignore
+    except Exception:
+        logger.debug("ome-arrow not available for 3D rendering.")
+        return None
+
+    try:
+        ome_struct = OMEArrow(data=str(candidate_path)).data
+        if hasattr(ome_struct, "as_py"):
+            ome_struct = ome_struct.as_py()
+    except Exception as exc:
+        logger.debug("Failed to load OME-Arrow for 3D rendering: %s", exc)
+        return None
+
+    volume_data = extract_volume_from_ome_arrow(
+        ome_struct, ensure_uint8, is_ome_arrow_value, logger
+    )
+    if volume_data is None:
+        return None
+
+    volume, dims = volume_data
+    return build_3d_image_html_view(
+        volume=volume,
+        dims=dims,
+        data_value=data_value,
+        candidate_path=candidate_path,
+        display_options=display_options,
+    )

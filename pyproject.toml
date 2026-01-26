@@ -62,7 +62,7 @@ poethepoet = ">=0.37,<0.41"
 
 [tool.poetry.group.docs.dependencies]
 # used for rendering docs into docsite
-sphinx = ">=7,<9"
+sphinx = ">=7,<10"
 # used for rendering markdown through sphinx
 myst-parser = ">=3,<6"
 # used for rendering notebooks through myst parser

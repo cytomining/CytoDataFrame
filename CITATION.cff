@@ -194,3 +194,12 @@ references:
       This work used the file "6001240_labels.zarr" from the DISCEPTS imaging
       dataset, available through the Image Data Resource (IDR) under accession
       number idr0062.
+  - type: data
+    title: "3D Noise Nuclei Segmentation Tutorial"
+    authors:
+      - name: "CellProfiler Tutorials Team"
+    url: "https://tutorials.cellprofiler.org/#3d-noise-nuclei-segmentation"
+    publisher: "CellProfiler Organization"
+    notes: >
+      This work uses data that were slightly modified from the
+      CellProfiler 3D Noise Nuclei Segmentation tutorial.

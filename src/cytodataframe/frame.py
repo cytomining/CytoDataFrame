@@ -1834,6 +1834,8 @@ class CytoDataFrame(pd.DataFrame):
             if volume_data is not None:
                 volume, dims = volume_data
         elif isinstance(value, (str, pathlib.Path)):
+            volume_ndim = 3
+            color_channel_counts = (1, volume_ndim, 4)
             data_path = pathlib.Path(value)
             if not data_path.is_file():
                 context_dir = self._custom_attrs.get("data_context_dir")
@@ -1847,13 +1849,12 @@ class CytoDataFrame(pd.DataFrame):
                 with contextlib.suppress(Exception):
                     image_volume = np.asarray(imageio.imread(data_path))
                     if self._is_3d_image_array(image_volume):
-                        if image_volume.ndim > 3 and image_volume.shape[-1] in (
-                            1,
-                            3,
-                            4,
+                        if (
+                            image_volume.ndim > volume_ndim
+                            and image_volume.shape[-1] in color_channel_counts
                         ):
                             image_volume = image_volume[..., 0]
-                        if image_volume.ndim == 3:
+                        if image_volume.ndim == volume_ndim:
                             volume = image_volume
                             dims = (volume.shape[2], volume.shape[1], volume.shape[0])
 

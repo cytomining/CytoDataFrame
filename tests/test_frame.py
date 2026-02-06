@@ -693,11 +693,15 @@ def test_repr_html_auto_trame_for_3d_inputs(
 
     displayed: list = []
 
+    def fake_snapshot_html() -> str:
+        return "<table/>"
+
+    def capture_display(value: object) -> None:
+        displayed.append(value)
+
     monkeypatch.setattr(cdf, "show_widget_table", fake_show_widget_table)
-    monkeypatch.setattr(cdf, "_generate_trame_snapshot_html", lambda: "<table/>")
-    monkeypatch.setattr(
-        "cytodataframe.frame.display", lambda value: displayed.append(value)
-    )
+    monkeypatch.setattr(cdf, "_generate_trame_snapshot_html", fake_snapshot_html)
+    monkeypatch.setattr("cytodataframe.frame.display", capture_display)
 
     assert cdf._repr_html_() is None
     assert captured["column"] == "Image_FileName_DNA"

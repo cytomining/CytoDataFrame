@@ -38,7 +38,7 @@ imagecodecs = ">=2024.9.22,<2027.0.0"
 matplotlib = "^3.9.3"
 ipywidgets = "^8.1.7"
 imageio = "^2.37.0"
-ome-arrow = ">=0.0.3,<0.0.5"
+ome-arrow = ">=0.0.3,<0.0.6"
 pyvista = ">=0.46.4"
 trame = ">=3.12"
 trame-vtk = ">=2.10"
@@ -56,7 +56,7 @@ sqlalchemy = ">=1.3.6,<3"
 coverage = "^7.6.0"
 jupyterlab = "^4.3.0"
 jupytext = "^1.16.4"
-black = ">=24.10,<26.0"
+black = ">=24.10,<27.0"
 isort = ">=5.13.2,<8.0.0"
 jupyterlab-code-formatter = "^3.0.2"
 duckdb = "^1.1.3"
@@ -66,9 +66,9 @@ poethepoet = ">=0.37,<0.41"
 
 [tool.poetry.group.docs.dependencies]
 # used for rendering docs into docsite
-sphinx = ">=7,<9"
+sphinx = ">=7,<10"
 # used for rendering markdown through sphinx
-myst-parser = ">=3,<5"
+myst-parser = ">=3,<6"
 # used for rendering notebooks through myst parser
 myst-nb = "^1.1.2"
 # used for extension sphinx-multiversion and to fix git-based challenges with default branch handling

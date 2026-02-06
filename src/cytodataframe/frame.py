@@ -2222,6 +2222,12 @@ class CytoDataFrame(pd.DataFrame):
         widget_height = kwargs.pop("widget_height", "700px")
         table_width = kwargs.pop("table_width", "60%")
         view_width = kwargs.pop("view_width", "40%")
+        table_max_height = kwargs.pop(
+            "table_max_height",
+            (self._custom_attrs.get("display_options") or {}).get(
+                "table_max_height", "700px"
+            ),
+        )
 
         viewer = self._build_pyvista_viewer(
             volume=volume,
@@ -2253,14 +2259,18 @@ class CytoDataFrame(pd.DataFrame):
             with SinglePageLayout(server) as layout:
                 layout.content.children = []
                 with layout.content:  # noqa: SIM117
-                    with vuetify.VContainer(fluid=True, style="padding: 0;"):
-                        with vuetify.VRow(style="margin: 0;"):
+                    with vuetify.VContainer(
+                        fluid=True,
+                        style="padding:0;height:100%;overflow:auto;",
+                    ):
+                        with vuetify.VRow(style="margin:0;height:100%;"):
                             with vuetify.VCol(cols=12, md=7, style="padding: 0;"):
                                 trame_html.Div(
                                     v_html=html_content,
                                     style=(
-                                        f"width:{table_width};overflow:auto;"
-                                        "border:1px solid #e0e0e0;"
+                                        f"width:{table_width};max-width:100%;"
+                                        f"max-height:{table_max_height};"
+                                        "overflow:auto;border:1px solid #e0e0e0;"
                                     ),
                                 )
                             with vuetify.VCol(cols=12, md=5, style="padding: 0;"):
@@ -2288,12 +2298,30 @@ class CytoDataFrame(pd.DataFrame):
             html_widget = widgets.HTML(
                 value=html_content,
                 layout=widgets.Layout(
-                    width=table_width, overflow="auto", border="1px solid #e0e0e0"
+                    width=table_width,
+                    height=table_max_height,
+                    max_height=table_max_height,
+                    overflow="auto",
+                    border="1px solid #e0e0e0",
                 ),
             )
-            view_box = widgets.Box([viewer], layout=widgets.Layout(width=view_width))
+            view_box = widgets.Box(
+                [viewer],
+                layout=widgets.Layout(
+                    width=view_width,
+                    height=table_max_height,
+                    max_height=table_max_height,
+                    overflow="auto",
+                ),
+            )
             container = widgets.HBox(
-                [html_widget, view_box], layout=widgets.Layout(width="100%")
+                [html_widget, view_box],
+                layout=widgets.Layout(
+                    width="100%",
+                    height=table_max_height,
+                    max_height=table_max_height,
+                    overflow="auto",
+                ),
             )
             return container
 
@@ -2841,36 +2869,28 @@ class CytoDataFrame(pd.DataFrame):
             if "cyto-3d-image" in html_content and "data-volume" in html_content:
                 display(Javascript(build_3d_vtk_js_initializer()))
 
-        # We duplicate the display so that the jupyter notebook
-        # retains printable output (which appears in static exports
-        # such as PDFs or GitHub webpages). Ipywidget output
-        # rendering is not retained in these formats, so we must
-        # add this in order to retain visibility of the data.
-        display(
-            HTML(
-                f"""
-                <style>
-                    /* Hide by default on screen */
-                    .print-view {{
-                        display: none;
-                        margin-top: 1em;
-                    }}
-
-                    /* Show only when printing */
-                    @media print {{
-                        .print-view {{
-                            display: block;
-                            margin-top: 1em;
+        # Only emit static HTML outside notebooks to avoid duplicate
+        # tables inside ipywidgets output.
+        if not get_option("display.notebook_repr_html"):
+            display(
+                HTML(
+                    f"""
+                    <style>
+                        /* Show only when printing */
+                        @media print {{
+                            .print-view {{
+                                display: block !important;
+                                margin-top: 1em;
+                            }}
                         }}
-                    }}
 
-                </style>
-                <div class="print-view">
-                        {html_content}
-                </div>
-                """
+                    </style>
+                    <div class="print-view" style="display:none;">
+                            {html_content}
+                    </div>
+                    """
+                )
             )
-        )
 
     def _pyvista_volume_snapshot_html(  # noqa: C901, PLR0912, PLR0915
         self: CytoDataFrame_type,
@@ -3105,15 +3125,16 @@ class CytoDataFrame(pd.DataFrame):
 
         # if we're in a notebook process as though in a jupyter environment
         if get_option("display.notebook_repr_html") and not debug:
-            display(
-                widgets.VBox(
-                    [
-                        self._custom_attrs["_scale_slider"],
-                        self._custom_attrs["_output"],
-                    ]
+            if not self._custom_attrs["_widget_state"]["shown"]:
+                display(
+                    widgets.VBox(
+                        [
+                            self._custom_attrs["_scale_slider"],
+                            self._custom_attrs["_output"],
+                        ]
+                    )
                 )
-            )
-            self._custom_attrs["_widget_state"]["shown"] = True
+                self._custom_attrs["_widget_state"]["shown"] = True
 
             # Attach the slider observer exactly once
             if not self._custom_attrs["_widget_state"]["observing"]:
@@ -3122,15 +3143,8 @@ class CytoDataFrame(pd.DataFrame):
                 )
                 self._custom_attrs["_widget_state"]["observing"] = True
 
-            # Refresh the content area (no second slider display)
-            self._custom_attrs["_output"].clear_output(wait=True)
-
             # render fresh HTML for this cell
             self._render_output()
-            # ensure slider continues to control the output
-            self._custom_attrs["_scale_slider"].observe(
-                self._on_slider_change, names="value"
-            )
 
         # allow for debug mode to be set which returns the HTML
         # without widgets.

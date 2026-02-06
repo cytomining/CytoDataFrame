@@ -1834,31 +1834,47 @@ class CytoDataFrame(pd.DataFrame):
             if volume_data is not None:
                 volume, dims = volume_data
         elif isinstance(value, (str, pathlib.Path)):
+            data_path = pathlib.Path(value)
+            if not data_path.is_file():
+                context_dir = self._custom_attrs.get("data_context_dir")
+                if context_dir:
+                    candidate = pathlib.Path(context_dir) / data_path
+                    if candidate.is_file():
+                        data_path = candidate
+
+            # First attempt direct image loading for TIFF/Zarr-backed 3D arrays.
+            if data_path.is_file():
+                with contextlib.suppress(Exception):
+                    image_volume = np.asarray(imageio.imread(data_path))
+                    if self._is_3d_image_array(image_volume):
+                        if image_volume.ndim > 3 and image_volume.shape[-1] in (
+                            1,
+                            3,
+                            4,
+                        ):
+                            image_volume = image_volume[..., 0]
+                        if image_volume.ndim == 3:
+                            volume = image_volume
+                            dims = (volume.shape[2], volume.shape[1], volume.shape[0])
+
+            # Fallback to OME-Arrow path decoding for string/path cells.
             try:
                 from ome_arrow import OMEArrow  # type: ignore
 
-                data_path = pathlib.Path(value)
-                if not data_path.is_file():
-                    context_dir = self._custom_attrs.get("data_context_dir")
-                    if context_dir:
-                        candidate = pathlib.Path(context_dir) / data_path
-                        if candidate.is_file():
-                            data_path = candidate
-                ome_struct = OMEArrow(data=str(data_path)).data
-                if hasattr(ome_struct, "as_py"):
-                    ome_struct = ome_struct.as_py()
-                volume_data = extract_volume_from_ome_arrow(
-                    ome_struct,
-                    self._ensure_uint8,
-                    self._is_ome_arrow_value,
-                    logger,
-                )
-                if volume_data is not None:
-                    volume, dims = volume_data
-            except Exception as exc:
-                raise RuntimeError(
-                    "Unable to load OME-Arrow data for 3D rendering."
-                ) from exc
+                if volume is None:
+                    ome_struct = OMEArrow(data=str(data_path)).data
+                    if hasattr(ome_struct, "as_py"):
+                        ome_struct = ome_struct.as_py()
+                    volume_data = extract_volume_from_ome_arrow(
+                        ome_struct,
+                        self._ensure_uint8,
+                        self._is_ome_arrow_value,
+                        logger,
+                    )
+                    if volume_data is not None:
+                        volume, dims = volume_data
+            except Exception:
+                pass
 
         if volume is None or dims is None:
             raise ValueError("Selected cell does not contain a 3D volume.")
@@ -1934,6 +1950,36 @@ class CytoDataFrame(pd.DataFrame):
         cache[cache_key] = (volume, dims)
         return volume, dims
 
+    def _find_3d_columns_for_display(
+        self: CytoDataFrame_type,
+        max_rows: int = 5,
+    ) -> List[Any]:
+        """Find columns that contain at least one renderable 3D value."""
+
+        image_cols = self.find_image_columns() or []
+        ome_cols = self.find_ome_arrow_columns(self)
+        candidate_columns = list(dict.fromkeys([*image_cols, *ome_cols]))
+        if not candidate_columns:
+            return []
+
+        sample_rows = [
+            row for row in self.get_displayed_rows() if str(row) != "\u2026"
+        ][:max_rows]
+        if not sample_rows:
+            sample_rows = self.index.tolist()[:max_rows]
+
+        columns_3d: List[Any] = []
+        for column in candidate_columns:
+            for row in sample_rows:
+                try:
+                    self._get_3d_volume_from_cell(row=row, column=column)
+                    columns_3d.append(column)
+                    break
+                except Exception:
+                    continue
+
+        return columns_3d
+
     def _build_pyvista_viewer(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self: CytoDataFrame_type,
         volume: np.ndarray,
@@ -1952,9 +1998,6 @@ class CytoDataFrame(pd.DataFrame):
             raise RuntimeError(
                 "PyVista is required for trame-based 3D rendering."
             ) from exc
-
-        # Guard against show_3d-only options leaking into PyVista.
-        kwargs.pop("duplicate_views", None)
 
         display_options = self._custom_attrs.get("display_options", {}) or {}
         cmap = kwargs.pop("cmap", display_options.get("volume_cmap", "gray"))
@@ -2078,105 +2121,6 @@ class CytoDataFrame(pd.DataFrame):
                 )
             viewer.value = updated
         return viewer
-
-    def show_3d(
-        self: CytoDataFrame_type,
-        row: Any,
-        column: Any,
-        backend: str = "trame",
-        **kwargs: Any,
-    ) -> Any:
-        """Render a 3D volume from the selected cell using PyVista.
-
-        Args:
-            row: Row label or index of the 3D cell.
-            column: Column label containing the 3D data.
-            backend: PyVista Jupyter backend name.
-            **kwargs: Extra options forwarded to the viewer builder.
-                Use duplicate_views to render multiple copies in a grid.
-
-        Returns:
-            A PyVista viewer or an ipywidgets grid of viewers.
-        """
-
-        volume, dims = self._get_3d_volume_from_cell(row=row, column=column)
-
-        if backend is None:
-            display_options = self._custom_attrs.get("display_options", {}) or {}
-            if display_options.get("view") == "trame":
-                backend = "trame"
-
-        try:
-            import pyvista as pv  # type: ignore
-        except Exception as exc:
-            raise RuntimeError(
-                "PyVista is required for trame-based 3D rendering."
-            ) from exc
-
-        if hasattr(pv, "set_jupyter_backend"):
-            with contextlib.suppress(Exception):
-                pv.set_jupyter_backend(backend)
-
-        spacing = kwargs.pop("spacing", (1.0, 1.0, 1.0))
-        opacity = kwargs.pop("opacity", "sigmoid")
-        shade = kwargs.pop("shade", False)
-        widget_height = kwargs.pop("widget_height", "500px")
-        duplicate_views = kwargs.pop("duplicate_views", None)
-
-        viewer = self._build_pyvista_viewer(
-            volume=volume,
-            dims=dims,
-            backend=backend,
-            widget_height=widget_height,
-            spacing=spacing,
-            opacity=opacity,
-            shade=shade,
-            **kwargs,
-        )
-        if not duplicate_views:
-            return viewer
-
-        try:
-            import ipywidgets as widgets  # type: ignore
-        except Exception as exc:
-            raise RuntimeError(
-                "ipywidgets is required for duplicate 3D views."
-            ) from exc
-
-        if isinstance(duplicate_views, tuple):
-            rows, cols = duplicate_views
-        else:
-            count = int(duplicate_views)
-            if count == 4:  # noqa: PLR2004
-                rows, cols = 2, 2
-            else:
-                rows, cols = 1, max(count, 1)
-
-        total = rows * cols
-        viewers = [viewer]
-        for _ in range(total - 1):
-            viewers.append(
-                self._build_pyvista_viewer(
-                    volume=volume,
-                    dims=dims,
-                    backend=backend,
-                    widget_height=widget_height,
-                    spacing=spacing,
-                    opacity=opacity,
-                    shade=shade,
-                    **kwargs,
-                )
-            )
-
-        grid = widgets.GridBox(
-            viewers,
-            layout=widgets.Layout(
-                width="100%",
-                grid_template_columns=" ".join(["1fr"] * cols),
-                grid_gap="8px",
-            ),
-        )
-        return grid
 
     def show_trame(  # noqa: PLR0915
         self: CytoDataFrame_type,
@@ -3099,13 +3043,24 @@ class CytoDataFrame(pd.DataFrame):
         """
 
         display_options = self._custom_attrs.get("display_options", {}) or {}
-        if display_options.get("view") == "trame" and not debug:
-            image_cols = self.find_image_columns() or []
-            if image_cols:
+        force_trame = display_options.get("view") == "trame"
+        auto_trame_for_3d = display_options.get("auto_trame_for_3d", True)
+        columns_3d = self._find_3d_columns_for_display() if auto_trame_for_3d else []
+        if (force_trame or columns_3d) and not debug:
+            if force_trame and not columns_3d:
+                columns_3d = list(
+                    dict.fromkeys(
+                        [
+                            *(self.find_image_columns() or []),
+                            *self.find_ome_arrow_columns(self),
+                        ]
+                    )
+                )
+            if columns_3d:
                 try:
                     widget_table = self.show_widget_table(
-                        column=image_cols[0],
-                        columns_3d=image_cols,
+                        column=columns_3d[0],
+                        columns_3d=columns_3d,
                         backend=None,
                     )
                     display(widget_table)

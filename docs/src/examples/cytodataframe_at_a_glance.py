@@ -340,31 +340,33 @@ cdf.to_ome_parquet(file_path="example.ome.parquet")
 CytoDataFrame(data="example.ome.parquet")
 
 # +
-import pathlib
-import pandas as pd
-from IPython.display import display
-from cytodataframe import CytoDataFrame
-from ome_arrow import OMEArrow
+# %%time
+# 3D example dataset, showing how 
+# CytoDataFrame can be used with 3D data and trame for visualization.
+cp_3d_path = "../../../tests/data/CP_tutorial_3D_noise_nuclei_segmentation"
 
-# Path to your Zarr
-zarr_path = "tests/data/idr0062A/6001240_labels.zarr"
-
-# Build an OME-Arrow struct from the Zarr
-ome_struct = OMEArrow(data=zarr_path).data
-if hasattr(ome_struct, "as_py"):
-    ome_struct = ome_struct.as_py()
-
-# Minimal test dataset
-df = pd.DataFrame({"LabelVolume": [ome_struct]})
-
-# Create CytoDataFrame with desired viewer size
+# send the data to CytoDataFrame
+# note: because we have 3d input images, CytoDataFrame will automatically process
+# using the 3D display options for interactive visualization.
 cdf = CytoDataFrame(
-    df,
-    display_options={"width": "500px", "height": "500px"},
-)
+    data=pathlib.Path(cp_3d_path) / "output/MyExpt_RealsizeNuclei.csv",
+    data_context_dir=str(pathlib.Path(cp_3d_path) / "input"),
+)[
+    [
+        "ImageNumber",
+        "ObjectNumber",
+        "FileName_Nuclei",
+        "AreaShape_BoundingBoxMaximum_X",
+        "AreaShape_BoundingBoxMaximum_Y",
+        "AreaShape_BoundingBoxMaximum_Z",
+        "AreaShape_BoundingBoxMinimum_X",
+        "AreaShape_BoundingBoxMinimum_Y",
+        "AreaShape_BoundingBoxMinimum_Z",
+    ]
+]
 
-# Render in notebook
-display(cdf)
+
+cdf[["ImageNumber", "ObjectNumber", "FileName_Nuclei"]][:3]
 # -
 
 

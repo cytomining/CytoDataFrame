@@ -10,6 +10,7 @@ import imageio.v2 as imageio
 import numpy as np
 import pandas as pd
 import pytest
+import tifffile
 from _pytest.monkeypatch import MonkeyPatch
 from pyarrow import parquet
 
@@ -650,3 +651,56 @@ def test_slider_updates_state(monkeypatch: MonkeyPatch):
 
     # Check if the render method was triggered
     assert render_called.get("called", False)
+
+
+def test_get_3d_volume_from_cell_loads_3d_tiff(tmp_path: pathlib.Path) -> None:
+    volume = np.arange(4 * 5 * 6, dtype=np.uint8).reshape(4, 5, 6)
+    image_path = tmp_path / "volume.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+    )
+
+    loaded_volume, dims = cdf._get_3d_volume_from_cell(
+        row=0, column="Image_FileName_DNA"
+    )
+
+    assert loaded_volume.shape == (4, 5, 6)
+    assert dims == (6, 5, 4)
+
+
+def test_repr_html_auto_trame_for_3d_inputs(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    volume = np.arange(3 * 4 * 5, dtype=np.uint8).reshape(3, 4, 5)
+    image_path = tmp_path / "auto_trame_volume.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+    )
+
+    captured: dict = {}
+
+    def fake_show_widget_table(column: str, **kwargs: object) -> str:
+        captured["column"] = column
+        captured["columns_3d"] = kwargs.get("columns_3d")
+        captured["backend"] = kwargs.get("backend")
+        return "widget_table"
+
+    displayed: list = []
+
+    monkeypatch.setattr(cdf, "show_widget_table", fake_show_widget_table)
+    monkeypatch.setattr(cdf, "_generate_trame_snapshot_html", lambda: "<table/>")
+    monkeypatch.setattr(
+        "cytodataframe.frame.display", lambda value: displayed.append(value)
+    )
+
+    assert cdf._repr_html_() is None
+    assert captured["column"] == "Image_FileName_DNA"
+    assert captured["columns_3d"] == ["Image_FileName_DNA"]
+    assert captured["backend"] is None
+    assert displayed

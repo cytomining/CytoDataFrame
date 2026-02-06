@@ -8,6 +8,9 @@ from typing import Any, Callable, Optional, Tuple
 import imageio.v2 as imageio
 import numpy as np
 
+FALLBACK_NDIM = 2
+MIN_VOLUME_NDIM = 3
+
 
 def build_3d_image_html_stub(
     data_value: str,
@@ -73,11 +76,26 @@ def build_3d_image_html_view(
 
     fallback_html = ""
     try:
-        if volume.ndim >= 3:
+        if volume.ndim >= MIN_VOLUME_NDIM:
             fallback = volume.max(axis=0)
-            if fallback.ndim == 2:
+            if fallback.ndim == FALLBACK_NDIM:
+                fallback = np.asarray(fallback)
+                if fallback.size:
+                    try:
+                        lo, hi = np.percentile(fallback, (1.0, 99.9))
+                        if hi <= lo:
+                            hi = lo + 1.0
+                        fallback = np.clip((fallback - lo) / (hi - lo), 0, 1)
+                    except Exception:
+                        fallback = fallback.astype(np.float32, copy=False)
+                        vmin = float(np.min(fallback))
+                        vmax = float(np.max(fallback))
+                        if vmax <= vmin:
+                            vmax = vmin + 1.0
+                        fallback = np.clip((fallback - vmin) / (vmax - vmin), 0, 1)
+                fallback_uint8 = (fallback * 255).astype(np.uint8, copy=False)
                 png_bytes_io = io.BytesIO()
-                imageio.imwrite(png_bytes_io, fallback, format="png")
+                imageio.imwrite(png_bytes_io, fallback_uint8, format="png")
                 png_bytes = png_bytes_io.getvalue()
                 png_b64 = base64.b64encode(png_bytes).decode("utf-8")
                 fallback_html = (
@@ -93,8 +111,7 @@ def build_3d_image_html_view(
         f'data-image-path="{path_attr}" data-image-value="{value_attr}" '
         f'data-volume="{volume_b64}" data-dims="{dims_attr}" '
         f'style="{html_style_joined}">'
-        f"{fallback_html}</div>"
-        + build_3d_vtk_js_script(element_id)
+        f"{fallback_html}</div>" + build_3d_vtk_js_script(element_id)
     )
 
 
@@ -254,7 +271,7 @@ def build_3d_vtk_js_initializer() -> str:
     )
 
 
-def extract_volume_from_ome_arrow(
+def extract_volume_from_ome_arrow(  # noqa: C901, PLR0912
     data_value: Any,
     ensure_uint8: Callable[[np.ndarray], np.ndarray],
     is_ome_arrow_value: Callable[[Any], bool],
@@ -274,9 +291,8 @@ def extract_volume_from_ome_arrow(
 
         if size_x <= 0 or size_y <= 0 or size_z <= 1 or planes is None:
             return None
-        if size_c > 1 or size_t > 1:
-            logger.debug("Skipping 3D OME-Arrow with c/t > 1.")
-            return None
+        size_c = max(size_c, 1)
+        size_t = max(size_t, 1)
 
         if isinstance(planes, np.ndarray):
             plane_entries = planes.tolist()
@@ -314,13 +330,13 @@ def extract_volume_from_ome_arrow(
         if filled == 0 or volume is None:
             return None
 
-        return ensure_uint8(volume), (size_x, size_y, size_z)
+        return volume, (size_x, size_y, size_z)
     except Exception as exc:
         logger.debug("Unable to decode 3D OME-Arrow struct: %s", exc)
         return None
 
 
-def build_3d_html_from_path(
+def build_3d_html_from_path(  # noqa: PLR0913
     data_value: str,
     candidate_path: pathlib.Path,
     display_options: Optional[dict],

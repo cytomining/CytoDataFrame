@@ -15,11 +15,11 @@ repos:
     -   id: check-yaml
     -   id: detect-private-key
 -   repo: https://github.com/python-poetry/poetry
-    rev: "2.3.1"
+    rev: "2.3.2"
     hooks:
     -   id: poetry-check
 -   repo: https://github.com/tox-dev/pyproject-fmt
-    rev: "v2.11.1"
+    rev: "v2.12.1"
     hooks:
     -   id: pyproject-fmt
 -   repo: https://github.com/codespell-project/codespell
@@ -31,7 +31,8 @@ repos:
               .*\.lock |
               .*\.json |
               .*\.ipynb |
-              .*\.cppipe
+              .*\.cppipe |
+              tests/data/CP_tutorial_3D_noise_nuclei_segmentation/output/MyExpt_Experiment\.csv
           )$
 -   repo: https://github.com/executablebooks/mdformat
     rev: 0.7.18
@@ -53,12 +54,12 @@ repos:
     hooks:
     -   id: actionlint
 -   repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: "v0.14.13"
+    rev: "v0.15.0"
     hooks:
     -   id: ruff-format
     -   id: ruff-check
 -   repo: https://github.com/software-gardening/almanack
-    rev: v0.1.12
+    rev: v0.1.13
     hooks:
     -   id: almanack-check
 -   repo: https://gitlab.com/vojko.pribudic.foss/pre-commit-update

@@ -199,7 +199,8 @@ references:
     authors:
       - name: "CellProfiler Tutorials Team"
     url: "https://tutorials.cellprofiler.org/#3d-noise-nuclei-segmentation"
-    publisher: "CellProfiler Organization"
+    publisher:
+      name: "CellProfiler Organization"
     notes: >
       This work uses data that were slightly modified from the
       CellProfiler 3D Noise Nuclei Segmentation tutorial.

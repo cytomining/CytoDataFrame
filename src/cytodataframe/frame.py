@@ -3,6 +3,7 @@ Defines a CytoDataFrame class.
 """
 
 import base64
+import contextlib
 import logging
 import pathlib
 import re
@@ -172,6 +173,11 @@ class CytoDataFrame(pd.DataFrame):
                   }
                 - Alternatively, set a global pixel size in 'display_options':
                   {'um_per_pixel': 0.325}  # used if not provided under 'scale_bar'
+                - 'ignore_image_path_columns': When True and a data_context_dir is set,
+                  ignore any PathName_* or other image path columns and resolve images
+                  only via data_context_dir + filename.
+                - 'view': Optional UI preference for 3D rendering. Use "trame" to
+                  prefer the trame backend when backend is not explicitly set.
             **kwargs:
                 Additional keyword arguments to pass to the pandas read functions.
         """
@@ -216,6 +222,8 @@ class CytoDataFrame(pd.DataFrame):
                 "shown": False,  # whether VBox has been displayed
                 "observing": False,  # whether slider observer is attached
             },
+            "_snapshot_cache": {},
+            "_volume_cache": {},
             "_scale_slider": widgets.IntSlider(
                 value=initial_brightness,
                 min=0,
@@ -227,6 +235,12 @@ class CytoDataFrame(pd.DataFrame):
             ),
             "_output": widgets.Output(),
         }
+
+        if self._custom_attrs["data_context_dir"] is not None:
+            logger.debug(
+                "CytoDataFrame data_context_dir set to: %s",
+                self._custom_attrs["data_context_dir"],
+            )
 
         if isinstance(data, CytoDataFrame):
             self._custom_attrs["data_source"] = data._custom_attrs["data_source"]
@@ -498,10 +512,10 @@ class CytoDataFrame(pd.DataFrame):
         on predefined column groups.
 
         This method identifies specific groups of columns representing bounding box
-        coordinates for different cellular components (cytoplasm, nuclei, cells) and
-        checks for their presence in the DataFrame. If all required columns are present,
-        it filters and returns a new CytoDataFrame instance containing only these
-        columns.
+        coordinates for different cellular components (cytoplasm, nuclei, cells). If
+        those are not present, it falls back to a generic AreaShape bounding box. If
+        all required columns are present, it filters and returns a new CytoDataFrame
+        instance containing only these columns.
 
         Returns:
             Optional[CytoDataFrame_type]:
@@ -530,17 +544,46 @@ class CytoDataFrame(pd.DataFrame):
                 "Cells_AreaShape_BoundingBoxMinimum_X",
                 "Cells_AreaShape_BoundingBoxMinimum_Y",
             ],
+            "generic": [
+                "AreaShape_BoundingBoxMaximum_X",
+                "AreaShape_BoundingBoxMaximum_Y",
+                "AreaShape_BoundingBoxMinimum_X",
+                "AreaShape_BoundingBoxMinimum_Y",
+            ],
+        }
+        column_groups_z = {
+            "cyto": [
+                "Cytoplasm_AreaShape_BoundingBoxMaximum_Z",
+                "Cytoplasm_AreaShape_BoundingBoxMinimum_Z",
+            ],
+            "nuclei": [
+                "Nuclei_AreaShape_BoundingBoxMaximum_Z",
+                "Nuclei_AreaShape_BoundingBoxMinimum_Z",
+            ],
+            "cells": [
+                "Cells_AreaShape_BoundingBoxMaximum_Z",
+                "Cells_AreaShape_BoundingBoxMinimum_Z",
+            ],
+            "generic": [
+                "AreaShape_BoundingBoxMaximum_Z",
+                "AreaShape_BoundingBoxMinimum_Z",
+            ],
         }
 
         # Determine which group of columns to select based on availability in self.data
         selected_group = None
-        for group, cols in column_groups.items():
+        ordered_groups = ("cyto", "nuclei", "cells", "generic")
+        for group in ordered_groups:
+            cols = column_groups[group]
             if all(col in self.columns.tolist() for col in cols):
                 selected_group = group
                 break
 
         # Assign the selected columns to self.bounding_box_df
         if selected_group:
+            z_cols = column_groups_z.get(selected_group, [])
+            if z_cols and all(col in self.columns.tolist() for col in z_cols):
+                column_groups[selected_group] = column_groups[selected_group] + z_cols
             logger.debug(
                 "Bounding box columns found: %s",
                 column_groups[selected_group],
@@ -754,6 +797,12 @@ class CytoDataFrame(pd.DataFrame):
         image_path_cols_str = self.find_image_path_columns(
             image_cols=image_cols_str, all_cols=all_cols_str
         )
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        if self._custom_attrs.get("data_context_dir") and display_options.get(
+            "ignore_image_path_columns"
+        ):
+            logger.debug("Ignoring image path columns due to display option.")
+            image_path_cols_str = {}
         image_path_cols = {}
         for image_col in image_cols:
             key = str(image_col)
@@ -980,8 +1029,10 @@ class CytoDataFrame(pd.DataFrame):
             for column in self.columns
             if self[column]
             .apply(
-                lambda value: isinstance(value, str)
-                and re.match(pattern, value, flags=re.IGNORECASE)
+                lambda value: (
+                    isinstance(value, str)
+                    and re.match(pattern, value, flags=re.IGNORECASE)
+                )
             )
             .any()
         ]
@@ -1313,6 +1364,18 @@ class CytoDataFrame(pd.DataFrame):
             return layers
 
         data_value = str(data_value)
+
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        if display_options.get("ignore_image_path_columns"):
+            image_path = None
+
+        if self._custom_attrs.get("data_context_dir"):
+            normalized = data_value
+            if normalized.startswith("file:"):
+                normalized = normalized[len("file:") :]
+            if "/" in normalized or "\\" in normalized:
+                normalized = pathlib.Path(normalized).name
+            data_value = normalized
         candidate_path = None
 
         if image_path is not None and pd.isna(image_path):
@@ -1344,6 +1407,12 @@ class CytoDataFrame(pd.DataFrame):
             )
             candidate_path = candidate_paths[0]
         else:
+            if self._custom_attrs.get("data_context_dir") is not None:
+                logger.debug(
+                    "Checked data_context_dir %s for %s but found no matches.",
+                    self._custom_attrs["data_context_dir"],
+                    data_value,
+                )
             logger.debug("No candidate file found for: %s", data_value)
             return layers
 
@@ -1734,11 +1803,16 @@ class CytoDataFrame(pd.DataFrame):
         except Exception:
             return data_value
 
-    def _get_3d_volume_from_cell(
+    def _get_3d_volume_from_cell(  # noqa: C901, PLR0912, PLR0915
         self: CytoDataFrame_type,
         row: Any,
         column: Any,
     ) -> Tuple[np.ndarray, Tuple[int, int, int]]:
+        cache = self._custom_attrs.get("_volume_cache", {})
+        cache_key = f"{row}::{column}"
+        if cache_key in cache:
+            return cache[cache_key]
+
         try:
             value = self.loc[row, column]
         except Exception:
@@ -1748,7 +1822,7 @@ class CytoDataFrame(pd.DataFrame):
         dims = None
 
         if isinstance(value, np.ndarray) and self._is_3d_image_array(value):
-            volume = self._ensure_uint8(value)
+            volume = np.asarray(value)
             dims = (volume.shape[2], volume.shape[1], volume.shape[0])
         elif self._is_ome_arrow_value(value):
             volume_data = extract_volume_from_ome_arrow(
@@ -1763,7 +1837,14 @@ class CytoDataFrame(pd.DataFrame):
             try:
                 from ome_arrow import OMEArrow  # type: ignore
 
-                ome_struct = OMEArrow(data=str(value)).data
+                data_path = pathlib.Path(value)
+                if not data_path.is_file():
+                    context_dir = self._custom_attrs.get("data_context_dir")
+                    if context_dir:
+                        candidate = pathlib.Path(context_dir) / data_path
+                        if candidate.is_file():
+                            data_path = candidate
+                ome_struct = OMEArrow(data=str(data_path)).data
                 if hasattr(ome_struct, "as_py"):
                     ome_struct = ome_struct.as_py()
                 volume_data = extract_volume_from_ome_arrow(
@@ -1782,9 +1863,78 @@ class CytoDataFrame(pd.DataFrame):
         if volume is None or dims is None:
             raise ValueError("Selected cell does not contain a 3D volume.")
 
+        # Apply per-row bounding box cropping when available (XYZ).
+        try:
+            display_options = self._custom_attrs.get("display_options", {}) or {}
+            if display_options.get("volume_disable_bbox_crop"):
+                return volume, dims
+
+            bbox_source = self._custom_attrs.get("data_bounding_box")
+            bbox_cols = (
+                bbox_source.columns.tolist()
+                if bbox_source is not None
+                else self.columns.tolist()
+            )
+
+            def _find_col(tag: str) -> Optional[str]:
+                return next((col for col in bbox_cols if tag in str(col)), None)
+
+            x_min_col = _find_col("Minimum_X")
+            x_max_col = _find_col("Maximum_X")
+            y_min_col = _find_col("Minimum_Y")
+            y_max_col = _find_col("Maximum_Y")
+            z_min_col = _find_col("Minimum_Z")
+            z_max_col = _find_col("Maximum_Z")
+
+            if all(
+                col is not None for col in (x_min_col, x_max_col, y_min_col, y_max_col)
+            ):
+                try:
+                    row_data = (
+                        bbox_source.loc[row]
+                        if bbox_source is not None and row in bbox_source.index
+                        else self.loc[row]
+                    )
+                except Exception:
+                    row_data = self.iloc[row]
+
+                x_min = int(row_data[x_min_col])
+                x_max = int(row_data[x_max_col])
+                y_min = int(row_data[y_min_col])
+                y_max = int(row_data[y_max_col])
+
+                z_min = 0
+                z_max = volume.shape[0]
+                if z_min_col is not None and z_max_col is not None:
+                    z_min = int(row_data[z_min_col])
+                    z_max = int(row_data[z_max_col])
+
+                # Clamp to volume bounds
+                z_min = max(0, min(z_min, volume.shape[0]))
+                z_max = max(z_min + 1, min(z_max, volume.shape[0]))
+                y_min = max(0, min(y_min, volume.shape[1]))
+                y_max = max(y_min + 1, min(y_max, volume.shape[1]))
+                x_min = max(0, min(x_min, volume.shape[2]))
+                x_max = max(x_min + 1, min(x_max, volume.shape[2]))
+
+                volume = volume[z_min:z_max, y_min:y_max, x_min:x_max]
+                dims = (volume.shape[2], volume.shape[1], volume.shape[0])
+                logger.debug(
+                    "Applied 3D bounding box crop: x(%s,%s) y(%s,%s) z(%s,%s)",
+                    x_min,
+                    x_max,
+                    y_min,
+                    y_max,
+                    z_min,
+                    z_max,
+                )
+        except Exception as exc:
+            logger.debug("Skipping 3D bounding box crop due to error: %s", exc)
+
+        cache[cache_key] = (volume, dims)
         return volume, dims
 
-    def _build_pyvista_viewer(
+    def _build_pyvista_viewer(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self: CytoDataFrame_type,
         volume: np.ndarray,
         dims: Tuple[int, int, int],
@@ -1803,17 +1953,90 @@ class CytoDataFrame(pd.DataFrame):
                 "PyVista is required for trame-based 3D rendering."
             ) from exc
 
-        grid = pv.ImageData(dimensions=dims, spacing=spacing)
-        grid.point_data["values"] = np.transpose(volume, (2, 1, 0)).ravel(order="F")
+        # Guard against show_3d-only options leaking into PyVista.
+        kwargs.pop("duplicate_views", None)
+
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        cmap = kwargs.pop("cmap", display_options.get("volume_cmap", "gray"))
+        background = display_options.get("volume_background", "black")
+        percentile_clim = display_options.get("volume_percentile_clim", (1.0, 99.9))
+        interpolation = display_options.get("volume_interpolation", "nearest")
+        sampling_scale = display_options.get("volume_sampling_scale", 0.5)
+        show_axes = display_options.get("volume_show_axes", True)
+
+        vol_xyz = np.transpose(volume, (2, 1, 0))
+        if vol_xyz.dtype != np.float32:
+            vol_xyz = vol_xyz.astype(np.float32, copy=False)
+        grid = pv.ImageData()
+        grid.dimensions = tuple(int(v) for v in vol_xyz.shape)
+        grid.spacing = spacing
+        grid.origin = (0.0, 0.0, 0.0)
+        grid.point_data.clear()
+        grid.point_data["scalars"] = np.asfortranarray(vol_xyz).ravel(order="F")
+        try:
+            grid.point_data.set_active_scalars("scalars")
+        except AttributeError:
+            try:
+                grid.point_data.active_scalars_name = "scalars"
+            except Exception:
+                grid.set_active_scalars("scalars")
 
         plotter = pv.Plotter(notebook=True)
-        plotter.add_volume(
+        plotter.set_background(background)
+
+        if vol_xyz.size:
+            try:
+                nz = vol_xyz[vol_xyz > 0]
+                data_for_clim = nz if nz.size else vol_xyz
+                vmin, vmax = np.percentile(data_for_clim, percentile_clim)
+                vmin = float(vmin)
+                vmax = float(vmax if vmax > vmin else vmin + 1.0)
+            except Exception:
+                vmin = float(np.min(vol_xyz))
+                vmax = float(np.max(vol_xyz) if np.max(vol_xyz) > vmin else vmin + 1.0)
+        else:
+            vmin, vmax = 0.0, 1.0
+
+        if opacity == "sigmoid" and vmax <= 1.0:
+            opacity = "linear"
+
+        base_sample = max(min(spacing), 1e-6)
+        vol_actor = plotter.add_volume(
             grid,
-            scalars="values",
+            scalars="scalars",
             opacity=opacity,
             shade=shade,
+            cmap=cmap,
+            clim=(vmin, vmax),
             show_scalar_bar=False,
+            opacity_unit_distance=base_sample,
         )
+        try:
+            prop = getattr(vol_actor, "prop", None) or vol_actor.GetProperty()
+            if interpolation.lower().startswith("near"):
+                prop.SetInterpolationTypeToNearest()
+            else:
+                prop.SetInterpolationTypeToLinear()
+            if hasattr(prop, "SetInterpolateScalarsBeforeMapping"):
+                prop.SetInterpolateScalarsBeforeMapping(False)
+            if hasattr(prop, "SetScalarOpacityUnitDistance"):
+                prop.SetScalarOpacityUnitDistance(base_sample)
+        except Exception:
+            pass
+        try:
+            mapper = getattr(vol_actor, "mapper", None) or vol_actor.GetMapper()
+            if hasattr(mapper, "SetAutoAdjustSampleDistances"):
+                mapper.SetAutoAdjustSampleDistances(False)
+            if hasattr(mapper, "SetUseJittering"):
+                mapper.SetUseJittering(False)
+            if hasattr(mapper, "SetSampleDistance"):
+                mapper.SetSampleDistance(float(base_sample * sampling_scale))
+        except Exception:
+            pass
+
+        if show_axes:
+            with contextlib.suppress(Exception):
+                plotter.add_axes()
         jupyter_kwargs = kwargs.pop("jupyter_kwargs", {})
         jupyter_kwargs.setdefault("width", "100%")
         jupyter_kwargs.setdefault("height", "100%")
@@ -1825,6 +2048,8 @@ class CytoDataFrame(pd.DataFrame):
             jupyter_kwargs=jupyter_kwargs,
             **kwargs,
         )
+        with contextlib.suppress(Exception):
+            setattr(viewer, "_cdf_plotter", plotter)
         if hasattr(viewer, "layout"):
             try:
                 import ipywidgets as widgets  # type: ignore
@@ -1861,9 +2086,25 @@ class CytoDataFrame(pd.DataFrame):
         backend: str = "trame",
         **kwargs: Any,
     ) -> Any:
-        """Render a 3D volume from the selected cell using PyVista."""
+        """Render a 3D volume from the selected cell using PyVista.
+
+        Args:
+            row: Row label or index of the 3D cell.
+            column: Column label containing the 3D data.
+            backend: PyVista Jupyter backend name.
+            **kwargs: Extra options forwarded to the viewer builder.
+                Use duplicate_views to render multiple copies in a grid.
+
+        Returns:
+            A PyVista viewer or an ipywidgets grid of viewers.
+        """
 
         volume, dims = self._get_3d_volume_from_cell(row=row, column=column)
+
+        if backend is None:
+            display_options = self._custom_attrs.get("display_options", {}) or {}
+            if display_options.get("view") == "trame":
+                backend = "trame"
 
         try:
             import pyvista as pv  # type: ignore
@@ -1873,17 +2114,16 @@ class CytoDataFrame(pd.DataFrame):
             ) from exc
 
         if hasattr(pv, "set_jupyter_backend"):
-            try:
+            with contextlib.suppress(Exception):
                 pv.set_jupyter_backend(backend)
-            except Exception:
-                pass
 
         spacing = kwargs.pop("spacing", (1.0, 1.0, 1.0))
         opacity = kwargs.pop("opacity", "sigmoid")
         shade = kwargs.pop("shade", False)
         widget_height = kwargs.pop("widget_height", "500px")
+        duplicate_views = kwargs.pop("duplicate_views", None)
 
-        return self._build_pyvista_viewer(
+        viewer = self._build_pyvista_viewer(
             volume=volume,
             dims=dims,
             backend=backend,
@@ -1893,18 +2133,77 @@ class CytoDataFrame(pd.DataFrame):
             shade=shade,
             **kwargs,
         )
+        if not duplicate_views:
+            return viewer
 
-    def show_trame(
+        try:
+            import ipywidgets as widgets  # type: ignore
+        except Exception as exc:
+            raise RuntimeError(
+                "ipywidgets is required for duplicate 3D views."
+            ) from exc
+
+        if isinstance(duplicate_views, tuple):
+            rows, cols = duplicate_views
+        else:
+            count = int(duplicate_views)
+            if count == 4:  # noqa: PLR2004
+                rows, cols = 2, 2
+            else:
+                rows, cols = 1, max(count, 1)
+
+        total = rows * cols
+        viewers = [viewer]
+        for _ in range(total - 1):
+            viewers.append(
+                self._build_pyvista_viewer(
+                    volume=volume,
+                    dims=dims,
+                    backend=backend,
+                    widget_height=widget_height,
+                    spacing=spacing,
+                    opacity=opacity,
+                    shade=shade,
+                    **kwargs,
+                )
+            )
+
+        grid = widgets.GridBox(
+            viewers,
+            layout=widgets.Layout(
+                width="100%",
+                grid_template_columns=" ".join(["1fr"] * cols),
+                grid_gap="8px",
+            ),
+        )
+        return grid
+
+    def show_trame(  # noqa: PLR0915
         self: CytoDataFrame_type,
         row: Any,
         column: Any,
         backend: str = "trame",
         **kwargs: Any,
     ) -> Any:
-        """Render the dataframe HTML with a trame-backed 3D view."""
+        """Render the dataframe HTML with a trame-backed 3D view.
+
+        Args:
+            row: Row label or index of the 3D cell.
+            column: Column label containing the 3D data.
+            backend: PyVista Jupyter backend name.
+            **kwargs: Extra options forwarded to the viewer builder.
+
+        Returns:
+            A trame layout when available, otherwise an ipywidgets container.
+        """
 
         volume, dims = self._get_3d_volume_from_cell(row=row, column=column)
         html_content = self._generate_jupyter_dataframe_html()
+
+        if backend is None:
+            display_options = self._custom_attrs.get("display_options", {}) or {}
+            if display_options.get("view") == "trame":
+                backend = "trame"
 
         try:
             import pyvista as pv  # type: ignore
@@ -1914,10 +2213,8 @@ class CytoDataFrame(pd.DataFrame):
             ) from exc
 
         if hasattr(pv, "set_jupyter_backend"):
-            try:
+            with contextlib.suppress(Exception):
                 pv.set_jupyter_backend(backend)
-            except Exception:
-                pass
 
         spacing = kwargs.pop("spacing", (1.0, 1.0, 1.0))
         opacity = kwargs.pop("opacity", "sigmoid")
@@ -1925,11 +2222,6 @@ class CytoDataFrame(pd.DataFrame):
         widget_height = kwargs.pop("widget_height", "700px")
         table_width = kwargs.pop("table_width", "60%")
         view_width = kwargs.pop("view_width", "40%")
-
-        try:
-            import ipywidgets as widgets  # type: ignore
-        except Exception as exc:
-            raise RuntimeError("ipywidgets is required for notebook layout.") from exc
 
         viewer = self._build_pyvista_viewer(
             volume=volume,
@@ -1941,21 +2233,71 @@ class CytoDataFrame(pd.DataFrame):
             shade=shade,
         )
 
-        html_widget = widgets.HTML(
-            value=html_content,
-            layout=widgets.Layout(
-                width=table_width, overflow="auto", border="1px solid #e0e0e0"
-            ),
-        )
-        view_box = widgets.Box(
-            [viewer], layout=widgets.Layout(width=view_width)
-        )
-        container = widgets.HBox(
-            [html_widget, view_box], layout=widgets.Layout(width="100%")
-        )
-        return container
+        try:
+            from trame.app import get_server  # type: ignore
+            from trame.widgets import html as trame_html  # type: ignore
 
-    def show_widget_table(
+            server = (
+                getattr(viewer, "server", None)
+                or getattr(viewer, "_server", None)
+                or get_server()
+            )
+            client_type = getattr(server, "client_type", "vue2")
+            if client_type == "vue3":
+                from trame.ui.vuetify3 import SinglePageLayout  # type: ignore
+                from trame.widgets import vuetify3 as vuetify  # type: ignore
+            else:
+                from trame.ui.vuetify import SinglePageLayout  # type: ignore
+                from trame.widgets import vuetify  # type: ignore
+
+            with SinglePageLayout(server) as layout:
+                layout.content.children = []
+                with layout.content:  # noqa: SIM117
+                    with vuetify.VContainer(fluid=True, style="padding: 0;"):
+                        with vuetify.VRow(style="margin: 0;"):
+                            with vuetify.VCol(cols=12, md=7, style="padding: 0;"):
+                                trame_html.Div(
+                                    v_html=html_content,
+                                    style=(
+                                        f"width:{table_width};overflow:auto;"
+                                        "border:1px solid #e0e0e0;"
+                                    ),
+                                )
+                            with vuetify.VCol(cols=12, md=5, style="padding: 0;"):
+                                trame_html.Div(
+                                    children=[viewer],
+                                    style=f"width:{view_width};",
+                                )
+            try:
+                url = getattr(server, "url", None)
+                if callable(url):
+                    logger.debug("Trame server URL: %s", url())
+            except Exception:
+                pass
+            display(layout)
+            return layout
+        except Exception as exc:
+            logger.debug("Falling back to ipywidgets layout: %s", exc)
+            try:
+                import ipywidgets as widgets  # type: ignore
+            except Exception as widget_exc:
+                raise RuntimeError(
+                    "ipywidgets is required for notebook layout."
+                ) from widget_exc
+
+            html_widget = widgets.HTML(
+                value=html_content,
+                layout=widgets.Layout(
+                    width=table_width, overflow="auto", border="1px solid #e0e0e0"
+                ),
+            )
+            view_box = widgets.Box([viewer], layout=widgets.Layout(width=view_width))
+            container = widgets.HBox(
+                [html_widget, view_box], layout=widgets.Layout(width="100%")
+            )
+            return container
+
+    def show_widget_table(  # noqa: C901, PLR0912, PLR0915
         self: CytoDataFrame_type,
         column: Any,
         rows: Optional[List[Any]] = None,
@@ -1963,6 +2305,11 @@ class CytoDataFrame(pd.DataFrame):
         **kwargs: Any,
     ) -> Any:
         """Render a widget-based table with 3D views embedded in columns."""
+
+        if backend is None:
+            display_options = self._custom_attrs.get("display_options", {}) or {}
+            if display_options.get("view") == "trame":
+                backend = "trame"
 
         try:
             import ipywidgets as widgets  # type: ignore
@@ -1978,10 +2325,21 @@ class CytoDataFrame(pd.DataFrame):
             raise ValueError("columns_3d must include at least one column.")
         target_columns = set(columns_3d)
 
+        def _coerce_scalar(value: Any) -> Any:
+            if isinstance(value, (np.integer, np.floating)):
+                return value.item()
+            return value
+
         display_rows = rows
         if display_rows is None:
             display_rows = self.get_displayed_rows()
-        max_rows = kwargs.pop("max_rows", 5)
+            display_rows = [_coerce_scalar(v) for v in display_rows]
+            max_rows_setting = pd.get_option("display.max_rows")
+            if len(self) > max_rows_setting and display_rows:
+                ellipsis_marker = "\u2026"
+                if display_rows[-1] != ellipsis_marker:
+                    display_rows.insert(len(display_rows) // 2, ellipsis_marker)
+        max_rows = kwargs.pop("max_rows", None)
         if max_rows is not None:
             display_rows = display_rows[:max_rows]
 
@@ -1995,10 +2353,22 @@ class CytoDataFrame(pd.DataFrame):
         display_options = self._custom_attrs.get("display_options") or {}
         default_height = display_options.get("height") or display_options.get("width")
         default_width = display_options.get("width") or "300px"
-        widget_height = kwargs.pop("widget_height", "100%")
-        cell_width = kwargs.pop("cell_width", "100%")
-        index_width = kwargs.pop("index_width", "140px")
-        row_height = kwargs.pop("row_height", default_height or "300px")
+
+        def _css_size(value: Any, default: str) -> str:
+            if value is None:
+                return default
+            if isinstance(value, (np.integer, np.floating)):
+                value = value.item()
+            if isinstance(value, (int, float)):
+                return f"{int(value)}px"
+            return str(value)
+
+        widget_height = _css_size(kwargs.pop("widget_height", "100%"), "100%")
+        cell_width = kwargs.pop("cell_width", None)
+        index_width = _css_size(kwargs.pop("index_width", "140px"), "140px")
+        row_height = _css_size(
+            kwargs.pop("row_height", default_height or "300px"), "300px"
+        )
         debug = kwargs.pop("debug", False)
 
         grid = widgets.GridspecLayout(
@@ -2007,33 +2377,75 @@ class CytoDataFrame(pd.DataFrame):
             layout=widgets.Layout(
                 width="auto",
                 max_width="100%",
-                max_height=kwargs.pop("table_max_height", "700px"),
+                max_height=_css_size(kwargs.pop("table_max_height", "700px"), "700px"),
                 overflow="auto",
             ),
         )
-        column_width = kwargs.pop("column_width", default_width)
-        grid.layout.grid_template_columns = (
-            f"{index_width} " + " ".join([column_width] * len(columns))
+        column_width = _css_size(
+            kwargs.pop("column_width", cell_width or default_width), "300px"
+        )
+        grid.layout.grid_template_columns = f"{index_width} " + " ".join(
+            [column_width] * len(columns)
         )
         grid.layout.grid_auto_rows = row_height
-        grid.layout.grid_column_gap = kwargs.pop("column_gap", "12px")
-        grid.layout.grid_row_gap = kwargs.pop("row_gap", "8px")
+        grid.layout.grid_column_gap = _css_size(
+            kwargs.pop("column_gap", "12px"), "12px"
+        )
+        grid.layout.grid_row_gap = _css_size(kwargs.pop("row_gap", "8px"), "8px")
         grid.layout.align_items = "stretch"
         grid.layout.justify_items = "flex-start"
 
-        grid[0, 0] = widgets.HTML(value="", layout=widgets.Layout(height="auto"))
+        header_row_height = kwargs.pop("header_row_height", "28px")
+
+        def _safe_text(value: Any) -> str:
+            if isinstance(value, (np.integer, np.floating)):
+                return str(value.item())
+            return str(value)
+
+        grid[0, 0] = widgets.HTML(
+            value=(
+                "<div style='width:100%;height:100%;background:#EBEBEB;"
+                "padding:5px 4px 5px 4px;line-height:1;'></div>"
+            ),
+            layout=widgets.Layout(height=header_row_height, width="100%"),
+        )
         for col_idx, col in enumerate(columns, start=1):
             grid[0, col_idx] = widgets.HTML(
-                value=f"<b>{html_lib.escape(str(col))}</b>",
-                layout=widgets.Layout(height="auto"),
+                value=(
+                    "<div style='width:100%;height:100%;background:#EBEBEB;"
+                    "padding:5px 4px 5px 4px;line-height:1;'>"
+                    f"<b>{html_lib.escape(_safe_text(col))}</b></div>"
+                ),
+                layout=widgets.Layout(
+                    height=header_row_height,
+                    width="100%",
+                ),
             )
 
         for row_idx, row_label in enumerate(display_rows, start=1):
+            row_bg = "#FFFFFF" if row_idx % 2 == 1 else "#F5F5F5"
+            row_label_html = (
+                f"<div style='width:100%;height:100%;background:{row_bg};"
+                "padding:4px;'>"
+                f"<b>{html_lib.escape(_safe_text(row_label))}</b></div>"
+            )
             grid[row_idx, 0] = widgets.HTML(
-                value=f"<b>{html_lib.escape(str(row_label))}</b>",
-                layout=widgets.Layout(height=row_height),
+                value=row_label_html,
+                layout=widgets.Layout(
+                    height="100%",
+                    width="100%",
+                ),
             )
             for col_idx, col in enumerate(columns, start=1):
+                if str(row_label) == "\u2026":
+                    grid[row_idx, col_idx] = widgets.HTML(
+                        value=(
+                            f"<div style='width:100%;height:100%;background:{row_bg};"
+                            "padding:4px;text-align:center;'>\u2026</div>"
+                        ),
+                        layout=widgets.Layout(width="100%", height="100%"),
+                    )
+                    continue
                 if col in target_columns:
                     try:
                         volume, dims = self._get_3d_volume_from_cell(
@@ -2075,10 +2487,16 @@ class CytoDataFrame(pd.DataFrame):
                         continue
 
                 value = self.loc[row_label, col]
-                text_value = html_lib.escape(str(value))
+                text_value = html_lib.escape(_safe_text(value))
                 grid[row_idx, col_idx] = widgets.HTML(
-                    value=text_value,
-                    layout=widgets.Layout(width=cell_width, height=row_height),
+                    value=(
+                        f"<div style='width:100%;height:100%;background:{row_bg};"
+                        f"padding:4px;'>{text_value}</div>"
+                    ),
+                    layout=widgets.Layout(
+                        width="100%",
+                        height="100%",
+                    ),
                 )
 
         return grid
@@ -2239,6 +2657,12 @@ class CytoDataFrame(pd.DataFrame):
                 )
                 or {}
             )
+            display_options = self._custom_attrs.get("display_options", {}) or {}
+            if self._custom_attrs.get("data_context_dir") and display_options.get(
+                "ignore_image_path_columns"
+            ):
+                logger.debug("Ignoring image path columns due to display option.")
+                image_path_cols_str = {}
 
             # Remap any returned path-column names back to the
             # original (possibly non-string) labels
@@ -2394,7 +2818,16 @@ class CytoDataFrame(pd.DataFrame):
                 decimal=".",
             )
 
-            return fmt.DataFrameRenderer(formatter).to_html()
+            table_html = fmt.DataFrameRenderer(formatter).to_html()
+            style = (
+                "<style>"
+                "table.dataframe thead tr {background:#EBEBEB;}"
+                "table.dataframe thead th {background:#EBEBEB;}"
+                "table.dataframe tbody tr {background:#FFFFFF;}"
+                "table.dataframe tbody tr:nth-child(even) {background:#F5F5F5;}"
+                "</style>"
+            )
+            return style + table_html
 
         else:
             return None
@@ -2439,6 +2872,197 @@ class CytoDataFrame(pd.DataFrame):
             )
         )
 
+    def _pyvista_volume_snapshot_html(  # noqa: C901, PLR0912, PLR0915
+        self: CytoDataFrame_type,
+        volume: np.ndarray,
+        dims: Tuple[int, int, int],
+    ) -> Optional[str]:
+        """Render a static PyVista snapshot for a 3D volume."""
+        try:
+            import pyvista as pv  # type: ignore
+        except Exception:
+            return None
+
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        width = display_options.get("width", "300px")
+        height = display_options.get("height", width)
+        cmap = display_options.get("volume_cmap", "gray")
+        background = display_options.get("volume_background", "black")
+        percentile_clim = display_options.get("volume_percentile_clim", (1.0, 99.9))
+        interpolation = display_options.get("volume_interpolation", "nearest")
+        sampling_scale = display_options.get("volume_sampling_scale", 0.5)
+
+        vol_xyz = np.transpose(volume, (2, 1, 0))
+        if vol_xyz.dtype != np.float32:
+            vol_xyz = vol_xyz.astype(np.float32, copy=False)
+
+        if vol_xyz.size:
+            try:
+                nz = vol_xyz[vol_xyz > 0]
+                data_for_clim = nz if nz.size else vol_xyz
+                vmin, vmax = np.percentile(data_for_clim, percentile_clim)
+                vmin = float(vmin)
+                vmax = float(vmax if vmax > vmin else vmin + 1.0)
+            except Exception:
+                vmin = float(np.min(vol_xyz))
+                vmax = float(np.max(vol_xyz) if np.max(vol_xyz) > vmin else vmin + 1.0)
+        else:
+            vmin, vmax = 0.0, 1.0
+
+        base_sample = max(min((1.0, 1.0, 1.0)), 1e-6)
+        grid = pv.ImageData()
+        grid.dimensions = tuple(int(v) for v in vol_xyz.shape)
+        grid.spacing = (1.0, 1.0, 1.0)
+        grid.origin = (0.0, 0.0, 0.0)
+        grid.point_data.clear()
+        grid.point_data["scalars"] = np.asfortranarray(vol_xyz).ravel(order="F")
+        try:
+            grid.point_data.set_active_scalars("scalars")
+        except AttributeError:
+            try:
+                grid.point_data.active_scalars_name = "scalars"
+            except Exception:
+                grid.set_active_scalars("scalars")
+
+        plotter = pv.Plotter(off_screen=True)
+        plotter.set_background(background)
+        vol_actor = plotter.add_volume(
+            grid,
+            scalars="scalars",
+            opacity="sigmoid",
+            shade=False,
+            cmap=cmap,
+            clim=(vmin, vmax),
+            show_scalar_bar=False,
+            opacity_unit_distance=base_sample,
+        )
+        try:
+            prop = getattr(vol_actor, "prop", None) or vol_actor.GetProperty()
+            if interpolation.lower().startswith("near"):
+                prop.SetInterpolationTypeToNearest()
+            else:
+                prop.SetInterpolationTypeToLinear()
+            if hasattr(prop, "SetInterpolateScalarsBeforeMapping"):
+                prop.SetInterpolateScalarsBeforeMapping(False)
+            if hasattr(prop, "SetScalarOpacityUnitDistance"):
+                prop.SetScalarOpacityUnitDistance(base_sample)
+        except Exception:
+            pass
+        try:
+            mapper = getattr(vol_actor, "mapper", None) or vol_actor.GetMapper()
+            if hasattr(mapper, "SetAutoAdjustSampleDistances"):
+                mapper.SetAutoAdjustSampleDistances(False)
+            if hasattr(mapper, "SetUseJittering"):
+                mapper.SetUseJittering(False)
+            if hasattr(mapper, "SetSampleDistance"):
+                mapper.SetSampleDistance(float(base_sample * sampling_scale))
+        except Exception:
+            pass
+
+        try:
+            img = plotter.screenshot(return_img=True)
+            if img is None:
+                return None
+            from PIL import Image as PILImage  # type: ignore
+
+            buf = BytesIO()
+            PILImage.fromarray(img).save(buf, format="PNG")
+            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            html_style = ";".join([f"width:{width}", f"height:{height}"])
+            return f'<img src="data:image/png;base64,{b64}" style="{html_style}"/>'
+        except Exception as exc:
+            logger.debug("Failed to render PyVista snapshot: %s", exc)
+            return None
+
+    def _snapshot_cache_key(self: CytoDataFrame_type, row: Any, column: Any) -> str:
+        return f"{row}::{column}"
+
+    def _enqueue_snapshot_tasks(
+        self: CytoDataFrame_type,
+        rows: List[Any],
+        columns: List[Any],
+    ) -> None:
+        """Queue background snapshot generation for given rows/columns."""
+        return None
+
+    def _generate_trame_snapshot_html(self: CytoDataFrame_type) -> str:  # noqa: C901
+        """Generate a static HTML table with PyVista 3D snapshots."""
+        html_content = self._generate_jupyter_dataframe_html()
+        try:
+            if self._custom_attrs.get("data_bounding_box") is None:
+                return html_content
+
+            data = self.copy()
+            image_cols = self.find_image_columns() or []
+            if not image_cols:
+                return html_content
+
+            display_indices = self.get_displayed_rows()
+            cache = self._custom_attrs.get("_snapshot_cache", {})
+            cache_lock = self._custom_attrs.get("_snapshot_cache_lock")
+            for image_col in image_cols:
+
+                def _render_cell(row: pd.Series) -> str:
+                    try:
+                        key = self._snapshot_cache_key(row.name, image_col)
+                        if cache_lock is not None:
+                            with cache_lock:
+                                snapshot = cache.get(key)
+                        else:
+                            snapshot = cache.get(key)
+                        if snapshot:
+                            return snapshot
+                        volume, dims = self._get_3d_volume_from_cell(
+                            row=row.name, column=image_col
+                        )
+                        snapshot = self._pyvista_volume_snapshot_html(volume, dims)
+                        if cache_lock is not None:
+                            with cache_lock:
+                                cache[key] = snapshot
+                        else:
+                            cache[key] = snapshot
+                        if snapshot:
+                            return snapshot
+                    except Exception:
+                        pass
+                    return (
+                        "<div style='padding:4px;color:#000;'>"
+                        "Snapshot unavailable</div>"
+                    )
+
+                data.loc[display_indices, image_col] = data.loc[display_indices].apply(
+                    _render_cell, axis=1
+                )
+
+            formatter = fmt.DataFrameFormatter(
+                data,
+                columns=None,
+                col_space=None,
+                na_rep="NaN",
+                formatters=None,
+                float_format=None,
+                sparsify=None,
+                justify=None,
+                index_names=True,
+                header=True,
+                index=True,
+                bold_rows=True,
+                escape=False,
+                max_rows=get_option("display.max_rows"),
+                min_rows=get_option("display.min_rows"),
+                max_cols=get_option("display.max_columns"),
+                show_dimensions=get_option("display.show_dimensions"),
+                decimal=".",
+            )
+            table_html = fmt.DataFrameRenderer(formatter).to_html()
+            style = (
+                "<style>table.dataframe th, table.dataframe td {color:#000;}</style>"
+            )
+            return style + table_html
+        except Exception as exc:
+            logger.debug("Failed to build trame snapshot HTML: %s", exc)
+            return html_content
+
     def _repr_html_(self: CytoDataFrame_type, debug: bool = False) -> str:
         """
         Returns HTML representation of the underlying pandas DataFrame
@@ -2453,6 +3077,31 @@ class CytoDataFrame(pd.DataFrame):
         Returns:
             str: The data in a pandas DataFrame.
         """
+
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        if display_options.get("view") == "trame" and not debug:
+            image_cols = self.find_image_columns() or []
+            if image_cols:
+                try:
+                    widget_table = self.show_widget_table(
+                        column=image_cols[0],
+                        columns_3d=image_cols,
+                        backend=None,
+                    )
+                    display(widget_table)
+                    html_content = self._generate_trame_snapshot_html()
+                    details_html = (
+                        '<details class="cyto-static-snapshot">'
+                        "<summary>Static snapshot (for non-interactive view)</summary>"
+                        f"{html_content}</details>"
+                    )
+                    display(HTML(details_html))
+                    return None
+                except Exception as exc:
+                    logger.debug(
+                        "Trame widget table render failed, falling back to HTML: %s",
+                        exc,
+                    )
 
         # if we're in a notebook process as though in a jupyter environment
         if get_option("display.notebook_repr_html") and not debug:

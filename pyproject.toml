@@ -11,9 +11,6 @@ license = "BSD-3-Clause"
 readme = "README.md"
 packages = [ { include = "cytodataframe", from = "src" } ]
 
-[tool.poetry.requires-plugins]
-poetry-dynamic-versioning = { version = ">=1.0.0,<2.0.0", extras = [ "plugin" ] }
-
 [tool.poetry.dependencies]
 python = ">=3.11,<3.14"
 # used for data management
@@ -80,6 +77,9 @@ sphinx-multiversion = { git = "https://github.com/J-RN/sphinx-multiversion", rev
 dunamai = "^1.22.0"
 # used for theming the docsite
 pydata-sphinx-theme = "^0.16.0"
+
+[tool.poetry.requires-plugins]
+poetry-dynamic-versioning = { version = ">=1.0.0,<2.0.0", extras = [ "plugin" ] }
 
 [tool.poetry-dynamic-versioning]
 enable = true

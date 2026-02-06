@@ -369,12 +369,20 @@ def test_colorconv_control_may_emit_warning():
     """
     bad = np.array([[0.0, np.inf], [np.nan, 1.0]], dtype=float)
 
-    funcs = [
-        lambda a: skimage.color.gray2rgb(a),
-        lambda a: skimage.color.rgb2lab(np.dstack([a, a, a])),
-        lambda a: skimage.color.lab2rgb(np.dstack([a * 100.0, a * 255.0, a * 255.0])),
-        lambda a: skimage.color.rgb2hsv(np.dstack([a, a, a])),
-    ]
+    def _gray2rgb(a: np.ndarray) -> np.ndarray:
+        return skimage.color.gray2rgb(a)
+
+    def _rgb2lab(a: np.ndarray) -> np.ndarray:
+        return skimage.color.rgb2lab(np.dstack([a, a, a]))
+
+    def _lab2rgb(a: np.ndarray) -> np.ndarray:
+        stacked = np.dstack([a * 100.0, a * 255.0, a * 255.0])
+        return skimage.color.lab2rgb(stacked)
+
+    def _rgb2hsv(a: np.ndarray) -> np.ndarray:
+        return skimage.color.rgb2hsv(np.dstack([a, a, a]))
+
+    funcs = [_gray2rgb, _rgb2lab, _lab2rgb, _rgb2hsv]
 
     saw_warning = False
     with warnings.catch_warnings(record=True) as caught:

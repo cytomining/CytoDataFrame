@@ -50,6 +50,7 @@ nest-asyncio = "^1.6.0"
 [tool.poetry.group.dev.dependencies]
 # provides testing capabilities for project
 pytest = ">=8.3.3,<10.0.0"
+pytest-cov = ">=5.0.0,<7.0.0"
 # used for test data generation
 sqlalchemy = ">=1.3.6,<3"
 # added to generate test coverage reports
@@ -128,6 +129,9 @@ lint.per-file-ignores."src/cytodataframe/*.py" = [ "ANN401", "PLC0415" ]
 lint.per-file-ignores."src/cytodataframe/image.py" = [ "PLR2004" ]
 # ignore typing rules for tests
 lint.per-file-ignores."tests/*" = [ "ANN201", "PLR0913", "PLR2004", "SIM105" ]
+
+[tool.pytest.ini_options]
+addopts = "--cov=src/cytodataframe --cov-report=term-missing:skip-covered --no-cov-on-fail"
 
 [tool.coverage.run]
 # settings to avoid errors with cv2 and coverage

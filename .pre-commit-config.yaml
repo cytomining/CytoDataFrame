@@ -72,7 +72,7 @@ repos:
     -   id: code-cov-gen
         name: Generate code coverage
         language: system
-        entry: poetry run coverage run -m pytest
+        entry: poetry run coverage run -m pytest --no-cov
         pass_filenames: false
         always_run: true
 -   repo: https://github.com/Weird-Sheep-Labs/coverage-pre-commit

@@ -55,6 +55,8 @@ from .volume import (
 )
 
 logger = logging.getLogger(__name__)
+MIN_VOLUME_NDIM = 3
+RGB_LIKE_CHANNEL_COUNTS = (1, MIN_VOLUME_NDIM, 4)
 
 # provide backwards compatibility for Self type in earlier Python versions.
 # see: https://peps.python.org/pep-0484/#annotating-instance-and-class-methods
@@ -1313,21 +1315,9 @@ class CytoDataFrame(pd.DataFrame):
 
     @staticmethod
     def _is_3d_image_array(array: np.ndarray) -> bool:
-        return array.ndim >= 3 and not (  # noqa: PLR2004
-            array.ndim == 3 and array.shape[-1] in (1, 3, 4)  # noqa: PLR2004
+        return array.ndim >= MIN_VOLUME_NDIM and not (
+            array.ndim == MIN_VOLUME_NDIM and array.shape[-1] in RGB_LIKE_CHANNEL_COUNTS
         )
-
-    @staticmethod
-    def _ensure_uint8(array: np.ndarray) -> np.ndarray:
-        """Convert the provided array to uint8 without unnecessary warnings."""
-
-        arr = np.asarray(array)
-        if np.issubdtype(arr.dtype, np.integer):
-            min_val = arr.min(initial=0)
-            max_val = arr.max(initial=0)
-            if min_val >= 0 and max_val <= 255:  # noqa: PLR2004
-                return arr.astype(np.uint8, copy=False)
-        return img_as_ubyte(arr)
 
     def _prepare_cropped_image_layers(  # noqa: C901, PLR0915, PLR0912, PLR0913
         self: CytoDataFrame_type,
@@ -1874,8 +1864,17 @@ class CytoDataFrame(pd.DataFrame):
                     )
                     if volume_data is not None:
                         volume, dims = volume_data
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    (
+                        "OME-Arrow fallback decode failed for row=%s, "
+                        "column=%s, path=%s: %s"
+                    ),
+                    row,
+                    column,
+                    data_path,
+                    exc,
+                )
 
         if volume is None or dims is None:
             raise ValueError("Selected cell does not contain a 3D volume.")
@@ -1984,10 +1983,8 @@ class CytoDataFrame(pd.DataFrame):
     def _build_pyvista_viewer(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self: CytoDataFrame_type,
         volume: np.ndarray,
-        dims: Tuple[int, int, int],
         backend: str,
         widget_height: str,
-        widget_width: str = "100%",
         spacing: Tuple[float, float, float] = (1.0, 1.0, 1.0),
         opacity: Any = "sigmoid",
         shade: bool = False,
@@ -2142,7 +2139,7 @@ class CytoDataFrame(pd.DataFrame):
             A trame layout when available, otherwise an ipywidgets container.
         """
 
-        volume, dims = self._get_3d_volume_from_cell(row=row, column=column)
+        volume, _dims = self._get_3d_volume_from_cell(row=row, column=column)
         html_content = self._generate_jupyter_dataframe_html()
 
         if backend is None:
@@ -2176,7 +2173,6 @@ class CytoDataFrame(pd.DataFrame):
 
         viewer = self._build_pyvista_viewer(
             volume=volume,
-            dims=dims,
             backend=backend,
             widget_height=widget_height,
             spacing=spacing,
@@ -2421,7 +2417,7 @@ class CytoDataFrame(pd.DataFrame):
                     continue
                 if col in target_columns:
                     try:
-                        volume, dims = self._get_3d_volume_from_cell(
+                        volume, _dims = self._get_3d_volume_from_cell(
                             row=row_label, column=col
                         )
                         effective_height = (
@@ -2429,10 +2425,8 @@ class CytoDataFrame(pd.DataFrame):
                         )
                         viewer = self._build_pyvista_viewer(
                             volume=volume,
-                            dims=dims,
                             backend=backend,
                             widget_height=effective_height,
-                            widget_width="100%",
                         )
                         grid[row_idx, col_idx] = widgets.Box(
                             [viewer],
@@ -2874,10 +2868,11 @@ class CytoDataFrame(pd.DataFrame):
         else:
             vmin, vmax = 0.0, 1.0
 
-        base_sample = max(min((1.0, 1.0, 1.0)), 1e-6)
+        spacing = (1.0, 1.0, 1.0)
+        base_sample = max(min(spacing), 1e-6)
         grid = pv.ImageData()
         grid.dimensions = tuple(int(v) for v in vol_xyz.shape)
-        grid.spacing = (1.0, 1.0, 1.0)
+        grid.spacing = spacing
         grid.origin = (0.0, 0.0, 0.0)
         grid.point_data.clear()
         grid.point_data["scalars"] = np.asfortranarray(vol_xyz).ravel(order="F")
@@ -2947,8 +2942,16 @@ class CytoDataFrame(pd.DataFrame):
         rows: List[Any],
         columns: List[Any],
     ) -> None:
-        """Queue background snapshot generation for given rows/columns."""
-        return None
+        """Placeholder hook for async snapshot pre-rendering.
+
+        TODO: Add optional background workers to precompute `_snapshot_cache`
+        entries for the provided rows/columns when async rendering is enabled.
+        """
+        logger.debug(
+            "Snapshot task queueing not implemented yet (rows=%d, columns=%d).",
+            len(rows),
+            len(columns),
+        )
 
     def _generate_trame_snapshot_html(self: CytoDataFrame_type) -> str:  # noqa: C901
         """Generate a static HTML table with PyVista 3D snapshots."""
@@ -2967,9 +2970,12 @@ class CytoDataFrame(pd.DataFrame):
             cache_lock = self._custom_attrs.get("_snapshot_cache_lock")
             for image_col in image_cols:
 
-                def _render_cell(row: pd.Series) -> str:
+                def _render_cell(
+                    row: pd.Series,
+                    bound_image_col: Any = image_col,
+                ) -> str:
                     try:
-                        key = self._snapshot_cache_key(row.name, image_col)
+                        key = self._snapshot_cache_key(row.name, bound_image_col)
                         if cache_lock is not None:
                             with cache_lock:
                                 snapshot = cache.get(key)
@@ -2978,7 +2984,7 @@ class CytoDataFrame(pd.DataFrame):
                         if snapshot:
                             return snapshot
                         volume, dims = self._get_3d_volume_from_cell(
-                            row=row.name, column=image_col
+                            row=row.name, column=bound_image_col
                         )
                         snapshot = self._pyvista_volume_snapshot_html(volume, dims)
                         if cache_lock is not None:

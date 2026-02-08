@@ -1,6 +1,8 @@
 #!/bin/bash
+set -euo pipefail
+
 # build and run cellprofiler from a docker container
-CPDOCKER_RUNDIR=$PWD/src/docker/3d-nuclei-profiling
+CPDOCKER_RUNDIR=$PWD/tests/data/CP_tutorial_3D_noise_nuclei_segmentation
 CPDOCKER_IMAGE_NAME=cp-3d-nuclei-profiling
 
 # build image
@@ -18,4 +20,4 @@ docker run --rm --platform linux/amd64 -w /app \
 docker run --rm --platform linux/amd64 -w /app \
     -v "$CPDOCKER_RUNDIR:/app" \
     "$CPDOCKER_IMAGE_NAME" \
-    cellprofiler -c -r -p 3d-nuclei-profiling.cppipe -o output -i input
+    -c -r -p 3d-nuclei-profiling.cppipe -o output -i input

@@ -99,9 +99,17 @@ def test_build_3d_image_html_stub_includes_default_height():
 def test_vtk_js_helpers_include_expected_hooks():
     script = build_3d_vtk_js_script("abc")
     initializer = build_3d_vtk_js_initializer()
-    assert "https://unpkg.com/vtk.js" in script
+    assert "https://unpkg.com/@kitware/vtk.js@34.9.1/dist/vtk.js" in script
     assert "document.getElementById('abc')" in script
     assert "querySelectorAll('.cyto-3d-image[data-volume][data-dims]')" in initializer
+    for token in (
+        "ctfun.addRGBPoint(1,1,1,1);",
+        "ctfun.addRGBPoint(255,1,1,1);",
+        "ofun.addPoint(1,0.15);",
+        "ofun.addPoint(255,0.2);",
+    ):
+        assert token in script
+        assert token in initializer
 
 
 def test_extract_volume_from_ome_arrow_returns_none_for_invalid_inputs():
@@ -263,7 +271,7 @@ def test_build_3d_html_from_path_handles_ome_arrow_load_failure(
             messages.append(msg % args if args else msg)
 
     class FailingOMEArrow:
-        def __init__(self, data: str):  # noqa: ANN204
+        def __init__(self, data: str) -> None:
             raise RuntimeError("boom")
 
     fake_module = types.SimpleNamespace(
@@ -287,7 +295,7 @@ def test_build_3d_html_from_path_with_fake_ome_arrow(monkeypatch: pytest.MonkeyP
     cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
 
     class FakeOMEArrow:
-        def __init__(self, data: str):  # noqa: ANN204
+        def __init__(self, data: str) -> None:
             self.data = _fake_ome_arrow_volume()
 
     fake_module = types.SimpleNamespace(
@@ -313,7 +321,7 @@ def test_build_3d_html_from_path_returns_none_when_volume_decode_fails(
     cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
 
     class BadOMEArrow:
-        def __init__(self, data: str):  # noqa: ANN204
+        def __init__(self, data: str) -> None:
             self.data = {"type": "ome.arrow", "pixels_meta": {"size_x": 2}}
 
     fake_module = types.SimpleNamespace(

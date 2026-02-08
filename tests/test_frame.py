@@ -908,7 +908,6 @@ def test_show_widget_table_renders_3d_viewer_cells_successfully(
     assert "…" in grid[2, 1].value
     assert captured["backend"] == "trame"
     assert captured["widget_height"] == "140px"
-    assert captured["widget_width"] == "100%"
 
 
 def test_get_displayed_rows_when_under_limit(monkeypatch: pytest.MonkeyPatch):
@@ -1048,7 +1047,6 @@ def test_build_pyvista_viewer_with_fake_module(monkeypatch: pytest.MonkeyPatch) 
 
     viewer = cdf._build_pyvista_viewer(
         volume=np.ones((2, 2, 2), dtype=np.uint8),
-        dims=(2, 2, 2),
         backend="trame",
         widget_height="120px",
     )
@@ -1146,12 +1144,13 @@ def test_generate_jupyter_dataframe_html_info_repr_branch(
 
 def test_generate_jupyter_dataframe_html_with_joined_components(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
 ):
     base = pd.DataFrame(
         {"Image_FileName_DNA": ["dna.tiff"], "OMECol": [{"type": "ome.arrow"}]},
         index=[0],
     )
-    cdf = CytoDataFrame(base, data_context_dir="/tmp")
+    cdf = CytoDataFrame(base, data_context_dir=str(tmp_path))
     cdf._custom_attrs["data_bounding_box"] = pd.DataFrame(
         {
             "Cells_AreaShape_BoundingBoxMinimum_X": [0],
@@ -1166,7 +1165,7 @@ def test_generate_jupyter_dataframe_html_with_joined_components(
         index=[0],
     )
     cdf._custom_attrs["data_image_paths"] = pd.DataFrame(
-        {"Image_PathName_DNA": ["/tmp"]},
+        {"Image_PathName_DNA": [str(tmp_path)]},
         index=[0],
     )
 

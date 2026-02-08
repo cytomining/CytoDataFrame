@@ -44,7 +44,13 @@ RUN python3.9 -m venv $VIRTUAL_ENV && \
     https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-20.04/wxPython-4.2.1-cp39-cp39-linux_x86_64.whl \
     cellprofiler==$cp_version
 
+RUN groupadd --gid 10001 cpuser && \
+    useradd --uid 10001 --gid cpuser --create-home --shell /bin/bash cpuser && \
+    mkdir -p /usr/local/src && \
+    chown -R cpuser:cpuser /usr/local/src
+
 WORKDIR /usr/local/src
+USER cpuser
 ENTRYPOINT ["cellprofiler"]
 
 CMD ["--run", "--run-headless", "--help"]

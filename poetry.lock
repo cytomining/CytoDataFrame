@@ -2111,18 +2111,6 @@ test = ["packaging (>=20.1.0)", "pytest (>=7.0.0)", "pytest-asyncio (>=1.0.0)", 
 test-extra = ["curio", "ipykernel (>6.30)", "ipython[matplotlib]", "ipython[test]", "jupyter_ai", "nbclient", "nbformat", "numpy (>=1.27)", "pandas (>2.1)", "trio (>=0.1.0)"]
 
 [[package]]
-name = "ipython-genutils"
-version = "0.2.0"
-description = "Vestigial utilities from IPython"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "ipython_genutils-0.2.0-py2.py3-none-any.whl", hash = "sha256:72dd37233799e619666c9f639a9da83c34013a73e8bbc79a7a6348d93c61fab8"},
-    {file = "ipython_genutils-0.2.0.tar.gz", hash = "sha256:eb2e116e75ecef9d4d228fdc66af54269afa26ab4463042e33785b887c628ba8"},
-]
-
-[[package]]
 name = "ipython-pygments-lexers"
 version = "1.1.1"
 description = "Defines a variety of Pygments lexers for highlighting IPython code."
@@ -6983,4 +6971,4 @@ test = ["big-O", "importlib-resources ; python_version < \"3.9\"", "jaraco.funct
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "8acbdddb84efd0eed4b0c6ee7ab45161bdf6120fa42e160d1176aa6572776ac3"
+content-hash = "76896c2d7a9f960ed3c306166b2acfd3fa2e582bd0efaa835875f18e3bd9d89a"

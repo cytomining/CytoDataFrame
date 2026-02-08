@@ -10,6 +10,17 @@ import numpy as np
 
 FALLBACK_NDIM = 2
 MIN_VOLUME_NDIM = 3
+VTK_JS_CDN_URL = "https://unpkg.com/@kitware/vtk.js@34.9.1/dist/vtk.js"
+VTK_JS_TRANSFER_FUNCTION_SNIPPET = (
+    "const ctfun=vtk.Rendering.Core.vtkColorTransferFunction.newInstance();"
+    "ctfun.addRGBPoint(0,0,0,0);"
+    "ctfun.addRGBPoint(1,1,1,1);"
+    "ctfun.addRGBPoint(255,1,1,1);"
+    "const ofun=vtk.Common.DataModel.vtkPiecewiseFunction.newInstance();"
+    "ofun.addPoint(0,0.0);"
+    "ofun.addPoint(1,0.15);"
+    "ofun.addPoint(255,0.2);"
+)
 
 
 def build_3d_image_html_stub(
@@ -67,7 +78,7 @@ def build_3d_image_html_view(
     ]
     html_style_joined = ";".join(html_style)
 
-    volume_bytes = volume.astype(np.uint8, copy=False).tobytes()
+    volume_bytes = np.array(volume, dtype=np.uint8, copy=True).tobytes()
     volume_b64 = base64.b64encode(volume_bytes).decode("utf-8")
     dims_attr = ",".join(str(value) for value in dims)
     element_id = f"cyto-3d-{uuid.uuid4().hex}"
@@ -142,12 +153,7 @@ def build_3d_vtk_js_script(element_id: str) -> str:
         "mapper.setInputData(imageData);"
         "const volume=vtk.Rendering.Core.vtkVolume.newInstance();"
         "volume.setMapper(mapper);"
-        "const ctfun=vtk.Rendering.Core.vtkColorTransferFunction.newInstance();"
-        "ctfun.addRGBPoint(0,0,0,0);"
-        "ctfun.addRGBPoint(255,1,1,1);"
-        "const ofun=vtk.Common.DataModel.vtkPiecewiseFunction.newInstance();"
-        "ofun.addPoint(0,0.0);"
-        "ofun.addPoint(255,0.2);"
+        f"{VTK_JS_TRANSFER_FUNCTION_SNIPPET}"
         "volume.getProperty().setRGBTransferFunction(0,ctfun);"
         "volume.getProperty().setScalarOpacity(0,ofun);"
         "volume.getProperty().setShade(false);"
@@ -175,7 +181,7 @@ def build_3d_vtk_js_script(element_id: str) -> str:
         "if(!window._cytoVtkLoading){"
         "window._cytoVtkLoading=true;"
         "const script=document.createElement('script');"
-        "script.src='https://unpkg.com/vtk.js';"
+        f"script.src='{VTK_JS_CDN_URL}';"
         "script.async=true;"
         "script.onload=function(){init();};"
         "document.head.appendChild(script);"
@@ -214,14 +220,7 @@ def build_3d_vtk_js_initializer() -> str:
         "mapper.setInputData(imageData);"
         "const volume=vtk.Rendering.Core.vtkVolume.newInstance();"
         "volume.setMapper(mapper);"
-        "const ctfun=vtk.Rendering.Core.vtkColorTransferFunction.newInstance();"
-        "ctfun.addRGBPoint(0,0,0,0);"
-        "ctfun.addRGBPoint(1,1,1,1);"
-        "ctfun.addRGBPoint(255,1,1,1);"
-        "const ofun=vtk.Common.DataModel.vtkPiecewiseFunction.newInstance();"
-        "ofun.addPoint(0,0.0);"
-        "ofun.addPoint(1,0.15);"
-        "ofun.addPoint(255,0.2);"
+        f"{VTK_JS_TRANSFER_FUNCTION_SNIPPET}"
         "volume.getProperty().setRGBTransferFunction(0,ctfun);"
         "volume.getProperty().setScalarOpacity(0,ofun);"
         "volume.getProperty().setShade(false);"
@@ -257,7 +256,7 @@ def build_3d_vtk_js_initializer() -> str:
         "if(!window._cytoVtkLoading){"
         "window._cytoVtkLoading=true;"
         "const script=document.createElement('script');"
-        "script.src='https://unpkg.com/vtk.js';"
+        f"script.src='{VTK_JS_CDN_URL}';"
         "script.async=true;"
         "script.onload=function(){initAll();};"
         "document.head.appendChild(script);"
@@ -330,6 +329,7 @@ def extract_volume_from_ome_arrow(  # noqa: C901, PLR0912
         if filled == 0 or volume is None:
             return None
 
+        volume = ensure_uint8(volume)
         return volume, (size_x, size_y, size_z)
     except Exception as exc:
         logger.debug("Unable to decode 3D OME-Arrow struct: %s", exc)

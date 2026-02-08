@@ -6,6 +6,7 @@ import logging
 import pathlib
 import sys
 import types
+from collections import OrderedDict
 from contextlib import nullcontext
 from importlib.machinery import ModuleSpec
 
@@ -673,6 +674,52 @@ def test_get_3d_volume_from_cell_loads_3d_tiff(tmp_path: pathlib.Path) -> None:
 
     assert loaded_volume.shape == (4, 5, 6)
     assert dims == (6, 5, 4)
+
+
+def test_get_3d_volume_from_cell_uses_bounded_lru_cache() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "A": [
+                    np.zeros((2, 2, 2), dtype=np.uint8),
+                    np.ones((2, 2, 2), dtype=np.uint8),
+                    np.full((2, 2, 2), 2, dtype=np.uint8),
+                ]
+            }
+        ),
+        display_options={"volume_cache_max_entries": 2},
+    )
+
+    cdf._get_3d_volume_from_cell(row=0, column="A")
+    cdf._get_3d_volume_from_cell(row=1, column="A")
+    cache = cdf._custom_attrs["_volume_cache"]
+    assert isinstance(cache, OrderedDict)
+    assert list(cache.keys()) == ["0::A", "1::A"]
+
+    # Access row 0 again, making it the most-recent entry.
+    cdf._get_3d_volume_from_cell(row=0, column="A")
+    assert list(cache.keys()) == ["1::A", "0::A"]
+
+    # Inserting a third entry evicts the least-recently used one (row 1).
+    cdf._get_3d_volume_from_cell(row=2, column="A")
+    assert list(cache.keys()) == ["0::A", "2::A"]
+    assert len(cache) == 2
+
+
+def test_get_3d_volume_from_cell_skips_cache_when_disabled() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"A": [np.ones((2, 2, 2), dtype=np.uint8)]}),
+        display_options={"volume_disable_cache": True},
+    )
+    sentinel_cache = {"0::A": (np.zeros((1, 1, 1), dtype=np.uint8), (1, 1, 1))}
+    cdf._custom_attrs["_volume_cache"] = sentinel_cache
+
+    volume, dims = cdf._get_3d_volume_from_cell(row=0, column="A")
+
+    assert volume.shape == (2, 2, 2)
+    assert dims == (2, 2, 2)
+    assert cdf._custom_attrs["_volume_cache"] is sentinel_cache
+    assert cdf._custom_attrs["_volume_cache"]["0::A"][0].shape == (1, 1, 1)
 
 
 def test_repr_html_auto_trame_for_3d_inputs(
@@ -1400,7 +1447,7 @@ def test_repr_returns_expected_values(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "A" in debug_repr
 
 
-def test_enable_debug_mode_adds_handler_once(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_enable_debug_mode_adds_handler_once() -> None:
     cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
     frame_logger = logging.getLogger("cytodataframe.frame")
     original_handlers = list(frame_logger.handlers)

@@ -11,6 +11,7 @@ import sys
 import tempfile
 import uuid
 import warnings
+from collections import OrderedDict
 from io import BytesIO, StringIO
 from typing import (
     Any,
@@ -1798,10 +1799,29 @@ class CytoDataFrame(pd.DataFrame):
         row: Any,
         column: Any,
     ) -> Tuple[np.ndarray, Tuple[int, int, int]]:
-        cache = self._custom_attrs.get("_volume_cache", {})
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        cache_disabled = bool(display_options.get("volume_disable_cache"))
+        cache_max_entries_raw = display_options.get("volume_cache_max_entries", 32)
+        try:
+            cache_max_entries = max(1, int(cache_max_entries_raw))
+        except (TypeError, ValueError):
+            cache_max_entries = 32
+
+        cache: "OrderedDict[str, Tuple[np.ndarray, Tuple[int, int, int]]]" = (
+            OrderedDict()
+        )
+        if not cache_disabled:
+            raw_cache = self._custom_attrs.get("_volume_cache", {})
+            if isinstance(raw_cache, OrderedDict):
+                cache = raw_cache
+            else:
+                cache = OrderedDict(raw_cache or {})
+                self._custom_attrs["_volume_cache"] = cache
         cache_key = f"{row}::{column}"
-        if cache_key in cache:
-            return cache[cache_key]
+        if not cache_disabled and cache_key in cache:
+            cached = cache.pop(cache_key)
+            cache[cache_key] = cached
+            return cached
 
         try:
             value = self.loc[row, column]
@@ -1947,7 +1967,10 @@ class CytoDataFrame(pd.DataFrame):
         except Exception as exc:
             logger.debug("Skipping 3D bounding box crop due to error: %s", exc)
 
-        cache[cache_key] = (volume, dims)
+        if not cache_disabled:
+            cache[cache_key] = (volume, dims)
+            while len(cache) > cache_max_entries:
+                cache.popitem(last=False)
         return volume, dims
 
     def _find_3d_columns_for_display(
@@ -2852,6 +2875,13 @@ class CytoDataFrame(pd.DataFrame):
         sampling_scale = display_options.get("volume_sampling_scale", 0.5)
 
         vol_xyz = np.transpose(volume, (2, 1, 0))
+        expected_dims = (volume.shape[2], volume.shape[1], volume.shape[0])
+        if dims != expected_dims:
+            logger.debug(
+                "Snapshot dims %s do not match volume-derived dims %s.",
+                dims,
+                expected_dims,
+            )
         if vol_xyz.dtype != np.float32:
             vol_xyz = vol_xyz.astype(np.float32, copy=False)
 

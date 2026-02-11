@@ -14,9 +14,6 @@ license = "BSD-3-Clause"
 readme = "README.md"
 packages = [ { include = "cytodataframe", from = "src" } ]
 
-[tool.poetry.requires-plugins]
-poetry-dynamic-versioning = { version = ">=1.0.0,<2.0.0", extras = [ "plugin" ] }
-
 [tool.poetry.dependencies]
 python = ">=3.11,<3.14"
 # used for data management
@@ -83,6 +80,9 @@ dunamai = "^1.22.0"
 # used for theming the docsite
 pydata-sphinx-theme = "^0.16.0"
 
+[tool.poetry.requires-plugins]
+poetry-dynamic-versioning = { version = ">=1.0.0,<2.0.0", extras = [ "plugin" ] }
+
 [tool.poetry-dynamic-versioning]
 enable = true
 style = "pep440"
@@ -99,26 +99,26 @@ target-version = "py38"
 line-length = 88
 fix = true
 lint.select = [
-  # flake8-annotations
-  "ANN",
   # flake8-builtins
   "A",
+  # flake8-annotations
+  "ANN",
   # flake8-comprehensions
   "C4",
-  # flake8-simplify
-  "SIM",
-  # isort
-  "I",
   # mccabe
   "C90",
   # pycodestyle
   "E",
   # pyflakes
   "F",
+  # isort
+  "I",
   # pylint
   "PL",
   # ruff
   "RUF",
+  # flake8-simplify
+  "SIM",
   "W",
 ]
 # Ignore `E402` and `F401` (unused imports) in all `__init__.py` files

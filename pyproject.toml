@@ -5,10 +5,7 @@ requires = [ "poetry-core>=1", "poetry-dynamic-versioning>=1,<2" ]
 [tool.poetry]
 name = "CytoDataFrame"
 version = "99.0.0"
-description = """\
-  An in-memory data analysis format for single-cell profiles alongside their corresponding images and segmentation \
-  masks.\
-  """
+description = "An in-memory data analysis format for single-cell profiles alongside their corresponding images and segmentation masks."
 authors = [ "Way Science Community" ]
 license = "BSD-3-Clause"
 readme = "README.md"
@@ -41,11 +38,14 @@ matplotlib = "^3.9.3"
 ipywidgets = "^8.1.7"
 imageio = "^2.37.0"
 ome-arrow = ">=0.0.3,<0.0.6"
-pyvista = ">=0.46.4"
-trame = ">=3.12"
-trame-vtk = ">=2.10"
-trame-vuetify = ">=3.1"
+pyvista = { version = ">=0.46.4,<1.0.0", optional = true }
+trame = { version = ">=3.12,<4.0.0", optional = true }
+trame-vtk = { version = ">=2.10,<3.0.0", optional = true }
+trame-vuetify = { version = ">=3.1,<4.0.0", optional = true }
 nest-asyncio = "^1.6.0"
+
+[tool.poetry.extras]
+viewer-3d = [ "pyvista", "trame", "trame-vtk", "trame-vuetify" ]
 
 [tool.poetry.group.dev.dependencies]
 # provides testing capabilities for project
@@ -127,13 +127,13 @@ lint.per-file-ignores."src/cytodataframe/image.py" = [ "PLR2004" ]
 # ignore typing rules for tests
 lint.per-file-ignores."tests/*" = [ "ANN201", "PLR0913", "PLR2004", "SIM105" ]
 
-[tool.pytest]
-ini_options.addopts = "--cov=src/cytodataframe --cov-report=term-missing:skip-covered --no-cov-on-fail"
+[tool.pytest.ini_options]
+addopts = "--cov=src/cytodataframe --cov-report=term-missing:skip-covered --no-cov-on-fail"
 
-[tool.coverage]
+[tool.coverage.run]
 # settings to avoid errors with cv2 and coverage
 # see here for more: https://github.com/nedbat/coveragepy/issues/1653
-run.omit = [
+omit = [
   "config.py",
   "config-3.py",
 ]
@@ -153,7 +153,10 @@ tasks.poster-preview.shell = """
 quarto preview \
   docs/presentations/2025-sbi2/poster.qmd
 """
-tasks.poster-render.shell = """\
-  quarto render \\\n  docs/presentations/2025-sbi2/poster.qmd\n  mv \
-  docs/presentations/2025-sbi2/cytodataframe-2025-poster.pdf \\\n  docs/src/_static/cytodataframe-2025-poster.pdf\n\
-  """
+tasks.poster-render.shell = """
+quarto render \
+  docs/presentations/2025-sbi2/poster.qmd
+mv \
+  docs/presentations/2025-sbi2/cytodataframe-2025-poster.pdf \
+  docs/src/_static/cytodataframe-2025-poster.pdf
+"""

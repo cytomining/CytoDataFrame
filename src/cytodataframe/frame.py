@@ -5,6 +5,7 @@ Defines a CytoDataFrame class.
 import base64
 import contextlib
 import logging
+import os
 import pathlib
 import re
 import sys
@@ -1035,8 +1036,8 @@ class CytoDataFrame(pd.DataFrame):
             if self[column]
             .apply(
                 lambda value: (
-                    isinstance(value, str)
-                    and re.match(pattern, value, flags=re.IGNORECASE)
+                    isinstance(value, (str, os.PathLike))
+                    and re.match(pattern, str(value), flags=re.IGNORECASE)
                 )
             )
             .any()
@@ -1753,7 +1754,7 @@ class CytoDataFrame(pd.DataFrame):
                 logger,
             )
             if volume_data is None:
-                return data_value
+                return str(data_value)
             volume, dims = volume_data
             return build_3d_image_html_view(
                 volume=volume,
@@ -1766,7 +1767,7 @@ class CytoDataFrame(pd.DataFrame):
         try:
             return self._image_array_to_html(array)
         except Exception:
-            return data_value
+            return str(data_value)
 
     def process_image_data_as_html_display(
         self: CytoDataFrame_type,
@@ -1893,15 +1894,83 @@ class CytoDataFrame(pd.DataFrame):
                 data_value = normalized
 
             data_path = pathlib.Path(data_value)
-            if not data_path.is_file() and context_dir:
-                candidate = pathlib.Path(context_dir) / data_path
-                if candidate.is_file():
-                    data_path = candidate
+            candidate_paths: List[pathlib.Path] = []
+            seen_candidates: set[str] = set()
+
+            def _add_candidate(path_value: pathlib.Path) -> None:
+                if not path_value.is_file():
+                    return
+                key = str(path_value.resolve())
+                if key not in seen_candidates:
+                    seen_candidates.add(key)
+                    candidate_paths.append(path_value)
+
+            _add_candidate(data_path)
+            if context_dir:
+                _add_candidate(pathlib.Path(context_dir) / data_path)
+
+            candidate_filenames = {pathlib.Path(data_value).name}
+            needs_path_column_lookup = context_dir is None or not candidate_paths
+            if needs_path_column_lookup:
+                image_cols = self.find_image_columns() or []
+                all_cols = self.columns.tolist()
+                path_df = self._custom_attrs.get("data_image_paths")
+                if path_df is not None:
+                    all_cols = list(
+                        dict.fromkeys([*all_cols, *path_df.columns.tolist()])
+                    )
+                image_path_cols = self.find_image_path_columns(image_cols, all_cols)
+
+                def _row_value(col_name: str) -> Any:
+                    if col_name in self.columns:
+                        try:
+                            return self.loc[row, col_name]
+                        except Exception:
+                            return self.iloc[row][col_name]
+                    if (
+                        path_df is not None
+                        and col_name in path_df.columns
+                        and row in path_df.index
+                    ):
+                        return path_df.loc[row, col_name]
+                    return None
+
+                for image_col, path_col in image_path_cols.items():
+                    row_filename = _row_value(image_col)
+                    row_path = _row_value(path_col)
+                    if row_filename is not None and not pd.isna(row_filename):
+                        candidate_filenames.add(pathlib.Path(str(row_filename)).name)
+                    if (
+                        row_filename is not None
+                        and not pd.isna(row_filename)
+                        and row_path is not None
+                        and not pd.isna(row_path)
+                    ):
+                        _add_candidate(pathlib.Path(str(row_path)) / str(row_filename))
+                    if (
+                        image_col == str(column)
+                        and row_path is not None
+                        and not pd.isna(row_path)
+                    ):
+                        _add_candidate(
+                            pathlib.Path(str(row_path)) / pathlib.Path(data_value).name
+                        )
+
+            if context_dir:
+                context_root = pathlib.Path(context_dir)
+                for filename in sorted(candidate_filenames):
+                    _add_candidate(context_root / filename)
+                    if not candidate_paths:
+                        for found in context_root.rglob(filename):
+                            _add_candidate(found)
+
+            if candidate_paths:
+                data_path = candidate_paths[0]
 
             # First attempt direct image loading for TIFF/Zarr-backed 3D arrays.
-            if data_path.is_file():
+            for file_candidate in candidate_paths:
                 with contextlib.suppress(Exception):
-                    image_volume = np.asarray(imageio.imread(data_path))
+                    image_volume = np.asarray(imageio.imread(file_candidate))
                     if self._is_3d_image_array(image_volume):
                         if (
                             image_volume.ndim > volume_ndim
@@ -1911,23 +1980,29 @@ class CytoDataFrame(pd.DataFrame):
                         if image_volume.ndim == volume_ndim:
                             volume = image_volume
                             dims = (volume.shape[2], volume.shape[1], volume.shape[0])
+                            data_path = file_candidate
+                            break
 
             # Fallback to OME-Arrow path decoding for string/path cells.
             try:
                 from ome_arrow import OMEArrow  # type: ignore
 
                 if volume is None:
-                    ome_struct = OMEArrow(data=str(data_path)).data
-                    if hasattr(ome_struct, "as_py"):
-                        ome_struct = ome_struct.as_py()
-                    volume_data = extract_volume_from_ome_arrow(
-                        ome_struct,
-                        self._ensure_uint8,
-                        self._is_ome_arrow_value,
-                        logger,
-                    )
-                    if volume_data is not None:
-                        volume, dims = volume_data
+                    decode_candidates = candidate_paths or [data_path]
+                    for decode_path in decode_candidates:
+                        ome_struct = OMEArrow(data=str(decode_path)).data
+                        if hasattr(ome_struct, "as_py"):
+                            ome_struct = ome_struct.as_py()
+                        volume_data = extract_volume_from_ome_arrow(
+                            ome_struct,
+                            self._ensure_uint8,
+                            self._is_ome_arrow_value,
+                            logger,
+                        )
+                        if volume_data is not None:
+                            volume, dims = volume_data
+                            data_path = decode_path
+                            break
             except Exception as exc:
                 logger.debug(
                     (
@@ -2189,7 +2264,7 @@ class CytoDataFrame(pd.DataFrame):
         self: CytoDataFrame_type,
         row: Any,
         column: Any,
-        backend: str = "trame",
+        backend: Optional[str] = "trame",
         **kwargs: Any,
     ) -> Any:
         """Render the dataframe HTML with a trame-backed 3D view.
@@ -2335,7 +2410,7 @@ class CytoDataFrame(pd.DataFrame):
         self: CytoDataFrame_type,
         column: Any,
         rows: Optional[List[Any]] = None,
-        backend: str = "trame",
+        backend: Optional[str] = "trame",
         **kwargs: Any,
     ) -> Any:
         """Render a widget-based table with 3D views embedded in columns."""

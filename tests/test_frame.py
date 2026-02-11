@@ -729,6 +729,80 @@ def test_get_3d_volume_from_cell_normalizes_file_uri_with_context_dir(
     assert dims == (5, 4, 3)
 
 
+def test_find_image_columns_accepts_pathlike_values(tmp_path: pathlib.Path) -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "PathLikeCol": [tmp_path / "img.tiff"],
+                "NotImage": [tmp_path / "table.csv"],
+            }
+        )
+    )
+    assert "PathLikeCol" in cdf.find_image_columns()
+    assert "NotImage" not in cdf.find_image_columns()
+
+
+def test_get_3d_volume_from_cell_uses_image_pathname_column(
+    tmp_path: pathlib.Path,
+) -> None:
+    volume = np.arange(3 * 4 * 5, dtype=np.uint8).reshape(3, 4, 5)
+    image_path = tmp_path / "via_path_col.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame(
+            {
+                "Image_FileName_DNA": [image_path.name],
+                "Image_PathName_DNA": [str(tmp_path)],
+            }
+        ),
+    )
+
+    loaded_volume, dims = cdf._get_3d_volume_from_cell(
+        row=0, column="Image_FileName_DNA"
+    )
+    assert loaded_volume.shape == (3, 4, 5)
+    assert dims == (5, 4, 3)
+
+
+def test_get_3d_volume_from_cell_uses_data_image_paths_helper(
+    tmp_path: pathlib.Path,
+) -> None:
+    volume = np.arange(2 * 4 * 6, dtype=np.uint8).reshape(2, 4, 6)
+    image_path = tmp_path / "helper_path_col.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_image_paths=pd.DataFrame({"Image_PathName_DNA": [str(tmp_path)]}),
+    )
+
+    loaded_volume, dims = cdf._get_3d_volume_from_cell(
+        row=0, column="Image_FileName_DNA"
+    )
+    assert loaded_volume.shape == (2, 4, 6)
+    assert dims == (6, 4, 2)
+
+
+def test_get_3d_volume_from_cell_rglob_in_context_dir(tmp_path: pathlib.Path) -> None:
+    nested_dir = tmp_path / "nested" / "images"
+    nested_dir.mkdir(parents=True)
+    volume = np.arange(2 * 3 * 4, dtype=np.uint8).reshape(2, 3, 4)
+    image_path = nested_dir / "rglob_volume.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+    )
+
+    loaded_volume, dims = cdf._get_3d_volume_from_cell(
+        row=0, column="Image_FileName_DNA"
+    )
+    assert loaded_volume.shape == (2, 3, 4)
+    assert dims == (4, 3, 2)
+
+
 def test_get_3d_volume_from_cell_uses_bounded_lru_cache() -> None:
     cdf = CytoDataFrame(
         pd.DataFrame(

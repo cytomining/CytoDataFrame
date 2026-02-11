@@ -671,25 +671,6 @@ urllib3 = {version = ">=1.25.4,<2.2.0 || >2.2.0,<3", markers = "python_version >
 crt = ["awscrt (==0.27.6)"]
 
 [[package]]
-name = "bqplot"
-version = "0.12.45"
-description = "Interactive plotting for the Jupyter notebook, using d3.js and ipywidgets."
-optional = false
-python-versions = ">=3.6"
-groups = ["main"]
-files = [
-    {file = "bqplot-0.12.45-py2.py3-none-any.whl", hash = "sha256:cf2e046adb401670902ab53a18d9f63540091279bc45c4ef281bfdadf6e7e92c"},
-    {file = "bqplot-0.12.45.tar.gz", hash = "sha256:ede00e9fdf7d92e43cc2d1b9691c7da176b6216fdd187c8e92f19d7beaca5e2a"},
-]
-
-[package.dependencies]
-ipywidgets = ">=7.5.0,<9"
-numpy = ">=1.10.4"
-pandas = ">=1.0.0,<3.0.0"
-traitlets = ">=4.3.0"
-traittypes = ">=0.0.6"
-
-[[package]]
 name = "certifi"
 version = "2024.7.4"
 description = "Python package for providing Mozilla's CA Bundle."
@@ -2023,27 +2004,6 @@ files = [
 ]
 
 [[package]]
-name = "ipydatawidgets"
-version = "4.3.5"
-description = "A set of widgets to help facilitate reuse of large datasets across widgets"
-optional = false
-python-versions = ">=3.7"
-groups = ["main"]
-files = [
-    {file = "ipydatawidgets-4.3.5-py2.py3-none-any.whl", hash = "sha256:d590cdb7c364f2f6ab346f20b9d2dd661d27a834ef7845bc9d7113118f05ec87"},
-    {file = "ipydatawidgets-4.3.5.tar.gz", hash = "sha256:394f2489576587cfd755377a09a067f46cad22081965092021fd1abcbe7852a8"},
-]
-
-[package.dependencies]
-ipywidgets = ">=7.0.0"
-numpy = "*"
-traittypes = ">=0.2.0"
-
-[package.extras]
-docs = ["recommonmark", "sphinx", "sphinx-rtd-theme"]
-test = ["nbval (>=0.9.2)", "pytest (>=4)", "pytest-cov"]
-
-[[package]]
 name = "ipykernel"
 version = "6.29.4"
 description = "IPython Kernel for Jupyter"
@@ -2124,83 +2084,6 @@ files = [
 
 [package.dependencies]
 pygments = "*"
-
-[[package]]
-name = "ipyvolume"
-version = "0.6.3"
-description = "IPython widget for rendering 3d volumes"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "ipyvolume-0.6.3-py3-none-any.whl", hash = "sha256:550761b5cc1a9fb0e8931056fd523b2f0074ddea46633a248f996168e5b0d7f6"},
-    {file = "ipyvolume-0.6.3.tar.gz", hash = "sha256:823226f90a59ce08b1da2699a9ec505f34f65f01ce43accd80e7d3554082d035"},
-]
-
-[package.dependencies]
-bqplot = "*"
-ipyvue = ">=1.7.0"
-ipyvuetify = "*"
-ipywebrtc = "*"
-ipywidgets = ">=7.0.0"
-matplotlib = "*"
-numpy = "*"
-Pillow = "*"
-pythreejs = ">=2.4.0"
-requests = "*"
-traitlets = "*"
-traittypes = "*"
-
-[[package]]
-name = "ipyvue"
-version = "1.11.3"
-description = "Jupyter widgets base for Vue libraries"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "ipyvue-1.11.3-py2.py3-none-any.whl", hash = "sha256:f6f4680a8b61c190dd56a461b5c595d05d84699dde2f7dd5c43f5db7520c6028"},
-    {file = "ipyvue-1.11.3.tar.gz", hash = "sha256:80b3b6108b448eb17b7c9eb0c39b5ad384718abdcd24a82f853ad3062b83b41b"},
-]
-
-[package.dependencies]
-ipywidgets = ">=7.0.0"
-
-[package.extras]
-dev = ["pre-commit"]
-test = ["solara[pytest]"]
-
-[[package]]
-name = "ipyvuetify"
-version = "1.11.3"
-description = "Jupyter widgets based on vuetify UI components"
-optional = false
-python-versions = ">=3.6"
-groups = ["main"]
-files = [
-    {file = "ipyvuetify-1.11.3-py2.py3-none-any.whl", hash = "sha256:fa83aaf9f4ce669172d532094d60bd7c40d3cb9c5d6bb2f4a14565da2b09a8d8"},
-    {file = "ipyvuetify-1.11.3.tar.gz", hash = "sha256:3580afa76d9add4ae04ccb7fd57d4a0cf03a261705742e7137def3ebb65ac71d"},
-]
-
-[package.dependencies]
-ipyvue = ">=1.7,<2"
-
-[package.extras]
-dev = ["mypy", "nox", "pre-commit"]
-doc = ["ipykernel", "jupyter-sphinx", "pydata-sphinx-theme", "sphinx (<7)", "sphinx-design", "sphinx_rtd_theme"]
-test = ["jupyterlab (<4)", "nbformat (<5.10)", "pytest", "pytest-playwright (<0.6)", "solara[pytest]"]
-
-[[package]]
-name = "ipywebrtc"
-version = "0.6.0"
-description = "WebRTC for Jupyter notebook/lab"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "ipywebrtc-0.6.0-py2.py3-none-any.whl", hash = "sha256:01a6c9d79ab937c280ce4635a149c7b681457e99ea779c00c7a6aa44ee6916f8"},
-    {file = "ipywebrtc-0.6.0.tar.gz", hash = "sha256:f8ac3cc02b3633b59f388aef67961cff57f90028fd303bb3886c63c3d631da13"},
-]
 
 [[package]]
 name = "ipywidgets"
@@ -4832,26 +4715,6 @@ pygments = ">=2.7.2"
 dev = ["argcomplete", "attrs (>=19.2)", "hypothesis (>=3.56)", "mock", "requests", "setuptools", "xmlschema"]
 
 [[package]]
-name = "pytest-cov"
-version = "6.3.0"
-description = "Pytest plugin for measuring coverage."
-optional = false
-python-versions = ">=3.9"
-groups = ["dev"]
-files = [
-    {file = "pytest_cov-6.3.0-py3-none-any.whl", hash = "sha256:440db28156d2468cafc0415b4f8e50856a0d11faefa38f30906048fe490f1749"},
-    {file = "pytest_cov-6.3.0.tar.gz", hash = "sha256:35c580e7800f87ce892e687461166e1ac2bcb8fb9e13aea79032518d6e503ff2"},
-]
-
-[package.dependencies]
-coverage = {version = ">=7.5", extras = ["toml"]}
-pluggy = ">=1.2"
-pytest = ">=6.2.5"
-
-[package.extras]
-testing = ["fields", "hunter", "process-tests", "pytest-xdist", "virtualenv"]
-
-[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 description = "Extensions to the standard Python datetime module"
@@ -4877,29 +4740,6 @@ files = [
     {file = "python-json-logger-2.0.7.tar.gz", hash = "sha256:23e7ec02d34237c5aa1e29a070193a4ea87583bb4e7f8fd06d3de8264c4b2e1c"},
     {file = "python_json_logger-2.0.7-py3-none-any.whl", hash = "sha256:f380b826a991ebbe3de4d897aeec42760035ac760345e57b812938dc8b35e2bd"},
 ]
-
-[[package]]
-name = "pythreejs"
-version = "2.4.2"
-description = "Interactive 3D graphics for the Jupyter Notebook and JupyterLab, using Three.js and Jupyter Widgets."
-optional = false
-python-versions = ">=3.7"
-groups = ["main"]
-files = [
-    {file = "pythreejs-2.4.2-py3-none-any.whl", hash = "sha256:8418807163ad91f4df53b58c4e991b26214852a1236f28f1afeaadf99d095818"},
-    {file = "pythreejs-2.4.2.tar.gz", hash = "sha256:a568bfdc4c3797c4c2339158928edc7dcf6fa4a267b08e3cec5121e2078b5bd6"},
-]
-
-[package.dependencies]
-ipydatawidgets = ">=1.1.1"
-ipywidgets = ">=7.2.1"
-numpy = "*"
-traitlets = "*"
-
-[package.extras]
-docs = ["nbsphinx (>=0.2.13)", "nbsphinx-link", "sphinx (>=1.5)", "sphinx-rtd-theme"]
-examples = ["ipywebrtc", "matplotlib", "scikit-image", "scipy"]
-test = ["nbval", "numpy (>=1.14)", "pytest-check-links"]
 
 [[package]]
 name = "pytokens"
@@ -6162,24 +6002,6 @@ docs = ["myst-parser", "pydata-sphinx-theme", "sphinx"]
 test = ["argcomplete (>=3.0.3)", "mypy (>=1.7.0)", "pre-commit", "pytest (>=7.0,<8.2)", "pytest-mock", "pytest-mypy-testing"]
 
 [[package]]
-name = "traittypes"
-version = "0.2.3"
-description = "Scipy trait types"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "traittypes-0.2.3-py2.py3-none-any.whl", hash = "sha256:49016082ce740d6556d9bb4672ee2d899cd14f9365f17cbb79d5d96b47096d4e"},
-    {file = "traittypes-0.2.3.tar.gz", hash = "sha256:212feed38d566d772648768b78d3347c148ef23915b91c02078188e631316c86"},
-]
-
-[package.dependencies]
-traitlets = ">=4.2.2"
-
-[package.extras]
-test = ["numpy", "pandas", "pytest", "xarray"]
-
-[[package]]
 name = "trame"
 version = "3.12.0"
 description = "Trame, a framework to build applications in plain Python"
@@ -6971,4 +6793,4 @@ test = ["big-O", "importlib-resources ; python_version < \"3.9\"", "jaraco.funct
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "76896c2d7a9f960ed3c306166b2acfd3fa2e582bd0efaa835875f18e3bd9d89a"
+content-hash = "ffcd6d960c9de4e6dfcc01acd8cb48b32d31f4a012259a9d63702ddee2147671"

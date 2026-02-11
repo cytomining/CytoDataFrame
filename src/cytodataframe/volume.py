@@ -1,6 +1,7 @@
 import base64
 import html
 import io
+import os
 import pathlib
 import uuid
 from typing import Any, Callable, Optional, Tuple
@@ -10,7 +11,9 @@ import numpy as np
 
 FALLBACK_NDIM = 2
 MIN_VOLUME_NDIM = 3
+DEFAULT_MAX_INLINE_VOLUME_BYTES = 16 * 1024 * 1024
 VTK_JS_CDN_URL = "https://unpkg.com/@kitware/vtk.js@34.9.1/dist/vtk.js"
+VTK_JS_URL_ENV_VAR = "CYTODATAFRAME_VTK_JS_URL"
 VTK_JS_TRANSFER_FUNCTION_SNIPPET = (
     "const ctfun=vtk.Rendering.Core.vtkColorTransferFunction.newInstance();"
     "ctfun.addRGBPoint(0,0,0,0);"
@@ -27,6 +30,7 @@ def build_3d_image_html_stub(
     data_value: str,
     candidate_path: pathlib.Path,
     display_options: Optional[dict],
+    message: str = "3D image",
 ) -> str:
     display_options = display_options or {}
     width = display_options.get("width", "300px")
@@ -54,9 +58,17 @@ def build_3d_image_html_stub(
     return (
         f'<div class="cyto-3d-image" data-image-path="{path_attr}" '
         f'data-image-value="{value_attr}" style="{html_style_joined}">'
-        "3D image"
+        f"{html.escape(message)}"
         "</div>"
     )
+
+
+def _resolve_vtk_js_url(display_options: Optional[dict]) -> str:
+    display_options = display_options or {}
+    configured = display_options.get("vtk_js_url")
+    if not configured:
+        configured = os.getenv(VTK_JS_URL_ENV_VAR)
+    return str(configured) if configured else VTK_JS_CDN_URL
 
 
 def build_3d_image_html_view(
@@ -78,7 +90,28 @@ def build_3d_image_html_view(
     ]
     html_style_joined = ";".join(html_style)
 
-    volume_bytes = np.array(volume, dtype=np.uint8, copy=True).tobytes()
+    max_inline_volume_bytes = display_options.get(
+        "max_inline_volume_bytes",
+        DEFAULT_MAX_INLINE_VOLUME_BYTES,
+    )
+    try:
+        max_inline_volume_bytes = max(1, int(max_inline_volume_bytes))
+    except (TypeError, ValueError):
+        max_inline_volume_bytes = DEFAULT_MAX_INLINE_VOLUME_BYTES
+
+    volume_uint8 = np.array(volume, dtype=np.uint8, copy=True)
+    if volume_uint8.nbytes > max_inline_volume_bytes:
+        return build_3d_image_html_stub(
+            data_value=data_value,
+            candidate_path=candidate_path,
+            display_options=display_options,
+            message=(
+                "3D image too large for inline rendering "
+                f"({volume_uint8.nbytes} bytes > {max_inline_volume_bytes} bytes)"
+            ),
+        )
+
+    volume_bytes = volume_uint8.tobytes()
     volume_b64 = base64.b64encode(volume_bytes).decode("utf-8")
     dims_attr = ",".join(str(value) for value in dims)
     element_id = f"cyto-3d-{uuid.uuid4().hex}"
@@ -117,16 +150,19 @@ def build_3d_image_html_view(
     except Exception:
         fallback_html = ""
 
+    vtk_js_url = _resolve_vtk_js_url(display_options)
     return (
         f'<div id="{element_id}" class="cyto-3d-image" '
         f'data-image-path="{path_attr}" data-image-value="{value_attr}" '
         f'data-volume="{volume_b64}" data-dims="{dims_attr}" '
         f'style="{html_style_joined}">'
-        f"{fallback_html}</div>" + build_3d_vtk_js_script(element_id)
+        f"{fallback_html}</div>"
+        + build_3d_vtk_js_script(element_id, vtk_js_url=vtk_js_url)
     )
 
 
-def build_3d_vtk_js_script(element_id: str) -> str:
+def build_3d_vtk_js_script(element_id: str, vtk_js_url: Optional[str] = None) -> str:
+    vtk_js_url = vtk_js_url or VTK_JS_CDN_URL
     return (
         "<script>"
         "(function(){"
@@ -146,7 +182,7 @@ def build_3d_vtk_js_script(element_id: str) -> str:
         "if(!window._cytoVtkLoading){"
         "window._cytoVtkLoading=true;"
         "const script=document.createElement('script');"
-        f"script.src='{VTK_JS_CDN_URL}';"
+        f"script.src='{vtk_js_url}';"
         "script.async=true;"
         "script.onload=function(){init();};"
         "document.head.appendChild(script);"
@@ -210,7 +246,8 @@ def _build_vtk_js_renderer_core(*, include_container_size: bool) -> str:
     )
 
 
-def build_3d_vtk_js_initializer() -> str:
+def build_3d_vtk_js_initializer(display_options: Optional[dict] = None) -> str:
+    vtk_js_url = _resolve_vtk_js_url(display_options)
     return (
         "(function(){"
         "const init=function(container){"
@@ -232,7 +269,7 @@ def build_3d_vtk_js_initializer() -> str:
         "if(!window._cytoVtkLoading){"
         "window._cytoVtkLoading=true;"
         "const script=document.createElement('script');"
-        f"script.src='{VTK_JS_CDN_URL}';"
+        f"script.src='{vtk_js_url}';"
         "script.async=true;"
         "script.onload=function(){initAll();};"
         "document.head.appendChild(script);"

@@ -251,6 +251,39 @@ def test_prepare_layers_mask_binary(tmp_path: pathlib.Path) -> None:
     assert set(np.unique(mask_layer).tolist()).issubset({0, 255})
 
 
+def test_prepare_layers_3d_uses_loaded_volume_without_ome_arrow_fallback(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    volume = np.arange(4 * 5 * 6, dtype=np.uint8).reshape(4, 5, 6)
+    image_path = tmp_path / "vol3d.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+    )
+
+    def fail_ome_arrow_path(**_kwargs: object) -> str:
+        raise AssertionError("OME-Arrow fallback should not be used for 3D TIFF")
+
+    monkeypatch.setattr(
+        "cytodataframe.frame.build_3d_html_from_path",
+        fail_ome_arrow_path,
+    )
+    layers = cdf._prepare_cropped_image_layers(
+        data_value=image_path.name,
+        bounding_box=(0, 0, 6, 5),
+        include_composite=False,
+        include_original=False,
+        include_mask_outline=False,
+    )
+
+    html_value = layers.get(CytoDataFrame._HTML_3D_STUB_KEY)
+    assert isinstance(html_value, str)
+    assert "data-volume=" in html_value
+
+
 def test_cytodataframe_input(
     tmp_path: pathlib.Path,
     basic_outlier_dataframe: pd.DataFrame,
@@ -676,6 +709,26 @@ def test_get_3d_volume_from_cell_loads_3d_tiff(tmp_path: pathlib.Path) -> None:
     assert dims == (6, 5, 4)
 
 
+def test_get_3d_volume_from_cell_normalizes_file_uri_with_context_dir(
+    tmp_path: pathlib.Path,
+) -> None:
+    volume = np.arange(3 * 4 * 5, dtype=np.uint8).reshape(3, 4, 5)
+    image_path = tmp_path / "volume_uri.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [f"file:{image_path}"]}),
+        data_context_dir=str(tmp_path),
+    )
+
+    loaded_volume, dims = cdf._get_3d_volume_from_cell(
+        row=0, column="Image_FileName_DNA"
+    )
+
+    assert loaded_volume.shape == (3, 4, 5)
+    assert dims == (5, 4, 3)
+
+
 def test_get_3d_volume_from_cell_uses_bounded_lru_cache() -> None:
     cdf = CytoDataFrame(
         pd.DataFrame(
@@ -983,6 +1036,20 @@ def test_normalize_labels_returns_string_index_and_backmap():
     assert backmap["2.5"] == 2.5
 
 
+def test_is_3d_image_array_detects_rgb_like_images_as_not_3d() -> None:
+    rgb = np.zeros((64, 64, 3), dtype=np.uint8)
+    rgba = np.zeros((64, 64, 4), dtype=np.uint8)
+    assert CytoDataFrame._is_3d_image_array(rgb) is False
+    assert CytoDataFrame._is_3d_image_array(rgba) is False
+
+
+def test_is_3d_image_array_accepts_thin_small_volume_shapes() -> None:
+    thin_x = np.zeros((5, 20, 3), dtype=np.uint8)
+    singleton_x = np.zeros((5, 20, 1), dtype=np.uint8)
+    assert CytoDataFrame._is_3d_image_array(thin_x) is True
+    assert CytoDataFrame._is_3d_image_array(singleton_x) is True
+
+
 def _install_fake_pyvista(  # noqa: C901
     monkeypatch: pytest.MonkeyPatch,
     screenshot_image: np.ndarray | None = None,
@@ -1273,7 +1340,8 @@ def test_render_output_displays_js_and_print_html(monkeypatch: pytest.MonkeyPatc
         "cytodataframe.frame.display",
         capture_display,
     )
-    cdf._render_output()
+    result = cdf._render_output()
+    assert result is None
     assert len(displayed) == 3
 
 

@@ -13,68 +13,73 @@ authors = [ "Way Science Community" ]
 license = "BSD-3-Clause"
 readme = "README.md"
 packages = [ { include = "cytodataframe", from = "src" } ]
-dependencies.python = ">=3.11,<3.14"
+[tool.poetry.dependencies]
+python = ">=3.11,<3.14"
 # used for data management
-dependencies.pandas = [
+pandas = [
   { version = "<2.2.2", python = "<3.9" },
   { version = "^2.2.2", python = ">=3.9" },
 ]
 # used for data ingest and export
-dependencies.pyarrow = ">=16"
+pyarrow = ">=16"
 # used for environment detection
-dependencies.ipython = ">=8.12.3,<10.0.0"
+ipython = ">=8.12.3,<10.0.0"
 # used for image processing
-dependencies.scikit-image = [
+scikit-image = [
   { version = "^0.19.3", python = "<3.9" },
   { version = ">0.19.3", python = ">=3.9" },
 ]
 # dependency of scikit-image
-dependencies.pywavelets = [
+pywavelets = [
   { version = "^1.4.1", python = "<3.9" },
   { version = ">1.4.1", python = ">=3.9" },
 ]
 # used for image modifications in cytodataframe
-dependencies.opencv-python = "^4.10.0.84"
-dependencies.imagecodecs = ">=2024.9.22,<2027.0.0"
-dependencies.matplotlib = "^3.9.3"
-dependencies.ipywidgets = "^8.1.7"
-dependencies.imageio = "^2.37.0"
-dependencies.ome-arrow = ">=0.0.3,<0.0.6"
-dependencies.pyvista = ">=0.46.4"
-dependencies.trame = ">=3.12"
-dependencies.trame-vtk = ">=2.10"
-dependencies.trame-vuetify = ">=3.1"
-dependencies.ipyvolume = "^0.6.3"
-dependencies.nest-asyncio = "^1.6.0"
+opencv-python = "^4.10.0.84"
+imagecodecs = ">=2024.9.22,<2027.0.0"
+matplotlib = "^3.9.3"
+ipywidgets = "^8.1.7"
+imageio = "^2.37.0"
+ome-arrow = ">=0.0.3,<0.0.6"
+pyvista = ">=0.46.4"
+trame = ">=3.12"
+trame-vtk = ">=2.10"
+trame-vuetify = ">=3.1"
+nest-asyncio = "^1.6.0"
+
+[tool.poetry.group.dev.dependencies]
 # provides testing capabilities for project
-group.dev.dependencies.pytest = ">=8.3.3,<10.0.0"
-group.dev.dependencies.pytest-cov = ">=5.0.0,<7.0.0"
+pytest = ">=8.3.3,<10.0.0"
 # used for test data generation
-group.dev.dependencies.sqlalchemy = ">=1.3.6,<3"
+sqlalchemy = ">=1.3.6,<3"
 # added to generate test coverage reports
-group.dev.dependencies.coverage = "^7.6.0"
-group.dev.dependencies.jupyterlab = "^4.3.0"
-group.dev.dependencies.jupytext = "^1.16.4"
-group.dev.dependencies.black = ">=24.10,<27.0"
-group.dev.dependencies.isort = ">=5.13.2,<8.0.0"
-group.dev.dependencies.jupyterlab-code-formatter = "^3.0.2"
-group.dev.dependencies.duckdb = "^1.1.3"
+coverage = "^7.6.0"
+jupyterlab = "^4.3.0"
+jupytext = "^1.16.4"
+black = ">=24.10,<27.0"
+isort = ">=5.13.2,<8.0.0"
+jupyterlab-code-formatter = "^3.0.2"
+duckdb = "^1.1.3"
 # version specifications below used to help surpass 3.13-based installations
-group.dev.dependencies.cosmicqc = { version = ">=1.0.1", markers = "python_version < '3.13' and python_version >= '3.10'" }
-group.dev.dependencies.poethepoet = ">=0.37,<0.41"
+cosmicqc = { version = ">=1.0.1", markers = "python_version < '3.13' and python_version >= '3.10'" }
+poethepoet = ">=0.37,<0.41"
+
+[tool.poetry.group.docs.dependencies]
 # used for rendering docs into docsite
-group.docs.dependencies.sphinx = ">=7,<10"
+sphinx = ">=7,<10"
 # used for rendering markdown through sphinx
-group.docs.dependencies.myst-parser = ">=3,<6"
+myst-parser = ">=3,<6"
 # used for rendering notebooks through myst parser
-group.docs.dependencies.myst-nb = "^1.1.2"
+myst-nb = "^1.1.2"
 # used for extension sphinx-multiversion and to fix git-based challenges with default branch handling
-group.docs.dependencies.sphinx-multiversion = { git = "https://github.com/J-RN/sphinx-multiversion", rev = "a77f0c862dace3a62c18fc866da60ef7dde3873d" }
+sphinx-multiversion = { git = "https://github.com/J-RN/sphinx-multiversion", rev = "a77f0c862dace3a62c18fc866da60ef7dde3873d" }
 # used for gathering version data for docsite
-group.docs.dependencies.dunamai = "^1.22.0"
+dunamai = "^1.22.0"
 # used for theming the docsite
-group.docs.dependencies.pydata-sphinx-theme = "^0.16.0"
-requires-plugins.poetry-dynamic-versioning = { version = ">=1.0.0,<2.0.0", extras = [ "plugin" ] }
+pydata-sphinx-theme = "^0.16.0"
+
+[tool.poetry.requires-plugins]
+poetry-dynamic-versioning = { version = ">=1.0.0,<2.0.0", extras = [ "plugin" ] }
 
 [tool.poetry-dynamic-versioning]
 enable = true
@@ -92,26 +97,26 @@ target-version = "py38"
 line-length = 88
 fix = true
 lint.select = [
-  # flake8-annotations
-  "ANN",
   # flake8-builtins
   "A",
+  # flake8-annotations
+  "ANN",
   # flake8-comprehensions
   "C4",
-  # flake8-simplify
-  "SIM",
-  # isort
-  "I",
   # mccabe
   "C90",
   # pycodestyle
   "E",
   # pyflakes
   "F",
+  # isort
+  "I",
   # pylint
   "PL",
   # ruff
   "RUF",
+  # flake8-simplify
+  "SIM",
   "W",
 ]
 # Ignore `E402` and `F401` (unused imports) in all `__init__.py` files

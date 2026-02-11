@@ -57,7 +57,9 @@ from .volume import (
 
 logger = logging.getLogger(__name__)
 MIN_VOLUME_NDIM = 3
-RGB_LIKE_CHANNEL_COUNTS = (1, MIN_VOLUME_NDIM, 4)
+RGB_LIKE_CHANNEL_COUNTS = (MIN_VOLUME_NDIM, 4)
+MIN_RGB_SPATIAL_DIM = 8
+MAX_RGB_ASPECT_RATIO = 4.0
 
 # provide backwards compatibility for Self type in earlier Python versions.
 # see: https://peps.python.org/pep-0484/#annotating-instance-and-class-methods
@@ -1316,9 +1318,22 @@ class CytoDataFrame(pd.DataFrame):
 
     @staticmethod
     def _is_3d_image_array(array: np.ndarray) -> bool:
-        return array.ndim >= MIN_VOLUME_NDIM and not (
-            array.ndim == MIN_VOLUME_NDIM and array.shape[-1] in RGB_LIKE_CHANNEL_COUNTS
-        )
+        if array.ndim < MIN_VOLUME_NDIM:
+            return False
+        if array.ndim != MIN_VOLUME_NDIM:
+            return True
+        if array.shape[-1] not in RGB_LIKE_CHANNEL_COUNTS:
+            return True
+
+        height, width = int(array.shape[0]), int(array.shape[1])
+        short_side = min(height, width)
+        long_side = max(height, width)
+        if short_side < MIN_RGB_SPATIAL_DIM:
+            return True
+
+        aspect_ratio = long_side / max(short_side, 1)
+        looks_like_rgb_2d = aspect_ratio <= MAX_RGB_ASPECT_RATIO
+        return not looks_like_rgb_2d
 
     def _prepare_cropped_image_layers(  # noqa: C901, PLR0915, PLR0912, PLR0913
         self: CytoDataFrame_type,
@@ -1417,14 +1432,35 @@ class CytoDataFrame(pd.DataFrame):
             logger.debug(
                 "Detected 3D image at %s; returning HTML view.", candidate_path
             )
-            html_view = build_3d_html_from_path(
-                data_value=data_value,
-                candidate_path=candidate_path,
-                display_options=self._custom_attrs.get("display_options"),
-                ensure_uint8=self._ensure_uint8,
-                is_ome_arrow_value=self._is_ome_arrow_value,
-                logger=logger,
-            )
+            html_view = None
+            volume_array = np.asarray(orig_image_array)
+            if (
+                volume_array.ndim > MIN_VOLUME_NDIM
+                and volume_array.shape[-1] in RGB_LIKE_CHANNEL_COUNTS
+            ):
+                volume_array = volume_array[..., 0]
+
+            if volume_array.ndim == MIN_VOLUME_NDIM:
+                with contextlib.suppress(Exception):
+                    volume = self._ensure_uint8(volume_array)
+                    dims = (volume.shape[2], volume.shape[1], volume.shape[0])
+                    html_view = build_3d_image_html_view(
+                        volume=volume,
+                        dims=dims,
+                        data_value=data_value,
+                        candidate_path=candidate_path,
+                        display_options=self._custom_attrs.get("display_options"),
+                    )
+
+            if html_view is None:
+                html_view = build_3d_html_from_path(
+                    data_value=data_value,
+                    candidate_path=candidate_path,
+                    display_options=self._custom_attrs.get("display_options"),
+                    ensure_uint8=self._ensure_uint8,
+                    is_ome_arrow_value=self._is_ome_arrow_value,
+                    logger=logger,
+                )
             layers[self._HTML_3D_STUB_KEY] = (
                 html_view
                 if html_view is not None
@@ -1846,13 +1882,21 @@ class CytoDataFrame(pd.DataFrame):
         elif isinstance(value, (str, pathlib.Path)):
             volume_ndim = 3
             color_channel_counts = (1, volume_ndim, 4)
-            data_path = pathlib.Path(value)
-            if not data_path.is_file():
-                context_dir = self._custom_attrs.get("data_context_dir")
-                if context_dir:
-                    candidate = pathlib.Path(context_dir) / data_path
-                    if candidate.is_file():
-                        data_path = candidate
+            data_value = str(value)
+            context_dir = self._custom_attrs.get("data_context_dir")
+            if context_dir:
+                normalized = data_value
+                if normalized.startswith("file:"):
+                    normalized = normalized[len("file:") :]
+                if "/" in normalized or "\\" in normalized:
+                    normalized = pathlib.Path(normalized).name
+                data_value = normalized
+
+            data_path = pathlib.Path(data_value)
+            if not data_path.is_file() and context_dir:
+                candidate = pathlib.Path(context_dir) / data_path
+                if candidate.is_file():
+                    data_path = candidate
 
             # First attempt direct image loading for TIFF/Zarr-backed 3D arrays.
             if data_path.is_file():
@@ -2822,14 +2866,20 @@ class CytoDataFrame(pd.DataFrame):
         else:
             return None
 
-    def _render_output(self: CytoDataFrame_type) -> str:
+    def _render_output(self: CytoDataFrame_type) -> None:
         # Return a hidden div that nbconvert will keep but Jupyter will ignore
         html_content = self._generate_jupyter_dataframe_html()
 
         with self._custom_attrs["_output"]:
             display(HTML(html_content))
             if "cyto-3d-image" in html_content and "data-volume" in html_content:
-                display(Javascript(build_3d_vtk_js_initializer()))
+                display(
+                    Javascript(
+                        build_3d_vtk_js_initializer(
+                            display_options=self._custom_attrs.get("display_options")
+                        )
+                    )
+                )
 
         # Only emit static HTML outside notebooks to avoid duplicate
         # tables inside ipywidgets output.

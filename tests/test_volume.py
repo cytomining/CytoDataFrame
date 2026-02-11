@@ -68,6 +68,34 @@ def test_build_3d_image_html_view_contains_vtk_script():
     assert "vtk.js" in html
 
 
+def test_build_3d_image_html_view_uses_stub_when_inline_volume_too_large():
+    volume = np.zeros((8, 8, 8), dtype=np.uint8)
+    html = build_3d_image_html_view(
+        volume=volume,
+        dims=(8, 8, 8),
+        data_value="volume.tiff",
+        candidate_path=pathlib.Path("volume.tiff"),
+        display_options={"max_inline_volume_bytes": 16},
+    )
+
+    assert 'class="cyto-3d-image"' in html
+    assert "data-volume=" not in html
+    assert "too large for inline rendering" in html
+
+
+def test_build_3d_image_html_view_defaults_when_limit_value_invalid():
+    volume = np.zeros((2, 2, 2), dtype=np.uint8)
+    html = build_3d_image_html_view(
+        volume=volume,
+        dims=(2, 2, 2),
+        data_value="volume.tiff",
+        candidate_path=pathlib.Path("volume.tiff"),
+        display_options={"max_inline_volume_bytes": "not-an-int"},
+    )
+
+    assert "data-volume=" in html
+
+
 def test_process_ome_arrow_volume_returns_vtk_html():
     cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
     html = cdf.process_ome_arrow_data_as_html_display(_fake_ome_arrow_volume())
@@ -110,6 +138,32 @@ def test_vtk_js_helpers_include_expected_hooks():
     ):
         assert token in script
         assert token in initializer
+
+
+def test_vtk_js_helpers_allow_custom_url_override():
+    custom_url = "https://example.com/vtk-local.js"
+    script = build_3d_vtk_js_script("abc", vtk_js_url=custom_url)
+    initializer = build_3d_vtk_js_initializer(
+        display_options={"vtk_js_url": custom_url}
+    )
+    assert custom_url in script
+    assert custom_url in initializer
+
+
+def test_build_3d_image_html_view_uses_env_vtk_js_url(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    custom_url = "https://example.com/vtk-env.js"
+    monkeypatch.setenv("CYTODATAFRAME_VTK_JS_URL", custom_url)
+    volume = np.zeros((2, 2, 2), dtype=np.uint8)
+    html = build_3d_image_html_view(
+        volume=volume,
+        dims=(2, 2, 2),
+        data_value="volume.tiff",
+        candidate_path=pathlib.Path("volume.tiff"),
+        display_options={},
+    )
+    assert custom_url in html
 
 
 def test_extract_volume_from_ome_arrow_returns_none_for_invalid_inputs():

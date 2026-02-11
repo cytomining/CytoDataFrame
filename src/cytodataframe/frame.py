@@ -2129,8 +2129,8 @@ class CytoDataFrame(pd.DataFrame):
                 prop.SetInterpolateScalarsBeforeMapping(False)
             if hasattr(prop, "SetScalarOpacityUnitDistance"):
                 prop.SetScalarOpacityUnitDistance(base_sample)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Unable to configure volume property interpolation: %s", exc)
         try:
             mapper = getattr(vol_actor, "mapper", None) or vol_actor.GetMapper()
             if hasattr(mapper, "SetAutoAdjustSampleDistances"):
@@ -2139,8 +2139,8 @@ class CytoDataFrame(pd.DataFrame):
                 mapper.SetUseJittering(False)
             if hasattr(mapper, "SetSampleDistance"):
                 mapper.SetSampleDistance(float(base_sample * sampling_scale))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Unable to configure volume mapper sampling: %s", exc)
 
         if show_axes:
             with contextlib.suppress(Exception):
@@ -2169,13 +2169,11 @@ class CytoDataFrame(pd.DataFrame):
                     margin="0",
                     padding="0",
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Unable to assign viewer widget layout: %s", exc)
         if hasattr(viewer, "value") and isinstance(viewer.value, str):
             updated = viewer.value.replace("border: 1px solid", "border: 0 solid")
             if "width:" in updated or "height:" in updated:
-                import re
-
                 updated = re.sub(r"width:\\s*[^;]+;", "width: 100%;", updated)
                 updated = re.sub(r"height:\\s*[^;]+;", "height: 100%;", updated)
                 updated = re.sub(
@@ -2290,8 +2288,8 @@ class CytoDataFrame(pd.DataFrame):
                 url = getattr(server, "url", None)
                 if callable(url):
                     logger.debug("Trame server URL: %s", url())
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Unable to fetch trame server URL: %s", exc)
             display(layout)
             return layout
         except Exception as exc:
@@ -2986,8 +2984,8 @@ class CytoDataFrame(pd.DataFrame):
                 prop.SetInterpolateScalarsBeforeMapping(False)
             if hasattr(prop, "SetScalarOpacityUnitDistance"):
                 prop.SetScalarOpacityUnitDistance(base_sample)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Unable to configure snapshot volume property: %s", exc)
         try:
             mapper = getattr(vol_actor, "mapper", None) or vol_actor.GetMapper()
             if hasattr(mapper, "SetAutoAdjustSampleDistances"):
@@ -2996,8 +2994,8 @@ class CytoDataFrame(pd.DataFrame):
                 mapper.SetUseJittering(False)
             if hasattr(mapper, "SetSampleDistance"):
                 mapper.SetSampleDistance(float(base_sample * sampling_scale))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Unable to configure snapshot mapper sampling: %s", exc)
 
         try:
             img = plotter.screenshot(return_img=True)
@@ -3074,8 +3072,13 @@ class CytoDataFrame(pd.DataFrame):
                             cache[key] = snapshot
                         if snapshot:
                             return snapshot
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug(
+                            "Snapshot rendering failed for row=%s column=%s: %s",
+                            row.name,
+                            bound_image_col,
+                            exc,
+                        )
                     return (
                         "<div style='padding:4px;color:#000;'>"
                         "Snapshot unavailable</div>"

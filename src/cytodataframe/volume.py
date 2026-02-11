@@ -297,14 +297,10 @@ def extract_volume_from_ome_arrow(  # noqa: C901, PLR0912
         size_x = int(pixels_meta.get("size_x") or 0)
         size_y = int(pixels_meta.get("size_y") or 0)
         size_z = int(pixels_meta.get("size_z") or 0)
-        size_c = int(pixels_meta.get("size_c") or 1)
-        size_t = int(pixels_meta.get("size_t") or 1)
         planes = data_value.get("planes")
 
         if size_x <= 0 or size_y <= 0 or size_z <= 1 or planes is None:
             return None
-        size_c = max(size_c, 1)
-        size_t = max(size_t, 1)
 
         if isinstance(planes, np.ndarray):
             plane_entries = planes.tolist()

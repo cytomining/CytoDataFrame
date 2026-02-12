@@ -5,82 +5,75 @@ requires = [ "poetry-core>=1", "poetry-dynamic-versioning>=1,<2" ]
 [tool.poetry]
 name = "CytoDataFrame"
 version = "99.0.0"
-description = "An in-memory data analysis format for single-cell profiles alongside their corresponding images and segmentation masks."
+description = """\
+  An in-memory data analysis format for single-cell profiles alongside their corresponding images and segmentation \
+  masks.\
+  """
 authors = [ "Way Science Community" ]
 license = "BSD-3-Clause"
 readme = "README.md"
 packages = [ { include = "cytodataframe", from = "src" } ]
-
-[tool.poetry.dependencies]
-python = ">=3.11,<3.14"
+dependencies.python = ">=3.11,<3.14"
 # used for data management
-pandas = [
+dependencies.pandas = [
   { version = "<2.2.2", python = "<3.9" },
   { version = "^2.2.2", python = ">=3.9" },
 ]
 # used for data ingest and export
-pyarrow = ">=16"
+dependencies.pyarrow = ">=16"
 # used for environment detection
-ipython = ">=8.12.3,<10.0.0"
+dependencies.ipython = ">=8.12.3,<10.0.0"
 # used for image processing
-scikit-image = [
+dependencies.scikit-image = [
   { version = "^0.19.3", python = "<3.9" },
   { version = ">0.19.3", python = ">=3.9" },
 ]
 # dependency of scikit-image
-pywavelets = [
+dependencies.pywavelets = [
   { version = "^1.4.1", python = "<3.9" },
   { version = ">1.4.1", python = ">=3.9" },
 ]
 # used for image modifications in cytodataframe
-opencv-python = "^4.10.0.84"
-imagecodecs = ">=2024.9.22,<2027.0.0"
-matplotlib = "^3.9.3"
-ipywidgets = "^8.1.7"
-imageio = "^2.37.0"
-ome-arrow = ">=0.0.3,<0.0.7"
-
-[tool.poetry.group.dev.dependencies]
+dependencies.opencv-python = "^4.10.0.84"
+dependencies.imagecodecs = ">=2024.9.22,<2027.0.0"
+dependencies.matplotlib = "^3.9.3"
+dependencies.ipywidgets = "^8.1.7"
+dependencies.imageio = "^2.37.0"
+dependencies.ome-arrow = ">=0.0.3,<0.0.7"
 # provides testing capabilities for project
-pytest = ">=8.3.3,<10.0.0"
+group.dev.dependencies.pytest = ">=8.3.3,<10.0.0"
 # used for test data generation
-sqlalchemy = ">=1.3.6,<3"
+group.dev.dependencies.sqlalchemy = ">=1.3.6,<3"
 # added to generate test coverage reports
-coverage = "^7.6.0"
-jupyterlab = "^4.3.0"
-jupytext = "^1.16.4"
-black = ">=24.10,<27.0"
-isort = ">=5.13.2,<8.0.0"
-jupyterlab-code-formatter = "^3.0.2"
-duckdb = "^1.1.3"
+group.dev.dependencies.coverage = "^7.6.0"
+group.dev.dependencies.jupyterlab = "^4.3.0"
+group.dev.dependencies.jupytext = "^1.16.4"
+group.dev.dependencies.black = ">=24.10,<27.0"
+group.dev.dependencies.isort = ">=5.13.2,<8.0.0"
+group.dev.dependencies.jupyterlab-code-formatter = "^3.0.2"
+group.dev.dependencies.duckdb = "^1.1.3"
 # version specifications below used to help surpass 3.13-based installations
-cosmicqc = { version = ">=1.0.1", markers = "python_version < '3.13' and python_version >= '3.10'" }
-poethepoet = ">=0.37,<0.42"
-
-[tool.poetry.group.docs.dependencies]
+group.dev.dependencies.cosmicqc = { version = ">=1.0.1", markers = "python_version < '3.13' and python_version >= '3.10'" }
+group.dev.dependencies.poethepoet = ">=0.37,<0.42"
 # used for rendering docs into docsite
-sphinx = ">=7,<10"
+group.docs.dependencies.sphinx = ">=7,<10"
 # used for rendering markdown through sphinx
-myst-parser = ">=3,<6"
+group.docs.dependencies.myst-parser = ">=3,<6"
 # used for rendering notebooks through myst parser
-myst-nb = "^1.1.2"
+group.docs.dependencies.myst-nb = "^1.1.2"
 # used for extension sphinx-multiversion and to fix git-based challenges with default branch handling
-sphinx-multiversion = { git = "https://github.com/J-RN/sphinx-multiversion", rev = "a77f0c862dace3a62c18fc866da60ef7dde3873d" }
+group.docs.dependencies.sphinx-multiversion = { git = "https://github.com/J-RN/sphinx-multiversion", rev = "a77f0c862dace3a62c18fc866da60ef7dde3873d" }
 # used for gathering version data for docsite
-dunamai = "^1.22.0"
+group.docs.dependencies.dunamai = "^1.22.0"
 # used for theming the docsite
-pydata-sphinx-theme = "^0.16.0"
-
-[tool.poetry.requires-plugins]
-poetry-dynamic-versioning = { version = ">=1.0.0,<2.0.0", extras = [ "plugin" ] }
+group.docs.dependencies.pydata-sphinx-theme = "^0.16.0"
+requires-plugins.poetry-dynamic-versioning = { version = ">=1.0.0,<2.0.0", extras = [ "plugin" ] }
 
 [tool.poetry-dynamic-versioning]
 enable = true
 style = "pep440"
 vcs = "git"
-
-[tool.poetry-dynamic-versioning.substitution]
-files = [ "src/cytodataframe/__init__.py" ]
+substitution.files = [ "src/cytodataframe/__init__.py" ]
 
 # defines various development tasks
 
@@ -91,7 +84,6 @@ root = "."
 target-version = "py38"
 line-length = 88
 fix = true
-
 lint.select = [
   # flake8-builtins
   "A",
@@ -122,10 +114,10 @@ lint.per-file-ignores."src/cytodataframe/image.py" = [ "PLR2004" ]
 # ignore typing rules for tests
 lint.per-file-ignores."tests/*" = [ "ANN201", "PLR0913", "PLR2004", "SIM105" ]
 
-[tool.coverage.run]
+[tool.coverage]
 # settings to avoid errors with cv2 and coverage
 # see here for more: https://github.com/nedbat/coveragepy/issues/1653
-omit = [
+run.omit = [
   "config.py",
   "config-3.py",
 ]
@@ -138,16 +130,14 @@ formats = "ipynb,py:light"
 [tool.bandit]
 exclude_dirs = [ "tests" ]
 
-[tool.poe.tasks]
+[tool.poe]
 # note: quarto commands below expect quarto installed on the local system.
 # see here for more information: https://quarto.org/docs/download/
-poster-preview.shell = """
+tasks.poster-preview.shell = """
 quarto preview \
   docs/presentations/2025-sbi2/poster.qmd
 """
-poster-render.shell = """
-  quarto render \
-  docs/presentations/2025-sbi2/poster.qmd
-  mv docs/presentations/2025-sbi2/cytodataframe-2025-poster.pdf \
-  docs/src/_static/cytodataframe-2025-poster.pdf
-"""
+tasks.poster-render.shell = """\
+    quarto render \\\n  docs/presentations/2025-sbi2/poster.qmd\n  mv \
+  docs/presentations/2025-sbi2/cytodataframe-2025-poster.pdf \\\n  docs/src/_static/cytodataframe-2025-poster.pdf\n\
+  """

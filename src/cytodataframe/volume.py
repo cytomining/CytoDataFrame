@@ -32,6 +32,17 @@ def build_3d_image_html_stub(
     display_options: Optional[dict],
     message: str = "3D image",
 ) -> str:
+    """Build a fallback HTML block for a 3D image cell.
+
+    Args:
+        data_value: Original cell value associated with the image.
+        candidate_path: Resolved filesystem path for the image source.
+        display_options: Display configuration containing optional width/height.
+        message: Text shown in the fallback block.
+
+    Returns:
+        An HTML ``div`` string representing a non-interactive 3D placeholder.
+    """
     display_options = display_options or {}
     width = display_options.get("width", "300px")
     height = display_options.get("height", width)

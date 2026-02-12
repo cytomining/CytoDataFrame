@@ -972,8 +972,10 @@ class CytoDataFrame(pd.DataFrame):
             for column in self.columns
             if self[column]
             .apply(
-                lambda value: isinstance(value, str)
-                and re.match(pattern, value, flags=re.IGNORECASE)
+                lambda value: (
+                    isinstance(value, str)
+                    and re.match(pattern, value, flags=re.IGNORECASE)
+                )
             )
             .any()
         ]

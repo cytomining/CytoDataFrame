@@ -354,6 +354,3 @@ cdf = CytoDataFrame(
 )
 
 cdf[["ImageNumber", "ObjectNumber", "FileName_Nuclei"]][:3]
-# -
-
-

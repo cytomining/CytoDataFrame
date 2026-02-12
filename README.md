@@ -22,7 +22,7 @@ With CytoDataFrame you can:
 - View image objects alongside their feature data using a Pandas DataFrame-like interface.
 - Highlight image objects using mask or outline files to understand their segmentation.
 - Adjust image displays on-the-fly using interactive slider widgets.
-- Automatically detect 3D image volumes and render them with interactive trame views in notebooks.
+- Automatically detect 3D image volumes and render interactive [trame](https://github.com/Kitware/trame) views in notebooks when 3D dependencies are installed (with graceful fallback otherwise).
 
 For 3D notebook display behavior:
 

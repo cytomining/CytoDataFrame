@@ -45,7 +45,7 @@ def build_3d_image_html_stub(
     """
     display_options = display_options or {}
     width = display_options.get("width", "300px")
-    height = display_options.get("height", width)
+    height = display_options.get("height", "300px")
 
     html_style = [f"width:{width}"]
     if height is not None:
@@ -91,7 +91,7 @@ def build_3d_image_html_view(
 ) -> str:
     display_options = display_options or {}
     width = display_options.get("width", "300px")
-    height = display_options.get("height", width)
+    height = display_options.get("height", "300px")
 
     html_style = [
         f"width:{width}",

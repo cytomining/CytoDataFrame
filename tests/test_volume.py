@@ -121,7 +121,7 @@ def test_build_3d_image_html_stub_includes_default_height():
         candidate_path=pathlib.Path("vol.tiff"),
         display_options={"width": "90px"},
     )
-    assert "height:90px" in html
+    assert "height:300px" in html
 
 
 def test_vtk_js_helpers_include_expected_hooks():

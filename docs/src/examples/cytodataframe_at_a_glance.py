@@ -351,20 +351,7 @@ cp_3d_path = "../../../tests/data/CP_tutorial_3D_noise_nuclei_segmentation"
 cdf = CytoDataFrame(
     data=pathlib.Path(cp_3d_path) / "output/MyExpt_RealsizeNuclei.csv",
     data_context_dir=str(pathlib.Path(cp_3d_path) / "input"),
-)[
-    [
-        "ImageNumber",
-        "ObjectNumber",
-        "FileName_Nuclei",
-        "AreaShape_BoundingBoxMaximum_X",
-        "AreaShape_BoundingBoxMaximum_Y",
-        "AreaShape_BoundingBoxMaximum_Z",
-        "AreaShape_BoundingBoxMinimum_X",
-        "AreaShape_BoundingBoxMinimum_Y",
-        "AreaShape_BoundingBoxMinimum_Z",
-    ]
-]
-
+)
 
 cdf[["ImageNumber", "ObjectNumber", "FileName_Nuclei"]][:3]
 # -

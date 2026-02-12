@@ -342,7 +342,7 @@ CytoDataFrame(data="example.ome.parquet")
 # +
 # %%time
 # 3D example dataset, showing how
-# CytoDataFrame can be used with 3D data and trame for visualization.
+# CytoDataFrame can be used with 3D data for visualization.
 cp_3d_path = "../../../tests/data/CP_tutorial_3D_noise_nuclei_segmentation"
 
 # send the data to CytoDataFrame
@@ -368,3 +368,5 @@ cdf = CytoDataFrame(
 
 cdf[["ImageNumber", "ObjectNumber", "FileName_Nuclei"]][:3]
 # -
+
+

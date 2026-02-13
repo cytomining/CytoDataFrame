@@ -53,6 +53,9 @@ You can run pytest on your work using the following example:
 % poetry run pytest
 ```
 
+Pytest output includes a terminal coverage summary to help track current
+coverage and uncovered lines.
+
 ## Making changes to this repository
 
 We welcome anyone to use [GitHub issues](https://docs.github.com/en/issues/tracking-your-work-with-issues/about-issues) (requires a GitHub login) or create [pull requests](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-pull-requests) (to directly make changes within this repository) to modify content found within this repository.

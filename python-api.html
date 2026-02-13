@@ -440,12 +440,30 @@ context directory, and bounding box information.</p>
 </dl>
 </dd></dl>
 
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._HTML_3D_STUB_KEY">
+<span class="sig-name descname"><span class="pre">_HTML_3D_STUB_KEY</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'_cyto_3d_html_stub'</span></span><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._HTML_3D_STUB_KEY" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._build_pyvista_viewer">
+<span class="sig-name descname"><span class="pre">_build_pyvista_viewer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">volume</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">backend</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">widget_height</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">spacing</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">float</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">(1.0,</span> <span class="pre">1.0,</span> <span class="pre">1.0)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">opacity</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'sigmoid'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shade</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._build_pyvista_viewer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._build_pyvista_viewer" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
 <dl class="py method">
 <dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._enbable_debug_mode">
 <span class="sig-name descname"><span class="pre">_enbable_debug_mode</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._enbable_debug_mode"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._enbable_debug_mode" title="Link to this definition">#</a></dt>
 <dd><p>Enable debug mode for the CytoDataFrame instance.
 This method sets the logger level to DEBUG and
 enables debug mode for the instance.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._enqueue_snapshot_tasks">
+<span class="sig-name descname"><span class="pre">_enqueue_snapshot_tasks</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">rows</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">columns</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._enqueue_snapshot_tasks"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._enqueue_snapshot_tasks" title="Link to this definition">#</a></dt>
+<dd><p>Placeholder hook for async snapshot pre-rendering.</p>
+<p>TODO: Add optional background workers to precompute <cite>_snapshot_cache</cite>
+entries for the provided rows/columns when async rendering is enabled.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -458,6 +476,12 @@ enables debug mode for the instance.</p>
 <dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._extract_array_from_ome_arrow">
 <span class="sig-name descname"><span class="pre">_extract_array_from_ome_arrow</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data_value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._extract_array_from_ome_arrow"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._extract_array_from_ome_arrow" title="Link to this definition">#</a></dt>
 <dd><p>Convert an OME-Arrow struct (dict) into an ndarray.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._find_3d_columns_for_display">
+<span class="sig-name descname"><span class="pre">_find_3d_columns_for_display</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">max_rows</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">5</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._find_3d_columns_for_display"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._find_3d_columns_for_display" title="Link to this definition">#</a></dt>
+<dd><p>Find columns that contain at least one renderable 3D value.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -481,10 +505,26 @@ within the context of CytoDataFrame and coSMicQC.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._generate_trame_snapshot_html">
+<span class="sig-name descname"><span class="pre">_generate_trame_snapshot_html</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._generate_trame_snapshot_html"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._generate_trame_snapshot_html" title="Link to this definition">#</a></dt>
+<dd><p>Generate a static HTML table with PyVista 3D snapshots.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._get_3d_volume_from_cell">
+<span class="sig-name descname"><span class="pre">_get_3d_volume_from_cell</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">column</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">ndarray</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._get_3d_volume_from_cell"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._get_3d_volume_from_cell" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._image_array_to_html">
 <span class="sig-name descname"><span class="pre">_image_array_to_html</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">image_array</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._image_array_to_html"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._image_array_to_html" title="Link to this definition">#</a></dt>
 <dd><p>Encode an image array as an HTML &lt;img&gt; tag.</p>
 </dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._is_3d_image_array">
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">_is_3d_image_array</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">array</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._is_3d_image_array"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._is_3d_image_array" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._is_ome_arrow_value">
@@ -524,7 +564,7 @@ key representing the updated slider value.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._prepare_cropped_image_array">
-<span class="sig-name descname"><span class="pre">_prepare_cropped_image_array</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data_value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bounding_box</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compartment_center_xy</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">image_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._prepare_cropped_image_array"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._prepare_cropped_image_array" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">_prepare_cropped_image_array</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data_value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bounding_box</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compartment_center_xy</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">image_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._prepare_cropped_image_array"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._prepare_cropped_image_array" title="Link to this definition">#</a></dt>
 <dd></dd></dl>
 
 <dl class="py method">
@@ -534,8 +574,14 @@ key representing the updated slider value.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._pyvista_volume_snapshot_html">
+<span class="sig-name descname"><span class="pre">_pyvista_volume_snapshot_html</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">volume</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dims</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._pyvista_volume_snapshot_html"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._pyvista_volume_snapshot_html" title="Link to this definition">#</a></dt>
+<dd><p>Render a static PyVista snapshot for a 3D volume.</p>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._render_output">
-<span class="sig-name descname"><span class="pre">_render_output</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._render_output"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._render_output" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">_render_output</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._render_output"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._render_output" title="Link to this definition">#</a></dt>
 <dd></dd></dl>
 
 <dl class="py method">
@@ -581,6 +627,11 @@ information (data context directory and data bounding box).</p>
 </dd>
 </dl>
 </dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._snapshot_cache_key">
+<span class="sig-name descname"><span class="pre">_snapshot_cache_key</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">column</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._snapshot_cache_key"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._snapshot_cache_key" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._wrap_method">
@@ -684,10 +735,10 @@ image file names.</p>
 <dd><p>Retrieves bounding box data from the DataFrame based
 on predefined column groups.</p>
 <p>This method identifies specific groups of columns representing bounding box
-coordinates for different cellular components (cytoplasm, nuclei, cells) and
-checks for their presence in the DataFrame. If all required columns are present,
-it filters and returns a new CytoDataFrame instance containing only these
-columns.</p>
+coordinates for different cellular components (cytoplasm, nuclei, cells). If
+those are not present, it falls back to a generic AreaShape bounding box. If
+all required columns are present, it filters and returns a new CytoDataFrame
+instance containing only these columns.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
 <dd class="field-odd"><p>A new instance of CytoDataFrame containing the bounding box columns if
@@ -852,6 +903,31 @@ or None if no relevant file is found.</p>
 <dd class="field-odd"><p>np.ndarray</p>
 </dd>
 </dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame.show_trame">
+<span class="sig-name descname"><span class="pre">show_trame</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">column</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">backend</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'trame'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame.show_trame"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame.show_trame" title="Link to this definition">#</a></dt>
+<dd><p>Render the dataframe HTML with a trame-backed 3D view.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>row</strong> – Row label or index of the 3D cell.</p></li>
+<li><p><strong>column</strong> – Column label containing the 3D data.</p></li>
+<li><p><strong>backend</strong> – PyVista Jupyter backend name.</p></li>
+<li><p><strong>**kwargs</strong> – Extra options forwarded to the viewer builder.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A trame layout when available, otherwise an ipywidgets container.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame.show_widget_table">
+<span class="sig-name descname"><span class="pre">show_widget_table</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">column</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rows</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">backend</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'trame'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame.show_widget_table"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame.show_widget_table" title="Link to this definition">#</a></dt>
+<dd><p>Render a widget-based table with 3D views embedded in columns.</p>
 </dd></dl>
 
 <dl class="py method">

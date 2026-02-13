@@ -912,6 +912,9 @@ class CytoDataFrame(pd.DataFrame):
                             continue
 
                         try:
+                            # Prefer direct in-memory conversion when available.
+                            # This avoids TIFF round-trips and keeps channel
+                            # layout explicit.
                             if (
                                 ome_from_numpy is not None
                                 and layer_array.ndim < MIN_VOLUME_NDIM
@@ -925,6 +928,8 @@ class CytoDataFrame(pd.DataFrame):
                                 and layer_array.ndim == MIN_VOLUME_NDIM
                                 and layer_array.shape[-1] in RGB_LIKE_CHANNEL_COUNTS
                             ):
+                                # OME-Arrow expects channels-first for
+                                # 2D multi-channel arrays.
                                 channel_first = np.moveaxis(
                                     np.asarray(layer_array), -1, 0
                                 )
@@ -936,6 +941,8 @@ class CytoDataFrame(pd.DataFrame):
                                 layer_array.ndim == MIN_VOLUME_NDIM
                                 and layer_array.shape[-1] in RGB_LIKE_CHANNEL_COUNTS
                             ):
+                                # Compatibility fallback for environments where
+                                # `ome_arrow.from_numpy` is not available.
                                 temp_path = tmpdir_path / (
                                     f"{sanitized_col}_{layer_key}_"
                                     f"{uuid.uuid4().hex}.tiff"
@@ -949,6 +956,7 @@ class CytoDataFrame(pd.DataFrame):
                                     )
                                 ome_struct = OMEArrow(data=str(temp_path)).data
                             else:
+                                # Generic fallback for all other array shapes.
                                 temp_path = tmpdir_path / (
                                     f"{sanitized_col}_{layer_key}_"
                                     f"{uuid.uuid4().hex}.tiff"

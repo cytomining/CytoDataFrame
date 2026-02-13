@@ -58,6 +58,8 @@ sqlalchemy = ">=1.3.6,<3"
 coverage = "^7.6.0"
 jupyterlab = "^4.3.0"
 jupytext = "^1.16.4"
+# jupyterlab/httpx requires a modern httpcore; avoid resolver selecting 0.13.x
+httpcore = ">=0.18,<0.19"
 black = ">=24.10,<27.0"
 isort = ">=5.13.2,<8.0.0"
 jupyterlab-code-formatter = "^3.0.2"

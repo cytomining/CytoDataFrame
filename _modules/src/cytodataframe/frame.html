@@ -1139,6 +1139,10 @@
                 <span class="s2">&quot;CytoDataFrame.to_ome_parquet requires the optional &#39;ome-arrow&#39; &quot;</span>
                 <span class="s2">&quot;dependency. Install it via `pip install ome-arrow`.&quot;</span>
             <span class="p">)</span> <span class="kn">from</span> <span class="nn">exc</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span> <span class="nn">ome_arrow</span> <span class="kn">import</span> <span class="n">from_numpy</span> <span class="k">as</span> <span class="n">ome_from_numpy</span>  <span class="c1"># type: ignore</span>
+        <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+            <span class="n">ome_from_numpy</span> <span class="o">=</span> <span class="kc">None</span>
 
         <span class="k">try</span><span class="p">:</span>
             <span class="kn">import</span> <span class="nn">importlib.metadata</span> <span class="k">as</span> <span class="nn">importlib_metadata</span>
@@ -1330,24 +1334,64 @@
                             <span class="n">column_values</span><span class="p">[</span><span class="n">col_name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
                             <span class="k">continue</span>
 
-                        <span class="n">temp_path</span> <span class="o">=</span> <span class="p">(</span>
-                            <span class="n">tmpdir_path</span>
-                            <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">sanitized_col</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">layer_key</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">hex</span><span class="si">}</span><span class="s2">.tiff&quot;</span>
-                        <span class="p">)</span>
                         <span class="k">try</span><span class="p">:</span>
-                            <span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">():</span>
-                                <span class="n">warnings</span><span class="o">.</span><span class="n">simplefilter</span><span class="p">(</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="ne">UserWarning</span><span class="p">)</span>
-                                <span class="n">imageio</span><span class="o">.</span><span class="n">imwrite</span><span class="p">(</span><span class="n">temp_path</span><span class="p">,</span> <span class="n">layer_array</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;tiff&quot;</span><span class="p">)</span>
-                        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-                            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
-                                <span class="s2">&quot;Failed to write temporary TIFF for OMEArrow (</span><span class="si">%s</span><span class="s2">): </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
-                                <span class="n">layer_key</span><span class="p">,</span>
-                                <span class="n">exc</span><span class="p">,</span>
-                            <span class="p">)</span>
-                            <span class="n">column_values</span><span class="p">[</span><span class="n">col_name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
-                            <span class="k">continue</span>
-                        <span class="k">try</span><span class="p">:</span>
-                            <span class="n">ome_struct</span> <span class="o">=</span> <span class="n">OMEArrow</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">temp_path</span><span class="p">))</span><span class="o">.</span><span class="n">data</span>
+                            <span class="c1"># Prefer direct in-memory conversion when available.</span>
+                            <span class="c1"># This avoids TIFF round-trips and keeps channel</span>
+                            <span class="c1"># layout explicit.</span>
+                            <span class="k">if</span> <span class="p">(</span>
+                                <span class="n">ome_from_numpy</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                                <span class="ow">and</span> <span class="n">layer_array</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&lt;</span> <span class="n">MIN_VOLUME_NDIM</span>
+                            <span class="p">):</span>
+                                <span class="n">ome_struct</span> <span class="o">=</span> <span class="n">ome_from_numpy</span><span class="p">(</span>
+                                    <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">layer_array</span><span class="p">),</span>
+                                    <span class="n">dim_order</span><span class="o">=</span><span class="s2">&quot;YX&quot;</span><span class="p">,</span>
+                                <span class="p">)</span>
+                            <span class="k">elif</span> <span class="p">(</span>
+                                <span class="n">ome_from_numpy</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                                <span class="ow">and</span> <span class="n">layer_array</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="n">MIN_VOLUME_NDIM</span>
+                                <span class="ow">and</span> <span class="n">layer_array</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">in</span> <span class="n">RGB_LIKE_CHANNEL_COUNTS</span>
+                            <span class="p">):</span>
+                                <span class="c1"># OME-Arrow expects channels-first for</span>
+                                <span class="c1"># 2D multi-channel arrays.</span>
+                                <span class="n">channel_first</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">moveaxis</span><span class="p">(</span>
+                                    <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">layer_array</span><span class="p">),</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span>
+                                <span class="p">)</span>
+                                <span class="n">ome_struct</span> <span class="o">=</span> <span class="n">ome_from_numpy</span><span class="p">(</span>
+                                    <span class="n">channel_first</span><span class="p">,</span>
+                                    <span class="n">dim_order</span><span class="o">=</span><span class="s2">&quot;CYX&quot;</span><span class="p">,</span>
+                                <span class="p">)</span>
+                            <span class="k">elif</span> <span class="p">(</span>
+                                <span class="n">layer_array</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="n">MIN_VOLUME_NDIM</span>
+                                <span class="ow">and</span> <span class="n">layer_array</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">in</span> <span class="n">RGB_LIKE_CHANNEL_COUNTS</span>
+                            <span class="p">):</span>
+                                <span class="c1"># Compatibility fallback for environments where</span>
+                                <span class="c1"># `ome_arrow.from_numpy` is not available.</span>
+                                <span class="n">temp_path</span> <span class="o">=</span> <span class="n">tmpdir_path</span> <span class="o">/</span> <span class="p">(</span>
+                                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">sanitized_col</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">layer_key</span><span class="si">}</span><span class="s2">_&quot;</span>
+                                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">hex</span><span class="si">}</span><span class="s2">.tiff&quot;</span>
+                                <span class="p">)</span>
+                                <span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">():</span>
+                                    <span class="n">warnings</span><span class="o">.</span><span class="n">simplefilter</span><span class="p">(</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="ne">UserWarning</span><span class="p">)</span>
+                                    <span class="n">imageio</span><span class="o">.</span><span class="n">imwrite</span><span class="p">(</span>
+                                        <span class="n">temp_path</span><span class="p">,</span>
+                                        <span class="n">layer_array</span><span class="p">,</span>
+                                        <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;tiff&quot;</span><span class="p">,</span>
+                                    <span class="p">)</span>
+                                <span class="n">ome_struct</span> <span class="o">=</span> <span class="n">OMEArrow</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">temp_path</span><span class="p">))</span><span class="o">.</span><span class="n">data</span>
+                            <span class="k">else</span><span class="p">:</span>
+                                <span class="c1"># Generic fallback for all other array shapes.</span>
+                                <span class="n">temp_path</span> <span class="o">=</span> <span class="n">tmpdir_path</span> <span class="o">/</span> <span class="p">(</span>
+                                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">sanitized_col</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">layer_key</span><span class="si">}</span><span class="s2">_&quot;</span>
+                                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">hex</span><span class="si">}</span><span class="s2">.tiff&quot;</span>
+                                <span class="p">)</span>
+                                <span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">():</span>
+                                    <span class="n">warnings</span><span class="o">.</span><span class="n">simplefilter</span><span class="p">(</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="ne">UserWarning</span><span class="p">)</span>
+                                    <span class="n">imageio</span><span class="o">.</span><span class="n">imwrite</span><span class="p">(</span>
+                                        <span class="n">temp_path</span><span class="p">,</span>
+                                        <span class="n">layer_array</span><span class="p">,</span>
+                                        <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;tiff&quot;</span><span class="p">,</span>
+                                    <span class="p">)</span>
+                                <span class="n">ome_struct</span> <span class="o">=</span> <span class="n">OMEArrow</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">temp_path</span><span class="p">))</span><span class="o">.</span><span class="n">data</span>
                             <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">ome_struct</span><span class="p">,</span> <span class="s2">&quot;as_py&quot;</span><span class="p">):</span>
                                 <span class="n">ome_struct</span> <span class="o">=</span> <span class="n">ome_struct</span><span class="o">.</span><span class="n">as_py</span><span class="p">()</span>
                         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
@@ -1702,7 +1746,7 @@
 
 <div class="viewcode-block" id="CytoDataFrame._extract_array_from_ome_arrow">
 <a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._extract_array_from_ome_arrow">[docs]</a>
-    <span class="k">def</span> <span class="nf">_extract_array_from_ome_arrow</span><span class="p">(</span>  <span class="c1"># noqa: PLR0911</span>
+    <span class="k">def</span> <span class="nf">_extract_array_from_ome_arrow</span><span class="p">(</span>  <span class="c1"># noqa: C901, PLR0911, PLR0912</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
         <span class="n">data_value</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
@@ -1716,6 +1760,7 @@
             <span class="n">size_x</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">pixels_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;size_x&quot;</span><span class="p">))</span>
             <span class="n">size_y</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">pixels_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;size_y&quot;</span><span class="p">))</span>
             <span class="n">size_z</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">pixels_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;size_z&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">size_c</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">pixels_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;size_c&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">1</span><span class="p">)</span>
             <span class="n">planes</span> <span class="o">=</span> <span class="n">data_value</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;planes&quot;</span><span class="p">)</span>
 
             <span class="k">if</span> <span class="n">size_x</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">size_y</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">planes</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -1731,21 +1776,43 @@
             <span class="k">if</span> <span class="ow">not</span> <span class="n">plane_entries</span><span class="p">:</span>
                 <span class="k">return</span> <span class="kc">None</span>
 
-            <span class="n">plane</span> <span class="o">=</span> <span class="n">plane_entries</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-            <span class="n">pixels</span> <span class="o">=</span> <span class="n">plane</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pixels&quot;</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">pixels</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">return</span> <span class="kc">None</span>
-
-            <span class="n">np_pixels</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">pixels</span><span class="p">)</span>
             <span class="n">base</span> <span class="o">=</span> <span class="n">size_x</span> <span class="o">*</span> <span class="n">size_y</span>
-            <span class="k">if</span> <span class="n">base</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">size</span> <span class="o">%</span> <span class="n">base</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">base</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
                 <span class="k">return</span> <span class="kc">None</span>
 
-            <span class="n">channel_count</span> <span class="o">=</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">size</span> <span class="o">//</span> <span class="n">base</span>
-            <span class="k">if</span> <span class="n">channel_count</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-                <span class="n">array</span> <span class="o">=</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">size_y</span><span class="p">,</span> <span class="n">size_x</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">size_c</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">planes_by_c</span> <span class="o">=</span> <span class="p">{}</span>
+                <span class="k">for</span> <span class="n">plane</span> <span class="ow">in</span> <span class="n">plane_entries</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="nb">int</span><span class="p">(</span><span class="n">plane</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;t&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="nb">int</span><span class="p">(</span><span class="n">plane</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;z&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="n">channel_index</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">plane</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;c&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+                    <span class="n">pixels</span> <span class="o">=</span> <span class="n">plane</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pixels&quot;</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">pixels</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="n">np_pixels</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">pixels</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">size</span> <span class="o">!=</span> <span class="n">base</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="n">planes_by_c</span><span class="p">[</span><span class="n">channel_index</span><span class="p">]</span> <span class="o">=</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">size_y</span><span class="p">,</span> <span class="n">size_x</span><span class="p">))</span>
+
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">planes_by_c</span><span class="p">)</span> <span class="o">!=</span> <span class="n">size_c</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="kc">None</span>
+
+                <span class="n">array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">planes_by_c</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">size_c</span><span class="p">)],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">array</span> <span class="o">=</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">size_y</span><span class="p">,</span> <span class="n">size_x</span><span class="p">,</span> <span class="n">channel_count</span><span class="p">))</span>
+                <span class="n">plane</span> <span class="o">=</span> <span class="n">plane_entries</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">pixels</span> <span class="o">=</span> <span class="n">plane</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pixels&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">pixels</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="kc">None</span>
+
+                <span class="n">np_pixels</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">pixels</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">size</span> <span class="o">%</span> <span class="n">base</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="kc">None</span>
+
+                <span class="n">channel_count</span> <span class="o">=</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">size</span> <span class="o">//</span> <span class="n">base</span>
+                <span class="k">if</span> <span class="n">channel_count</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="n">array</span> <span class="o">=</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">size_y</span><span class="p">,</span> <span class="n">size_x</span><span class="p">))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">array</span> <span class="o">=</span> <span class="n">np_pixels</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">size_y</span><span class="p">,</span> <span class="n">size_x</span><span class="p">,</span> <span class="n">channel_count</span><span class="p">))</span>
 
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_uint8</span><span class="p">(</span><span class="n">array</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>

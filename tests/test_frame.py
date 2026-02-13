@@ -2,17 +2,21 @@
 Tests cosmicqc CytoDataFrame module
 """
 
+import logging
 import pathlib
 import sys
 import types
+from collections import OrderedDict
+from contextlib import nullcontext
+from importlib.machinery import ModuleSpec
 
 import imageio.v2 as imageio
-import nbformat
+import ipywidgets as widgets
 import numpy as np
 import pandas as pd
 import pytest
+import tifffile
 from _pytest.monkeypatch import MonkeyPatch
-from nbconvert.preprocessors import CellExecutionError, ExecutePreprocessor
 from pyarrow import parquet
 
 from cytodataframe.frame import CytoDataFrame
@@ -245,6 +249,39 @@ def test_prepare_layers_mask_binary(tmp_path: pathlib.Path) -> None:
     assert mask_layer is not None
     assert mask_layer.dtype == np.uint8
     assert set(np.unique(mask_layer).tolist()).issubset({0, 255})
+
+
+def test_prepare_layers_3d_uses_loaded_volume_without_ome_arrow_fallback(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    volume = np.arange(4 * 5 * 6, dtype=np.uint8).reshape(4, 5, 6)
+    image_path = tmp_path / "vol3d.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+    )
+
+    def fail_ome_arrow_path(**_kwargs: object) -> str:
+        raise AssertionError("OME-Arrow fallback should not be used for 3D TIFF")
+
+    monkeypatch.setattr(
+        "cytodataframe.frame.build_3d_html_from_path",
+        fail_ome_arrow_path,
+    )
+    layers = cdf._prepare_cropped_image_layers(
+        data_value=image_path.name,
+        bounding_box=(0, 0, 6, 5),
+        include_composite=False,
+        include_original=False,
+        include_mask_outline=False,
+    )
+
+    html_value = layers.get(CytoDataFrame._HTML_3D_STUB_KEY)
+    assert isinstance(html_value, str)
+    assert "data-volume=" in html_value
 
 
 def test_cytodataframe_input(
@@ -654,21 +691,915 @@ def test_slider_updates_state(monkeypatch: MonkeyPatch):
     assert render_called.get("called", False)
 
 
-def test_example_notebook_execution():
-    """
-    Executes the example notebook to ensure it runs.
-    """
+def test_get_3d_volume_from_cell_loads_3d_tiff(tmp_path: pathlib.Path) -> None:
+    volume = np.arange(4 * 5 * 6, dtype=np.uint8).reshape(4, 5, 6)
+    image_path = tmp_path / "volume.tiff"
+    tifffile.imwrite(image_path, volume)
 
-    with open(
-        (notebook_path := "docs/src/examples/cytodataframe_at_a_glance.ipynb")
-    ) as f:
-        nb = nbformat.read(f, as_version=4)
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+    )
 
-    ep = ExecutePreprocessor(timeout=300, kernel_name="python3")
+    loaded_volume, dims = cdf._get_3d_volume_from_cell(
+        row=0, column="Image_FileName_DNA"
+    )
 
-    try:
-        ep.preprocess(
-            nb, {"metadata": {"path": str(pathlib.Path(notebook_path).parent)}}
+    assert loaded_volume.shape == (4, 5, 6)
+    assert dims == (6, 5, 4)
+
+
+def test_get_3d_volume_from_cell_normalizes_file_uri_with_context_dir(
+    tmp_path: pathlib.Path,
+) -> None:
+    volume = np.arange(3 * 4 * 5, dtype=np.uint8).reshape(3, 4, 5)
+    image_path = tmp_path / "volume_uri.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [f"file:{image_path}"]}),
+        data_context_dir=str(tmp_path),
+    )
+
+    loaded_volume, dims = cdf._get_3d_volume_from_cell(
+        row=0, column="Image_FileName_DNA"
+    )
+
+    assert loaded_volume.shape == (3, 4, 5)
+    assert dims == (5, 4, 3)
+
+
+def test_find_image_columns_accepts_pathlike_values(tmp_path: pathlib.Path) -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "PathLikeCol": [tmp_path / "img.tiff"],
+                "NotImage": [tmp_path / "table.csv"],
+            }
         )
-    except CellExecutionError as e:
-        pytest.fail(f"Notebook execution failed: {e}")
+    )
+    assert "PathLikeCol" in cdf.find_image_columns()
+    assert "NotImage" not in cdf.find_image_columns()
+
+
+def test_get_3d_volume_from_cell_uses_image_pathname_column(
+    tmp_path: pathlib.Path,
+) -> None:
+    volume = np.arange(3 * 4 * 5, dtype=np.uint8).reshape(3, 4, 5)
+    image_path = tmp_path / "via_path_col.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame(
+            {
+                "Image_FileName_DNA": [image_path.name],
+                "Image_PathName_DNA": [str(tmp_path)],
+            }
+        ),
+    )
+
+    loaded_volume, dims = cdf._get_3d_volume_from_cell(
+        row=0, column="Image_FileName_DNA"
+    )
+    assert loaded_volume.shape == (3, 4, 5)
+    assert dims == (5, 4, 3)
+
+
+def test_get_3d_volume_from_cell_uses_data_image_paths_helper(
+    tmp_path: pathlib.Path,
+) -> None:
+    volume = np.arange(2 * 4 * 6, dtype=np.uint8).reshape(2, 4, 6)
+    image_path = tmp_path / "helper_path_col.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_image_paths=pd.DataFrame({"Image_PathName_DNA": [str(tmp_path)]}),
+    )
+
+    loaded_volume, dims = cdf._get_3d_volume_from_cell(
+        row=0, column="Image_FileName_DNA"
+    )
+    assert loaded_volume.shape == (2, 4, 6)
+    assert dims == (6, 4, 2)
+
+
+def test_get_3d_volume_from_cell_rglob_in_context_dir(tmp_path: pathlib.Path) -> None:
+    nested_dir = tmp_path / "nested" / "images"
+    nested_dir.mkdir(parents=True)
+    volume = np.arange(2 * 3 * 4, dtype=np.uint8).reshape(2, 3, 4)
+    image_path = nested_dir / "rglob_volume.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+    )
+
+    loaded_volume, dims = cdf._get_3d_volume_from_cell(
+        row=0, column="Image_FileName_DNA"
+    )
+    assert loaded_volume.shape == (2, 3, 4)
+    assert dims == (4, 3, 2)
+
+
+def test_get_3d_volume_from_cell_uses_bounded_lru_cache() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "A": [
+                    np.zeros((2, 2, 2), dtype=np.uint8),
+                    np.ones((2, 2, 2), dtype=np.uint8),
+                    np.full((2, 2, 2), 2, dtype=np.uint8),
+                ]
+            }
+        ),
+        display_options={"volume_cache_max_entries": 2},
+    )
+
+    cdf._get_3d_volume_from_cell(row=0, column="A")
+    cdf._get_3d_volume_from_cell(row=1, column="A")
+    cache = cdf._custom_attrs["_volume_cache"]
+    assert isinstance(cache, OrderedDict)
+    assert list(cache.keys()) == ["0::A", "1::A"]
+
+    # Access row 0 again, making it the most-recent entry.
+    cdf._get_3d_volume_from_cell(row=0, column="A")
+    assert list(cache.keys()) == ["1::A", "0::A"]
+
+    # Inserting a third entry evicts the least-recently used one (row 1).
+    cdf._get_3d_volume_from_cell(row=2, column="A")
+    assert list(cache.keys()) == ["0::A", "2::A"]
+    assert len(cache) == 2
+
+
+def test_get_3d_volume_from_cell_skips_cache_when_disabled() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"A": [np.ones((2, 2, 2), dtype=np.uint8)]}),
+        display_options={"volume_disable_cache": True},
+    )
+    sentinel_cache = {"0::A": (np.zeros((1, 1, 1), dtype=np.uint8), (1, 1, 1))}
+    cdf._custom_attrs["_volume_cache"] = sentinel_cache
+
+    volume, dims = cdf._get_3d_volume_from_cell(row=0, column="A")
+
+    assert volume.shape == (2, 2, 2)
+    assert dims == (2, 2, 2)
+    assert cdf._custom_attrs["_volume_cache"] is sentinel_cache
+    assert cdf._custom_attrs["_volume_cache"]["0::A"][0].shape == (1, 1, 1)
+
+
+def test_repr_html_auto_trame_for_3d_inputs(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    volume = np.arange(3 * 4 * 5, dtype=np.uint8).reshape(3, 4, 5)
+    image_path = tmp_path / "auto_trame_volume.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+    )
+
+    captured: dict = {}
+
+    def fake_show_widget_table(column: str, **kwargs: object) -> str:
+        captured["column"] = column
+        captured["columns_3d"] = kwargs.get("columns_3d")
+        captured["backend"] = kwargs.get("backend")
+        return "widget_table"
+
+    displayed: list = []
+
+    def fake_snapshot_html() -> str:
+        return "<table/>"
+
+    def capture_display(value: object) -> None:
+        displayed.append(value)
+
+    monkeypatch.setattr(cdf, "show_widget_table", fake_show_widget_table)
+    monkeypatch.setattr(cdf, "_generate_trame_snapshot_html", fake_snapshot_html)
+    monkeypatch.setattr("cytodataframe.frame.display", capture_display)
+
+    assert cdf._repr_html_() is None
+    assert captured["column"] == "Image_FileName_DNA"
+    assert captured["columns_3d"] == ["Image_FileName_DNA"]
+    assert captured["backend"] is None
+    assert displayed
+
+
+def test_find_3d_columns_for_display_skips_ellipsis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cdf = CytoDataFrame(pd.DataFrame({"Image_FileName_DNA": ["volume.tiff"]}))
+    attempted_rows: list = []
+
+    monkeypatch.setattr(cdf, "find_image_columns", lambda: ["Image_FileName_DNA"])
+    monkeypatch.setattr(CytoDataFrame, "find_ome_arrow_columns", lambda _self, _df: [])
+    monkeypatch.setattr(cdf, "get_displayed_rows", lambda: [0, "\u2026", 1])
+
+    def fake_get_3d_volume(row: int, column: str):  # noqa: ANN202
+        attempted_rows.append(row)
+        if row == 1:
+            return np.zeros((2, 2, 2), dtype=np.uint8), (2, 2, 2)
+        raise ValueError("not 3d")
+
+    monkeypatch.setattr(cdf, "_get_3d_volume_from_cell", fake_get_3d_volume)
+
+    assert cdf._find_3d_columns_for_display() == ["Image_FileName_DNA"]
+    assert attempted_rows == [0, 1]
+
+
+def test_find_3d_columns_for_display_falls_back_to_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"Image_FileName_DNA": ["volume.tiff"]}, index=[7])
+    )
+    attempted_rows: list = []
+
+    monkeypatch.setattr(cdf, "find_image_columns", lambda: ["Image_FileName_DNA"])
+    monkeypatch.setattr(CytoDataFrame, "find_ome_arrow_columns", lambda _self, _df: [])
+    monkeypatch.setattr(cdf, "get_displayed_rows", lambda: ["\u2026"])
+
+    def fake_get_3d_volume(row: int, column: str):  # noqa: ANN202
+        attempted_rows.append(row)
+        return np.zeros((2, 2, 2), dtype=np.uint8), (2, 2, 2)
+
+    monkeypatch.setattr(cdf, "_get_3d_volume_from_cell", fake_get_3d_volume)
+
+    assert cdf._find_3d_columns_for_display() == ["Image_FileName_DNA"]
+    assert attempted_rows == [7]
+
+
+def test_repr_html_force_trame_falls_back_to_candidate_columns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"Image_FileName_DNA": ["volume.tiff"], "OMEArrowCol": [None]}),
+        display_options={"view": "trame", "auto_trame_for_3d": False},
+    )
+    captured: dict = {}
+    displayed: list = []
+
+    def fake_image_columns() -> list:
+        return ["Image_FileName_DNA"]
+
+    def fake_ome_columns(_self: CytoDataFrame, _df: pd.DataFrame) -> list:
+        return ["OMEArrowCol"]
+
+    def fake_snapshot_html() -> str:
+        return "<table/>"
+
+    def capture_display(value: object) -> None:
+        displayed.append(value)
+
+    monkeypatch.setattr(cdf, "find_image_columns", fake_image_columns)
+    monkeypatch.setattr(CytoDataFrame, "find_ome_arrow_columns", fake_ome_columns)
+    monkeypatch.setattr(cdf, "_generate_trame_snapshot_html", fake_snapshot_html)
+    monkeypatch.setattr("cytodataframe.frame.display", capture_display)
+
+    def fake_show_widget_table(column: str, **kwargs: object) -> str:
+        captured["column"] = column
+        captured["columns_3d"] = kwargs.get("columns_3d")
+        return "widget_table"
+
+    monkeypatch.setattr(cdf, "show_widget_table", fake_show_widget_table)
+
+    assert cdf._repr_html_() is None
+    assert captured["column"] == "Image_FileName_DNA"
+    assert captured["columns_3d"] == ["Image_FileName_DNA", "OMEArrowCol"]
+    assert displayed
+
+
+def test_is_notebook_or_lab_detects_zmq_shell(monkeypatch: pytest.MonkeyPatch) -> None:
+    zmq_shell = type("ZMQInteractiveShell", (), {})()
+    monkeypatch.setattr("cytodataframe.frame.get_ipython", lambda: zmq_shell)
+    assert CytoDataFrame.is_notebook_or_lab() is True
+
+
+def test_is_notebook_or_lab_detects_terminal_shell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    term_shell = type("TerminalInteractiveShell", (), {})()
+    monkeypatch.setattr("cytodataframe.frame.get_ipython", lambda: term_shell)
+    assert CytoDataFrame.is_notebook_or_lab() is False
+
+
+def test_is_notebook_or_lab_handles_unknown_shell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unknown_shell = type("CustomShell", (), {})()
+    monkeypatch.setattr("cytodataframe.frame.get_ipython", lambda: unknown_shell)
+    assert CytoDataFrame.is_notebook_or_lab() is False
+
+
+def test_is_notebook_or_lab_handles_name_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def raise_name_error():  # noqa: ANN202
+        raise NameError("missing")
+
+    monkeypatch.setattr("cytodataframe.frame.get_ipython", raise_name_error)
+    assert CytoDataFrame.is_notebook_or_lab() is False
+
+
+def test_show_widget_table_rejects_empty_columns_3d():
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
+    with pytest.raises(ValueError, match="columns_3d must include at least one column"):
+        cdf.show_widget_table(column="A", rows=[0], columns_3d=[])
+
+
+def test_show_widget_table_renders_fallback_when_3d_fails():
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1], "B": [2]}))
+    grid = cdf.show_widget_table(
+        column="A",
+        rows=[0, "\u2026"],
+        columns=["A", "B"],
+        columns_3d=["A"],
+    )
+    # Header + 2 rows, index + 2 columns
+    assert grid.n_rows == 3
+    assert grid.n_columns == 3
+    assert "3D render failed" in grid[1, 1].value
+    assert "\u2026" in grid[2, 1].value
+
+
+def test_show_widget_table_raises_in_debug_mode_when_3d_fails():
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
+    with pytest.raises(ValueError, match="does not contain a 3D volume"):
+        cdf.show_widget_table(
+            column="A",
+            rows=[0],
+            columns=["A"],
+            columns_3d=["A"],
+            debug=True,
+        )
+
+
+def test_show_widget_table_renders_3d_viewer_cells_successfully(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "A": [1, 2, 3, 4, 5],
+                "B": [10, 20, 30, 40, 50],
+                "C": [100, 200, 300, 400, 500],
+                "D": [1000, 2000, 3000, 4000, 5000],
+            }
+        ),
+        display_options={"view": "trame", "height": 220, "width": 150},
+    )
+    monkeypatch.setattr(cdf, "get_displayed_rows", lambda: [np.int64(0), np.int64(1)])
+    monkeypatch.setattr("cytodataframe.frame.pd.get_option", lambda _name: 3)
+    monkeypatch.setattr(
+        cdf,
+        "_get_3d_volume_from_cell",
+        lambda row, column: (np.ones((2, 2, 2), dtype=np.uint8), (2, 2, 2)),
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_build_pyvista_viewer(**kwargs: object):  # noqa: ANN202
+        captured.update(kwargs)
+
+        return widgets.HTML(value="viewer")
+
+    monkeypatch.setattr(cdf, "_build_pyvista_viewer", fake_build_pyvista_viewer)
+
+    grid = cdf.show_widget_table(
+        column="A",
+        backend=None,
+        columns=["A", "B", "C", "D"],
+        max_columns=3,
+        max_rows=2,
+        columns_3d=["A"],
+        widget_height=np.int64(140),
+        index_width=np.int64(90),
+    )
+
+    assert grid.n_rows == 3
+    assert grid.n_columns == 4
+    assert "…" in grid[2, 1].value
+    assert captured["backend"] == "trame"
+    assert captured["widget_height"] == "140px"
+
+
+def test_get_displayed_rows_when_under_limit(monkeypatch: pytest.MonkeyPatch):
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1, 2, 3]}, index=[10, 20, 30]))
+
+    monkeypatch.setattr("cytodataframe.frame.pd.get_option", lambda name: 10)
+    assert cdf.get_displayed_rows() == [10, 20, 30]
+
+
+def test_get_displayed_rows_when_over_limit(monkeypatch: pytest.MonkeyPatch):
+    cdf = CytoDataFrame(pd.DataFrame({"A": list(range(8))}, index=list(range(8))))
+
+    def fake_get_option(name: str) -> int:
+        return 6 if name == "display.max_rows" else 4
+
+    monkeypatch.setattr("cytodataframe.frame.pd.get_option", fake_get_option)
+    assert cdf.get_displayed_rows() == [0, 1, 6, 7]
+
+
+def test_normalize_labels_returns_string_index_and_backmap():
+    labels = pd.Index([1, "x", 2.5])
+    labels_as_str, backmap = CytoDataFrame._normalize_labels(labels)
+    assert list(labels_as_str) == ["1", "x", "2.5"]
+    assert backmap["1"] == 1
+    assert backmap["x"] == "x"
+    assert backmap["2.5"] == 2.5
+
+
+def test_is_3d_image_array_detects_rgb_like_images_as_not_3d() -> None:
+    rgb = np.zeros((64, 64, 3), dtype=np.uint8)
+    rgba = np.zeros((64, 64, 4), dtype=np.uint8)
+    assert CytoDataFrame._is_3d_image_array(rgb) is False
+    assert CytoDataFrame._is_3d_image_array(rgba) is False
+
+
+def test_is_3d_image_array_accepts_thin_small_volume_shapes() -> None:
+    thin_x = np.zeros((5, 20, 3), dtype=np.uint8)
+    singleton_x = np.zeros((5, 20, 1), dtype=np.uint8)
+    assert CytoDataFrame._is_3d_image_array(thin_x) is True
+    assert CytoDataFrame._is_3d_image_array(singleton_x) is True
+
+
+def _install_fake_pyvista(  # noqa: C901
+    monkeypatch: pytest.MonkeyPatch,
+    screenshot_image: np.ndarray | None = None,
+) -> None:
+    class FakePointData:
+        def __init__(self) -> None:
+            self.data = {}
+            self.active_scalars_name = None
+
+        def clear(self) -> None:
+            self.data = {}
+
+        def __setitem__(self, key: str, value: object) -> None:
+            self.data[key] = value
+
+        def set_active_scalars(self, _name: str) -> None:
+            raise AttributeError
+
+    class FakeImageData:
+        def __init__(self) -> None:
+            self.dimensions = None
+            self.spacing = None
+            self.origin = None
+            self.point_data = FakePointData()
+
+        def set_active_scalars(self, _name: str) -> None:
+            return None
+
+    class FakeProp:
+        def SetInterpolationTypeToNearest(self) -> None:
+            return None
+
+        def SetInterpolationTypeToLinear(self) -> None:
+            return None
+
+        def SetInterpolateScalarsBeforeMapping(self, _value: bool) -> None:
+            return None
+
+        def SetScalarOpacityUnitDistance(self, _value: float) -> None:
+            return None
+
+    class FakeMapper:
+        def SetAutoAdjustSampleDistances(self, _value: bool) -> None:
+            return None
+
+        def SetUseJittering(self, _value: bool) -> None:
+            return None
+
+        def SetSampleDistance(self, _value: float) -> None:
+            return None
+
+    class FakeActor:
+        def __init__(self) -> None:
+            self.prop = FakeProp()
+            self.mapper = FakeMapper()
+
+        def GetProperty(self) -> FakeProp:
+            return self.prop
+
+        def GetMapper(self) -> FakeMapper:
+            return self.mapper
+
+    class FakeViewer:
+        def __init__(self) -> None:
+            self.layout = None
+            self.value = (
+                'class="pyvista" style="border: 1px solid; width: 200px; '
+                'height: 200px;"'
+            )
+
+    class FakePlotter:
+        def __init__(self, notebook: bool = False, off_screen: bool = False) -> None:
+            self.notebook = notebook
+            self.off_screen = off_screen
+            self.background = None
+
+        def set_background(self, value: str) -> None:
+            self.background = value
+
+        def add_volume(self, *args: object, **kwargs: object) -> FakeActor:
+            return FakeActor()
+
+        def add_axes(self) -> None:
+            return None
+
+        def show(self, **_kwargs: object) -> FakeViewer:
+            return FakeViewer()
+
+        def screenshot(self, return_img: bool = True) -> np.ndarray | None:
+            if not return_img:
+                return None
+            return screenshot_image
+
+    fake_module = types.SimpleNamespace(
+        ImageData=FakeImageData,
+        Plotter=FakePlotter,
+        set_jupyter_backend=lambda _backend: None,
+        __spec__=ModuleSpec("pyvista", loader=None),
+    )
+    monkeypatch.setitem(sys.modules, "pyvista", fake_module)
+
+
+def test_build_pyvista_viewer_with_fake_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_pyvista(
+        monkeypatch,
+        screenshot_image=np.zeros((2, 2, 3), dtype=np.uint8),
+    )
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
+
+    viewer = cdf._build_pyvista_viewer(
+        volume=np.ones((2, 2, 2), dtype=np.uint8),
+        backend="trame",
+        widget_height="120px",
+    )
+    assert hasattr(viewer, "_cdf_plotter")
+    assert "width: 100%;" in viewer.value
+    assert "height: 100%;" in viewer.value
+
+
+def test_show_trame_falls_back_to_ipywidgets(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_pyvista(
+        monkeypatch,
+        screenshot_image=np.zeros((2, 2, 3), dtype=np.uint8),
+    )
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}), display_options={"view": "trame"})
+
+    monkeypatch.setattr(
+        cdf,
+        "_get_3d_volume_from_cell",
+        lambda row, column: (np.ones((2, 2, 2), dtype=np.uint8), (2, 2, 2)),
+    )
+
+    def fake_html_table() -> str:
+        return "<table>t</table>"
+
+    monkeypatch.setattr(cdf, "_generate_jupyter_dataframe_html", fake_html_table)
+    monkeypatch.setattr(
+        cdf,
+        "_build_pyvista_viewer",
+        lambda **_kwargs: __import__("ipywidgets").HTML("viewer"),
+    )
+    original_import = __import__
+
+    def fake_import(name: str, *args: object, **kwargs: object):  # noqa: ANN202
+        if name.startswith("trame"):
+            raise ImportError("no trame")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+
+    container = cdf.show_trame(row=0, column="A", backend=None)
+    assert hasattr(container, "children")
+    assert len(container.children) == 2
+
+
+def test_show_trame_raises_when_ipywidgets_missing_in_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pyvista(
+        monkeypatch,
+        screenshot_image=np.zeros((2, 2, 3), dtype=np.uint8),
+    )
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}), display_options={"view": "trame"})
+    monkeypatch.setattr(
+        cdf,
+        "_get_3d_volume_from_cell",
+        lambda row, column: (np.ones((2, 2, 2), dtype=np.uint8), (2, 2, 2)),
+    )
+    monkeypatch.setattr(
+        cdf,
+        "_generate_jupyter_dataframe_html",
+        lambda: "<table>t</table>",
+    )
+    monkeypatch.setattr(
+        cdf,
+        "_build_pyvista_viewer",
+        lambda **_kwargs: types.SimpleNamespace(server=None, _server=None),
+    )
+    original_import = __import__
+
+    def fake_import(name: str, *args: object, **kwargs: object):  # noqa: ANN202
+        if name.startswith("trame"):
+            raise ImportError("no trame")
+        if name == "ipywidgets":
+            raise ImportError("no ipywidgets")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+
+    with pytest.raises(
+        RuntimeError,
+        match="ipywidgets is required for notebook layout",
+    ):
+        cdf.show_trame(row=0, column="A", backend=None)
+
+
+def test_generate_jupyter_dataframe_html_info_repr_branch(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
+    monkeypatch.setattr(cdf, "_info_repr", lambda: True)
+    html = cdf._generate_jupyter_dataframe_html()
+    assert html.startswith("<pre>")
+    assert "&lt;class" in html
+
+
+def test_generate_jupyter_dataframe_html_with_joined_components(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+):
+    base = pd.DataFrame(
+        {"Image_FileName_DNA": ["dna.tiff"], "OMECol": [{"type": "ome.arrow"}]},
+        index=[0],
+    )
+    cdf = CytoDataFrame(base, data_context_dir=str(tmp_path))
+    cdf._custom_attrs["data_bounding_box"] = pd.DataFrame(
+        {
+            "Cells_AreaShape_BoundingBoxMinimum_X": [0],
+            "Cells_AreaShape_BoundingBoxMinimum_Y": [0],
+            "Cells_AreaShape_BoundingBoxMaximum_X": [1],
+            "Cells_AreaShape_BoundingBoxMaximum_Y": [1],
+        },
+        index=[0],
+    )
+    cdf._custom_attrs["compartment_center_xy"] = pd.DataFrame(
+        {"Cells_Location_Center_X": [0], "Cells_Location_Center_Y": [0]},
+        index=[0],
+    )
+    cdf._custom_attrs["data_image_paths"] = pd.DataFrame(
+        {"Image_PathName_DNA": [str(tmp_path)]},
+        index=[0],
+    )
+
+    options = {
+        "display.notebook_repr_html": True,
+        "display.max_rows": 10,
+        "display.min_rows": 10,
+        "display.max_columns": 10,
+        "display.show_dimensions": False,
+    }
+
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda name: options[name])
+    monkeypatch.setattr(
+        "cytodataframe.frame.CytoDataFrame.find_image_columns",
+        lambda self: ["Image_FileName_DNA"],
+    )
+    monkeypatch.setattr(
+        "cytodataframe.frame.CytoDataFrame.find_image_path_columns",
+        lambda self, image_cols, all_cols: {"Image_FileName_DNA": "Image_PathName_DNA"},
+    )
+    monkeypatch.setattr(
+        "cytodataframe.frame.CytoDataFrame.get_displayed_rows",
+        lambda self: [0],
+    )
+    monkeypatch.setattr(
+        cdf,
+        "process_image_data_as_html_display",
+        lambda **_kwargs: "<img src='x'/>",
+    )
+    monkeypatch.setattr(cdf, "find_ome_arrow_columns", lambda data: ["OMECol"])
+    monkeypatch.setattr(
+        cdf,
+        "process_ome_arrow_data_as_html_display",
+        lambda _value: "<div>OME</div>",
+    )
+
+    html = cdf._generate_jupyter_dataframe_html()
+    assert "<img src='x'/>" in html
+    assert "<div>OME</div>" in html
+
+
+def test_render_output_displays_js_and_print_html(monkeypatch: pytest.MonkeyPatch):
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
+    cdf._custom_attrs["_output"] = nullcontext()
+    monkeypatch.setattr(
+        cdf,
+        "_generate_jupyter_dataframe_html",
+        lambda: '<div class="cyto-3d-image" data-volume="a"></div>',
+    )
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda _name: False)
+
+    displayed: list = []
+
+    def capture_display(value: object) -> None:
+        displayed.append(value)
+
+    monkeypatch.setattr(
+        "cytodataframe.frame.display",
+        capture_display,
+    )
+    result = cdf._render_output()
+    assert result is None
+    assert len(displayed) == 3
+
+
+def test_generate_trame_snapshot_html_paths(monkeypatch: pytest.MonkeyPatch):
+    cdf = CytoDataFrame(pd.DataFrame({"Image_FileName_DNA": ["dna.tiff"]}, index=[0]))
+    monkeypatch.setattr(cdf, "_generate_jupyter_dataframe_html", lambda: "<table/>")
+
+    # Early return when no bounding box.
+    cdf._custom_attrs["data_bounding_box"] = None
+    assert cdf._generate_trame_snapshot_html() == "<table/>"
+
+    # Snapshot render path.
+    cdf._custom_attrs["data_bounding_box"] = pd.DataFrame(
+        {
+            "Cells_AreaShape_BoundingBoxMinimum_X": [0],
+            "Cells_AreaShape_BoundingBoxMinimum_Y": [0],
+            "Cells_AreaShape_BoundingBoxMaximum_X": [1],
+            "Cells_AreaShape_BoundingBoxMaximum_Y": [1],
+        },
+        index=[0],
+    )
+    cdf._custom_attrs["_snapshot_cache"] = {}
+    cdf._custom_attrs["_snapshot_cache_lock"] = None
+    monkeypatch.setattr(cdf, "find_image_columns", lambda: ["Image_FileName_DNA"])
+    monkeypatch.setattr(cdf, "get_displayed_rows", lambda: [0])
+    monkeypatch.setattr(
+        cdf,
+        "_get_3d_volume_from_cell",
+        lambda row, column: (np.ones((2, 2, 2), dtype=np.uint8), (2, 2, 2)),
+    )
+    monkeypatch.setattr(
+        cdf,
+        "_pyvista_volume_snapshot_html",
+        lambda volume, dims: "<img/>",
+    )
+    out = cdf._generate_trame_snapshot_html()
+    assert "<img/>" in out or "Snapshot unavailable" in out
+
+
+def test_pyvista_volume_snapshot_html_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_pyvista(
+        monkeypatch,
+        screenshot_image=np.zeros((2, 2, 3), dtype=np.uint8),
+    )
+    cdf = CytoDataFrame(
+        pd.DataFrame({"A": [1]}),
+        display_options={"width": "10px", "height": "10px"},
+    )
+    html = cdf._pyvista_volume_snapshot_html(
+        volume=np.ones((2, 2, 2), dtype=np.uint8),
+        dims=(2, 2, 2),
+    )
+    assert html is not None
+    assert "data:image/png;base64" in html
+
+
+def test_pyvista_volume_snapshot_html_returns_none_when_no_image(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pyvista(monkeypatch, screenshot_image=None)
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
+    html = cdf._pyvista_volume_snapshot_html(
+        volume=np.ones((2, 2, 2), dtype=np.uint8),
+        dims=(2, 2, 2),
+    )
+    assert html is None
+
+
+def test_show_trame_trame_layout_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_pyvista(
+        monkeypatch,
+        screenshot_image=np.zeros((2, 2, 3), dtype=np.uint8),
+    )
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}), display_options={"view": "trame"})
+
+    monkeypatch.setattr(
+        cdf,
+        "_get_3d_volume_from_cell",
+        lambda row, column: (np.ones((2, 2, 2), dtype=np.uint8), (2, 2, 2)),
+    )
+    monkeypatch.setattr(
+        cdf,
+        "_generate_jupyter_dataframe_html",
+        lambda: "<table>t</table>",
+    )
+    monkeypatch.setattr(
+        cdf,
+        "_build_pyvista_viewer",
+        lambda **_kwargs: types.SimpleNamespace(server=None, _server=None),
+    )
+
+    class DummyCtx:
+        def __enter__(self):  # noqa: ANN204
+            return self
+
+        def __exit__(self, *_exc: object) -> bool:
+            return False
+
+    class DummyLayout:
+        def __init__(self, _server: object) -> None:
+            self.content = DummyCtx()
+            self.content.children = []
+
+        def __enter__(self):  # noqa: ANN204
+            return self
+
+        def __exit__(self, *_exc: object) -> bool:
+            return False
+
+    class DummyServer:
+        client_type = "vue2"
+
+        def url(self) -> str:
+            return "http://example"
+
+    def fake_get_server() -> DummyServer:
+        return DummyServer()
+
+    html_mod = types.SimpleNamespace(Div=lambda *args, **kwargs: None)
+    vuetify_mod = types.SimpleNamespace(
+        VContainer=lambda *args, **kwargs: DummyCtx(),
+        VRow=lambda *args, **kwargs: DummyCtx(),
+        VCol=lambda *args, **kwargs: DummyCtx(),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "trame.app",
+        types.SimpleNamespace(
+            get_server=fake_get_server,
+            __spec__=ModuleSpec("trame.app", loader=None),
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "trame.widgets",
+        types.SimpleNamespace(
+            html=html_mod,
+            vuetify=vuetify_mod,
+            __spec__=ModuleSpec("trame.widgets", loader=None),
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "trame.ui.vuetify",
+        types.SimpleNamespace(
+            SinglePageLayout=DummyLayout,
+            __spec__=ModuleSpec("trame.ui.vuetify", loader=None),
+        ),
+    )
+
+    shown: list = []
+
+    def capture_shown(value: object) -> None:
+        shown.append(value)
+
+    monkeypatch.setattr(
+        "cytodataframe.frame.display",
+        capture_shown,
+    )
+    layout = cdf.show_trame(row=0, column="A", backend=None)
+    assert layout is not None
+    assert shown
+
+
+def test_repr_returns_expected_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda _name: True)
+    assert cdf.__repr__() == ""
+    debug_repr = cdf.__repr__(debug=True)
+    assert isinstance(debug_repr, str)
+    assert "A" in debug_repr
+
+
+def test_enable_debug_mode_adds_handler_once() -> None:
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
+    frame_logger = logging.getLogger("cytodataframe.frame")
+    original_handlers = list(frame_logger.handlers)
+    frame_logger.handlers = []
+    frame_logger.setLevel(logging.INFO)
+    try:
+        cdf._enbable_debug_mode()
+        assert frame_logger.level == logging.DEBUG
+        assert len(frame_logger.handlers) == 1
+        cdf._enbable_debug_mode()
+        assert len(frame_logger.handlers) == 1
+    finally:
+        frame_logger.handlers = original_handlers

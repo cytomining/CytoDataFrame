@@ -5,9 +5,9 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.18.1
+#       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: cytodataframe-shAZamSV-py3.12
 #     language: python
 #     name: python3
 # ---
@@ -338,3 +338,19 @@ cdf.to_ome_parquet(file_path="example.ome.parquet")
 
 # read OME Parquet file into the CytoDataFrame
 CytoDataFrame(data="example.ome.parquet")
+
+# +
+# %%time
+# 3D example dataset, showing how
+# CytoDataFrame can be used with 3D data for visualization.
+cp_3d_path = "../../../tests/data/CP_tutorial_3D_noise_nuclei_segmentation"
+
+# send the data to CytoDataFrame
+# note: because we have 3d input images, CytoDataFrame will automatically process
+# using the 3D display options for interactive visualization.
+cdf = CytoDataFrame(
+    data=pathlib.Path(cp_3d_path) / "output/MyExpt_RealsizeNuclei.csv",
+    data_context_dir=str(pathlib.Path(cp_3d_path) / "input"),
+)
+
+cdf[["ImageNumber", "ObjectNumber", "FileName_Nuclei"]][:3]

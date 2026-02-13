@@ -168,3 +168,39 @@ references:
       JUMP (cpg0000-jump-pilot) was used to help demonstrate CytoDataFrame performance
       with large data. See here for more information:
       https://github.com/broadinstitute/cellpainting-gallery
+  - type: article
+    authors:
+      - family-names: Blin
+        given-names: Guillaume
+      - family-names: Sadurska
+        given-names: Dominika
+      - family-names: Portero Migueles
+        given-names: Rafael
+      - family-names: Chen
+        given-names: Ni
+      - family-names: Watson
+        given-names: James A.
+      - family-names: Lowell
+        given-names: Sally
+    title: "Nessys: A new set of tools for the automated detection of nuclei within intact tissues and dense 3D cultures"
+    journal: PLoS Biology
+    volume: "17"
+    issue: "8"
+    pages: e3000388
+    year: 2019
+    doi: "10.1371/journal.pbio.3000388"
+    url: "https://doi.org/10.1371/journal.pbio.3000388"
+    notes: >
+      This work used the file "6001240_labels.zarr" from the DISCEPTS imaging
+      dataset, available through the Image Data Resource (IDR) under accession
+      number idr0062.
+  - type: data
+    title: "3D Noise Nuclei Segmentation Tutorial"
+    authors:
+      - name: "CellProfiler Tutorials Team"
+    url: "https://tutorials.cellprofiler.org/#3d-noise-nuclei-segmentation"
+    publisher:
+      name: "CellProfiler Organization"
+    notes: >
+      This work uses data that were slightly modified from the
+      CellProfiler 3D Noise Nuclei Segmentation tutorial.

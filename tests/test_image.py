@@ -369,12 +369,20 @@ def test_colorconv_control_may_emit_warning():
     """
     bad = np.array([[0.0, np.inf], [np.nan, 1.0]], dtype=float)
 
-    funcs = [
-        lambda a: skimage.color.gray2rgb(a),
-        lambda a: skimage.color.rgb2lab(np.dstack([a, a, a])),
-        lambda a: skimage.color.lab2rgb(np.dstack([a * 100.0, a * 255.0, a * 255.0])),
-        lambda a: skimage.color.rgb2hsv(np.dstack([a, a, a])),
-    ]
+    def _gray2rgb(a: np.ndarray) -> np.ndarray:
+        return skimage.color.gray2rgb(a)
+
+    def _rgb2lab(a: np.ndarray) -> np.ndarray:
+        return skimage.color.rgb2lab(np.dstack([a, a, a]))
+
+    def _lab2rgb(a: np.ndarray) -> np.ndarray:
+        stacked = np.dstack([a * 100.0, a * 255.0, a * 255.0])
+        return skimage.color.lab2rgb(stacked)
+
+    def _rgb2hsv(a: np.ndarray) -> np.ndarray:
+        return skimage.color.rgb2hsv(np.dstack([a, a, a]))
+
+    funcs = [_gray2rgb, _rgb2lab, _lab2rgb, _rgb2hsv]
 
     saw_warning = False
     with warnings.catch_warnings(record=True) as caught:
@@ -429,5 +437,110 @@ def test_add_image_scale_bar_avoids_colorconv_warning_with_bad_values():
         )
         for w in caught
     ), "Should not trigger the skimage colorconv matmul warning."
-
     assert out.ndim == 3 and out.shape == (H, W, 3) and out.dtype == np.uint8
+
+
+def test_draw_outline_on_image_from_outline_raises_for_non_rgb(tmp_path: pathlib.Path):
+    outline_image_path = tmp_path / "outline.png"
+    imageio.imwrite(outline_image_path, np.zeros((5, 5), dtype=np.uint8))
+
+    with pytest.raises(ValueError, match="3 channels"):
+        draw_outline_on_image_from_outline(
+            np.zeros((5, 5, 4), dtype=np.uint8),
+            str(outline_image_path),
+        )
+
+
+def test_draw_outline_on_image_from_mask_raises_for_non_rgb(tmp_path: pathlib.Path):
+    mask_image_path = tmp_path / "mask.png"
+    imageio.imwrite(mask_image_path, np.zeros((5, 5), dtype=np.uint8))
+
+    with pytest.raises(ValueError, match="3 channels"):
+        draw_outline_on_image_from_mask(
+            np.zeros((5, 5, 4), dtype=np.uint8),
+            str(mask_image_path),
+        )
+
+
+def test_draw_outline_on_image_from_outline_converts_non_uint8(tmp_path: pathlib.Path):
+    outline_image_path = tmp_path / "outline.png"
+    imageio.imwrite(outline_image_path, np.full((5, 5), 255, dtype=np.uint8))
+    orig = np.zeros((5, 5, 3), dtype=np.float32)
+    out = draw_outline_on_image_from_outline(orig, str(outline_image_path))
+    assert out.dtype == np.uint8
+
+
+def test_draw_outline_on_image_from_mask_handles_multichannel_mask(
+    tmp_path: pathlib.Path,
+):
+    mask = np.zeros((6, 6, 3), dtype=np.uint8)
+    mask[2:4, 2:4, :] = 255
+    mask_image_path = tmp_path / "mask_rgb.png"
+    imageio.imwrite(mask_image_path, mask)
+    out = draw_outline_on_image_from_mask(
+        np.zeros((6, 6, 3), dtype=np.uint8), str(mask_image_path)
+    )
+    assert out.shape == (6, 6, 3)
+
+
+def test_get_pixel_bbox_from_offsets_handles_inverted_axes():
+    bbox = get_pixel_bbox_from_offsets(
+        center_x=10, center_y=20, rel_bbox=(5, 8, -5, -8)
+    )
+    assert bbox == (5, 12, 15, 28)
+
+
+def test_add_image_scale_bar_returns_original_when_um_per_pixel_nonpositive():
+    img = np.zeros((8, 8), dtype=np.uint8)
+    out = add_image_scale_bar(img, um_per_pixel=0.0)
+    assert out is img
+
+
+def test_add_image_scale_bar_scales_float_unit_range():
+    img = np.linspace(0.0, 1.0, 16, dtype=np.float32).reshape(4, 4)
+    out = add_image_scale_bar(
+        img,
+        um_per_pixel=0.5,
+        length_um=2.0,
+        thickness_px=1,
+        margin_px=0,
+    )
+    assert out.dtype == np.uint8
+    assert out.shape == (4, 4, 3)
+    assert int(out.max()) <= 255
+
+
+def test_add_image_scale_bar_raises_on_unsupported_shape():
+    with pytest.raises(ValueError, match="Unsupported image shape"):
+        add_image_scale_bar(
+            np.zeros((2, 2, 2), dtype=np.uint8),
+            um_per_pixel=0.5,
+        )
+
+
+def test_add_image_scale_bar_clips_extent_for_small_images():
+    img = np.zeros((5, 5), dtype=np.uint8)
+    out = add_image_scale_bar(
+        img,
+        um_per_pixel=0.1,
+        length_um=50.0,
+        thickness_px=4,
+        location="upper left",
+        margin_px=4,
+    )
+    # The clipped bar still exists and remains within bounds.
+    assert out.shape == (5, 5, 3)
+    assert np.any(np.all(out == (255, 255, 255), axis=-1))
+
+
+def test_add_image_scale_bar_accepts_rgba_input():
+    img = np.zeros((6, 6, 4), dtype=np.uint8)
+    img[..., 3] = 200
+    out = add_image_scale_bar(
+        img,
+        um_per_pixel=0.5,
+        length_um=2.0,
+        thickness_px=1,
+        margin_px=0,
+    )
+    assert out.shape == (6, 6, 3)

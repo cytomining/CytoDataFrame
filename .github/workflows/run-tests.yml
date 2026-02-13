@@ -2,7 +2,7 @@
 # used for running tests
 name: tests
 
-on:
+"on":
   push:
     branches: [main]
   pull_request:
@@ -28,7 +28,7 @@ jobs:
         run: |
           poetry version 99.0.0
       - name: Install environment
-        run: poetry install --no-interaction --no-ansi
+        run: poetry install --with dev --no-interaction --no-ansi
       # run pre-commit
       - uses: pre-commit/action@v3.0.1
         id: pre_commit
@@ -57,15 +57,17 @@ jobs:
         run: |
           poetry version 99.0.0
       - name: Install environment
-        run: poetry install --no-interaction --no-ansi
+        run: poetry install --with dev --no-interaction --no-ansi
       - name: Run pytest (non-3.13)
         if: ${{ matrix.python_version != '3.13' }}
         # run all tests
-        run: poetry run pytest
+        run: poetry run pytest -o addopts=
       - name: Run pytest (py 3.13)
         if: ${{ matrix.python_version == '3.13' }}
         # run all tests except integration tests with cosmicqc
-        run: poetry run pytest --ignore=tests/test_project_integration.py
+        run: |
+          poetry run pytest -o addopts= \
+            --ignore=tests/test_project_integration.py
       - name: Reset version to 0.0.0
         run: |
           poetry version 0.0.0

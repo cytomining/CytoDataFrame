@@ -4,8 +4,13 @@ Tests project integration with other packages
 
 import subprocess
 
-import cosmicqc
 import pandas as pd
+import pytest
+
+cosmicqc = pytest.importorskip(
+    "cosmicqc",
+    reason="project integration tests require cosmicqc to be installed",
+)
 
 
 def test_cosmicqc_find_outliers_cfret(cytotable_CFReT_data_df: pd.DataFrame):

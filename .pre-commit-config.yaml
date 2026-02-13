@@ -31,7 +31,8 @@ repos:
               .*\.lock |
               .*\.json |
               .*\.ipynb |
-              .*\.cppipe
+              .*\.cppipe |
+              tests/data/CP_tutorial_3D_noise_nuclei_segmentation/output/MyExpt_Experiment\.csv
           )$
 -   repo: https://github.com/executablebooks/mdformat
     rev: 0.7.18
@@ -53,25 +54,26 @@ repos:
     hooks:
     -   id: actionlint
 -   repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: "v0.14.14"
+    rev: "v0.15.0"
     hooks:
     -   id: ruff-format
     -   id: ruff-check
 -   repo: https://github.com/software-gardening/almanack
-    rev: v0.1.13
+    rev: v0.1.15
     hooks:
     -   id: almanack-check
 -   repo: https://gitlab.com/vojko.pribudic.foss/pre-commit-update
     rev: v0.6.0
     hooks:
     -   id: pre-commit-update
-        args: ["--keep", "mdformat", "--keep", "pre-commit-update", "--keep", "cffconvert"]
+        args: ["--keep", "mdformat", "--keep", "pre-commit-update", "--keep", "cffconvert",
+          "--keep", "pyproject-fmt"]
 -   repo: local
     hooks:
     -   id: code-cov-gen
         name: Generate code coverage
         language: system
-        entry: poetry run coverage run -m pytest
+        entry: poetry run coverage run -m pytest -o addopts=
         pass_filenames: false
         always_run: true
 -   repo: https://github.com/Weird-Sheep-Labs/coverage-pre-commit

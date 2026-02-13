@@ -6,7 +6,7 @@ Note: expects Docker to be installed as a CLI on the system.
 
 This file may be processed using the following command from the root
 of the project repository:
-`poetry run python \
+`uv run python \
 tests/data/cytotable/NF1_cellpainting_data_shrunken/create_mask_data.py`
 """
 

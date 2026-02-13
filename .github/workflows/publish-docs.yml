@@ -23,20 +23,14 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-      - name: Setup for poetry
-        run: |
-          python -m pip install poetry poetry-dynamic-versioning
-      - name: Simulate version tag for cosmicqc install compatibility
-        run: |
-          poetry version 99.0.0
-      - name: poetry deps
-        run: poetry install
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v7
       - name: Build documentation
         run: |
           mkdir pages
           touch pages/.nojekyll
           cd docs
-          poetry run sphinx-build src build
+          uv run --frozen --with docs sphinx-build src build
           # remove any doctrees dirs which aren't needed for publishing
           find ./build -type d -name '.doctrees' -exec rm -rf {} +
           cp -r build/* ../pages/
@@ -45,6 +39,3 @@ jobs:
         with:
           branch: pages
           folder: pages
-      - name: Reset version to 0.0.0
-        run: |
-          poetry version 0.0.0

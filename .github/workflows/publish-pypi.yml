@@ -23,12 +23,9 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-      - name: Setup for poetry
-        run: |
-          python -m pip install poetry poetry-dynamic-versioning
-      - name: Install environment
-        run: poetry install --without dev --no-interaction --no-ansi
-      - name: poetry build distribution content
-        run: poetry build
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v7
+      - name: uv build distribution content
+        run: uv build
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

@@ -1124,6 +1124,25 @@ def test_is_3d_image_array_accepts_thin_small_volume_shapes() -> None:
     assert CytoDataFrame._is_3d_image_array(singleton_x) is True
 
 
+def test_extract_array_from_ome_arrow_rebuilds_multichannel_planes() -> None:
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
+    data_value = {
+        "type": "ome.arrow",
+        "pixels_meta": {"size_x": 2, "size_y": 2, "size_z": 1, "size_c": 3},
+        "planes": [
+            {"t": 0, "c": 0, "z": 0, "pixels": [10, 20, 30, 40]},
+            {"t": 0, "c": 1, "z": 0, "pixels": [50, 60, 70, 80]},
+            {"t": 0, "c": 2, "z": 0, "pixels": [90, 100, 110, 120]},
+        ],
+    }
+
+    image = cdf._extract_array_from_ome_arrow(data_value)
+
+    assert image is not None
+    assert image.shape == (2, 2, 3)
+    assert np.array_equal(image[0, 0], np.array([10, 50, 90], dtype=np.uint8))
+
+
 def _install_fake_pyvista(  # noqa: C901
     monkeypatch: pytest.MonkeyPatch,
     screenshot_image: np.ndarray | None = None,

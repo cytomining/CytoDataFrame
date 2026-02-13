@@ -716,6 +716,10 @@ class CytoDataFrame(pd.DataFrame):
                 "CytoDataFrame.to_ome_parquet requires the optional 'ome-arrow' "
                 "dependency. Install it via `pip install ome-arrow`."
             ) from exc
+        try:
+            from ome_arrow import from_numpy as ome_from_numpy  # type: ignore
+        except ImportError:
+            ome_from_numpy = None
 
         try:
             import importlib.metadata as importlib_metadata
@@ -907,24 +911,64 @@ class CytoDataFrame(pd.DataFrame):
                             column_values[col_name].append(None)
                             continue
 
-                        temp_path = (
-                            tmpdir_path
-                            / f"{sanitized_col}_{layer_key}_{uuid.uuid4().hex}.tiff"
-                        )
                         try:
-                            with warnings.catch_warnings():
-                                warnings.simplefilter("ignore", UserWarning)
-                                imageio.imwrite(temp_path, layer_array, format="tiff")
-                        except Exception as exc:
-                            logger.error(
-                                "Failed to write temporary TIFF for OMEArrow (%s): %s",
-                                layer_key,
-                                exc,
-                            )
-                            column_values[col_name].append(None)
-                            continue
-                        try:
-                            ome_struct = OMEArrow(data=str(temp_path)).data
+                            # Prefer direct in-memory conversion when available.
+                            # This avoids TIFF round-trips and keeps channel
+                            # layout explicit.
+                            if (
+                                ome_from_numpy is not None
+                                and layer_array.ndim < MIN_VOLUME_NDIM
+                            ):
+                                ome_struct = ome_from_numpy(
+                                    np.asarray(layer_array),
+                                    dim_order="YX",
+                                )
+                            elif (
+                                ome_from_numpy is not None
+                                and layer_array.ndim == MIN_VOLUME_NDIM
+                                and layer_array.shape[-1] in RGB_LIKE_CHANNEL_COUNTS
+                            ):
+                                # OME-Arrow expects channels-first for
+                                # 2D multi-channel arrays.
+                                channel_first = np.moveaxis(
+                                    np.asarray(layer_array), -1, 0
+                                )
+                                ome_struct = ome_from_numpy(
+                                    channel_first,
+                                    dim_order="CYX",
+                                )
+                            elif (
+                                layer_array.ndim == MIN_VOLUME_NDIM
+                                and layer_array.shape[-1] in RGB_LIKE_CHANNEL_COUNTS
+                            ):
+                                # Compatibility fallback for environments where
+                                # `ome_arrow.from_numpy` is not available.
+                                temp_path = tmpdir_path / (
+                                    f"{sanitized_col}_{layer_key}_"
+                                    f"{uuid.uuid4().hex}.tiff"
+                                )
+                                with warnings.catch_warnings():
+                                    warnings.simplefilter("ignore", UserWarning)
+                                    imageio.imwrite(
+                                        temp_path,
+                                        layer_array,
+                                        format="tiff",
+                                    )
+                                ome_struct = OMEArrow(data=str(temp_path)).data
+                            else:
+                                # Generic fallback for all other array shapes.
+                                temp_path = tmpdir_path / (
+                                    f"{sanitized_col}_{layer_key}_"
+                                    f"{uuid.uuid4().hex}.tiff"
+                                )
+                                with warnings.catch_warnings():
+                                    warnings.simplefilter("ignore", UserWarning)
+                                    imageio.imwrite(
+                                        temp_path,
+                                        layer_array,
+                                        format="tiff",
+                                    )
+                                ome_struct = OMEArrow(data=str(temp_path)).data
                             if hasattr(ome_struct, "as_py"):
                                 ome_struct = ome_struct.as_py()
                         except Exception as exc:
@@ -1255,7 +1299,7 @@ class CytoDataFrame(pd.DataFrame):
 
         return None, None
 
-    def _extract_array_from_ome_arrow(  # noqa: PLR0911
+    def _extract_array_from_ome_arrow(  # noqa: C901, PLR0911, PLR0912
         self: CytoDataFrame_type,
         data_value: Any,
     ) -> Optional[np.ndarray]:
@@ -1269,6 +1313,7 @@ class CytoDataFrame(pd.DataFrame):
             size_x = int(pixels_meta.get("size_x"))
             size_y = int(pixels_meta.get("size_y"))
             size_z = int(pixels_meta.get("size_z") or 1)
+            size_c = int(pixels_meta.get("size_c") or 1)
             planes = data_value.get("planes")
 
             if size_x <= 0 or size_y <= 0 or planes is None:
@@ -1284,21 +1329,43 @@ class CytoDataFrame(pd.DataFrame):
             if not plane_entries:
                 return None
 
-            plane = plane_entries[0]
-            pixels = plane.get("pixels")
-            if pixels is None:
-                return None
-
-            np_pixels = np.asarray(pixels)
             base = size_x * size_y
-            if base <= 0 or np_pixels.size == 0 or np_pixels.size % base != 0:
+            if base <= 0:
                 return None
 
-            channel_count = np_pixels.size // base
-            if channel_count == 1:
-                array = np_pixels.reshape((size_y, size_x))
+            if size_c > 1:
+                planes_by_c = {}
+                for plane in plane_entries:
+                    if int(plane.get("t") or 0) != 0 or int(plane.get("z") or 0) != 0:
+                        continue
+                    channel_index = int(plane.get("c") or 0)
+                    pixels = plane.get("pixels")
+                    if pixels is None:
+                        continue
+                    np_pixels = np.asarray(pixels)
+                    if np_pixels.size != base:
+                        continue
+                    planes_by_c[channel_index] = np_pixels.reshape((size_y, size_x))
+
+                if len(planes_by_c) != size_c:
+                    return None
+
+                array = np.stack([planes_by_c[c] for c in range(size_c)], axis=-1)
             else:
-                array = np_pixels.reshape((size_y, size_x, channel_count))
+                plane = plane_entries[0]
+                pixels = plane.get("pixels")
+                if pixels is None:
+                    return None
+
+                np_pixels = np.asarray(pixels)
+                if np_pixels.size == 0 or np_pixels.size % base != 0:
+                    return None
+
+                channel_count = np_pixels.size // base
+                if channel_count == 1:
+                    array = np_pixels.reshape((size_y, size_x))
+                else:
+                    array = np_pixels.reshape((size_y, size_x, channel_count))
 
             return self._ensure_uint8(array)
         except Exception as exc:

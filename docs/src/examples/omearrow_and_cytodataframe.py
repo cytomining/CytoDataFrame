@@ -28,7 +28,7 @@ oa_img_slice
 # show the OME Arrow struct
 oa_img_slice.data
 
-# + colab={"base_uri": "https://localhost:8080/", "height": 1000, "referenced_widgets": ["2d299fff8e7d44d49adf62524c1063ba", "88a9126a2faf4bf0b80b20c3c7571e9a", "40f54afe0c3f4fe38a6b9ccd9a832414", "85bc1dacf14847ad84aa106c915cb360", "b4cfe791b5b24a8191f1dd020e4ca4ae", "f85e6ac6514b4d6f98fbdc7d6696a692", "aa2b037ccf0948db8be086b0e9d3b77a"]} id="zcaDHeNorxCt" outputId="e64c061b-c56e-462b-dfe0-c73de76df0d3"
+# + colab={"base_uri": "https://localhost:8080/", "height": 1000} id="zcaDHeNorxCt" outputId="e64c061b-c56e-462b-dfe0-c73de76df0d3"
 import pyarrow as pa
 import pyarrow.parquet as pq
 from cytodataframe import CytoDataFrame

@@ -15,13 +15,13 @@ updates:
       # Check for updates to GitHub Actions every month
       interval: "monthly"
 
-  # Perform checks and updates for python uv environment.
+  # Perform checks and updates for python poetry environment.
   # See here for more information:
   # https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file#pip-and-pip-compile
-  - package-ecosystem: "uv"
+  - package-ecosystem: "pip"
     directory: "/"
     schedule:
-      # Check for updates to uv lockfile every month
+      # Check for updates to poetry lockfile every month
       interval: "monthly"
     groups:
       python-packages:

@@ -3,7 +3,7 @@ build-backend = "setuptools.build_meta"
 requires = [ "setuptools>=64", "setuptools-scm>=8" ]
 
 [project]
-name = "cytodataframe"
+name = "CytoDataFrame"
 description = """\
   An in-memory data analysis format for single-cell profiles alongside their corresponding images and segmentation \
   masks.\

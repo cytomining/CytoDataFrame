@@ -21,14 +21,8 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-      - name: Setup for poetry
-        run: |
-          python -m pip install poetry
-      - name: Simulate version tag for cosmicqc install compatibility
-        run: |
-          poetry version 99.0.0
-      - name: Install environment
-        run: poetry install --with dev --no-interaction --no-ansi
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v7
       # run pre-commit
       - uses: pre-commit/action@v3.0.1
         id: pre_commit
@@ -50,24 +44,15 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python_version }}
-      - name: Setup for poetry
-        run: |
-          python -m pip install poetry
-      - name: Simulate version tag for cosmicqc install compatibility
-        run: |
-          poetry version 99.0.0
-      - name: Install environment
-        run: poetry install --with dev --no-interaction --no-ansi
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v7
       - name: Run pytest (non-3.13)
         if: ${{ matrix.python_version != '3.13' }}
         # run all tests
-        run: poetry run pytest -o addopts=
+        run: uv run --frozen pytest -o addopts=
       - name: Run pytest (py 3.13)
         if: ${{ matrix.python_version == '3.13' }}
         # run all tests except integration tests with cosmicqc
         run: |
-          poetry run pytest -o addopts= \
+          uv run --frozen pytest -o addopts= \
             --ignore=tests/test_project_integration.py
-      - name: Reset version to 0.0.0
-        run: |
-          poetry version 0.0.0

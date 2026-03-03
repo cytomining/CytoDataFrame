@@ -1,6 +1,6 @@
 [build-system]
 build-backend = "setuptools.build_meta"
-requires = [ "setuptools>=64", "setuptools-scm>=8" ]
+requires = [ "setuptools>=77", "setuptools-scm>=8" ]
 
 [project]
 name = "cytodataframe"
@@ -29,14 +29,11 @@ dependencies = [
   "nest-asyncio>=1.6,<2",
   "ome-arrow>=0.0.3,<0.0.7",
   "opencv-python>=4.10.0.84,<5",
-  "pandas<2.2.2; python_full_version<'3.9'",
-  "pandas>=2.2.2,<3; python_full_version>='3.9'",
+  "pandas>=2.2.2,<3",
   "pyarrow>=16",
   "pyvista>=0.46.4",
-  "pywavelets>=1.4.1,<2; python_full_version<'3.9'",
-  "pywavelets>1.4.1; python_full_version>='3.9'",
-  "scikit-image>=0.19.3,<0.20; python_full_version<'3.9'",
-  "scikit-image>0.19.3; python_full_version>='3.9'",
+  "pywavelets>1.4.1",
+  "scikit-image>0.19.3",
   "trame>=3.12",
   "trame-vtk>=2.10",
   "trame-vuetify>=3.1",

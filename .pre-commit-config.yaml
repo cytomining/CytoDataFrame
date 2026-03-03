@@ -76,4 +76,6 @@ repos:
     hooks:
     -   id: coverage-xml
     -   id: coverage-badge
+        additional_dependencies:
+        -   setuptools<81
         args: ["-o", "media/coverage-badge.svg"]

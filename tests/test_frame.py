@@ -1646,6 +1646,7 @@ def _install_fake_pyvista_with_records(  # noqa: C901
     records: dict[str, list[dict[str, object]]],
 ) -> None:
     """Install a lightweight fake PyVista module that records render calls."""
+
     class FakePointData:
         def __init__(self) -> None:
             self.data = {}

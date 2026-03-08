@@ -284,6 +284,82 @@ def test_prepare_layers_3d_uses_loaded_volume_without_ome_arrow_fallback(
     assert "data-volume=" in html_value
 
 
+def test_prepare_layers_3d_includes_label_overlay_from_mask_dir(
+    tmp_path: pathlib.Path,
+) -> None:
+    volume = np.arange(4 * 5 * 6, dtype=np.uint8).reshape(4, 5, 6)
+    image_path = tmp_path / "vol3d.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    mask_dir = tmp_path / "masks"
+    mask_dir.mkdir()
+    label = np.zeros((4, 5, 6), dtype=np.uint8)
+    label[1:3, 2:4, 1:5] = 255
+    tifffile.imwrite(mask_dir / "vol3d_mask.tiff", label)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+        data_mask_context_dir=str(mask_dir),
+    )
+
+    layers = cdf._prepare_cropped_image_layers(
+        data_value=image_path.name,
+        bounding_box=(0, 0, 6, 5),
+        include_composite=False,
+        include_original=False,
+        include_mask_outline=False,
+    )
+
+    html_value = layers.get(CytoDataFrame._HTML_3D_STUB_KEY)
+    assert isinstance(html_value, str)
+    assert "data-volume=" in html_value
+    assert 'data-label-volume="' in html_value
+
+
+def test_get_3d_label_overlay_from_cell_applies_bbox_crop(
+    tmp_path: pathlib.Path,
+) -> None:
+    volume = np.arange(4 * 5 * 6, dtype=np.uint8).reshape(4, 5, 6)
+    image_path = tmp_path / "vol3d.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    mask_dir = tmp_path / "masks"
+    mask_dir.mkdir()
+    label = np.zeros((4, 5, 6), dtype=np.uint8)
+    label[1:3, 1:4, 1:5] = 255
+    tifffile.imwrite(mask_dir / "vol3d_mask.tiff", label)
+
+    data = pd.DataFrame(
+        {
+            "Image_FileName_DNA": [image_path.name],
+            "AreaShape_BoundingBoxMinimum_X": [1],
+            "AreaShape_BoundingBoxMaximum_X": [5],
+            "AreaShape_BoundingBoxMinimum_Y": [1],
+            "AreaShape_BoundingBoxMaximum_Y": [4],
+            "AreaShape_BoundingBoxMinimum_Z": [1],
+            "AreaShape_BoundingBoxMaximum_Z": [3],
+        }
+    )
+    cdf = CytoDataFrame(
+        data=data,
+        data_context_dir=str(tmp_path),
+        data_mask_context_dir=str(mask_dir),
+    )
+
+    cropped_volume, _ = cdf._get_3d_volume_from_cell(row=0, column="Image_FileName_DNA")
+    overlay = cdf._get_3d_label_overlay_from_cell(
+        row=0,
+        column="Image_FileName_DNA",
+        expected_shape=cropped_volume.shape,
+    )
+
+    assert overlay is not None
+    assert overlay.shape == cropped_volume.shape
+    assert overlay.dtype == np.uint8
+    assert overlay.max() == 255
+
+
 def test_cytodataframe_input(
     tmp_path: pathlib.Path,
     basic_outlier_dataframe: pd.DataFrame,
@@ -1056,6 +1132,11 @@ def test_show_widget_table_renders_3d_viewer_cells_successfully(
         "_get_3d_volume_from_cell",
         lambda row, column: (np.ones((2, 2, 2), dtype=np.uint8), (2, 2, 2)),
     )
+    monkeypatch.setattr(
+        cdf,
+        "_get_3d_label_overlay_from_cell",
+        lambda row, column, expected_shape: np.ones(expected_shape, dtype=np.uint8),
+    )
 
     captured: dict[str, object] = {}
 
@@ -1082,6 +1163,7 @@ def test_show_widget_table_renders_3d_viewer_cells_successfully(
     assert "…" in grid[2, 1].value
     assert captured["backend"] == "trame"
     assert captured["widget_height"] == "140px"
+    assert isinstance(captured.get("label_volume"), np.ndarray)
 
 
 def test_get_displayed_rows_when_under_limit(monkeypatch: pytest.MonkeyPatch):
@@ -1171,6 +1253,9 @@ def _install_fake_pyvista(  # noqa: C901
         def set_active_scalars(self, _name: str) -> None:
             return None
 
+        def contour(self, *args: object, **kwargs: object) -> object:
+            return object()
+
     class FakeProp:
         def SetInterpolationTypeToNearest(self) -> None:
             return None
@@ -1228,6 +1313,9 @@ def _install_fake_pyvista(  # noqa: C901
         def add_axes(self) -> None:
             return None
 
+        def add_mesh(self, *args: object, **kwargs: object) -> object:
+            return object()
+
         def show(self, **_kwargs: object) -> FakeViewer:
             return FakeViewer()
 
@@ -1260,6 +1348,48 @@ def test_build_pyvista_viewer_with_fake_module(monkeypatch: pytest.MonkeyPatch) 
     assert hasattr(viewer, "_cdf_plotter")
     assert "width: 100%;" in viewer.value
     assert "height: 100%;" in viewer.value
+
+
+def test_build_pyvista_viewer_with_filled_label_overlay_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pyvista(
+        monkeypatch,
+        screenshot_image=np.zeros((2, 2, 3), dtype=np.uint8),
+    )
+    cdf = CytoDataFrame(
+        pd.DataFrame({"A": [1]}),
+        display_options={"label_overlay_mode": "filled"},
+    )
+
+    viewer = cdf._build_pyvista_viewer(
+        volume=np.ones((2, 2, 2), dtype=np.uint8),
+        backend="trame",
+        widget_height="120px",
+        label_volume=np.ones((2, 2, 2), dtype=np.uint8),
+    )
+    assert hasattr(viewer, "_cdf_plotter")
+
+
+def test_build_pyvista_viewer_with_surface_label_overlay_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pyvista(
+        monkeypatch,
+        screenshot_image=np.zeros((2, 2, 3), dtype=np.uint8),
+    )
+    cdf = CytoDataFrame(
+        pd.DataFrame({"A": [1]}),
+        display_options={"label_overlay_mode": "surface"},
+    )
+
+    viewer = cdf._build_pyvista_viewer(
+        volume=np.ones((2, 2, 2), dtype=np.uint8),
+        backend="trame",
+        widget_height="120px",
+        label_volume=np.ones((2, 2, 2), dtype=np.uint8),
+    )
+    assert hasattr(viewer, "_cdf_plotter")
 
 
 def test_show_trame_falls_back_to_ipywidgets(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1467,11 +1597,19 @@ def test_generate_trame_snapshot_html_paths(monkeypatch: pytest.MonkeyPatch):
     )
     monkeypatch.setattr(
         cdf,
-        "_pyvista_volume_snapshot_html",
-        lambda volume, dims: "<img/>",
+        "_get_3d_label_overlay_from_cell",
+        lambda row, column, expected_shape: np.ones(expected_shape, dtype=np.uint8),
     )
+    captured: dict[str, object] = {}
+
+    def fake_snapshot(volume, dims, label_volume=None):  # noqa: ANN001, ANN202
+        captured["label_volume"] = label_volume
+        return "<img/>"
+
+    monkeypatch.setattr(cdf, "_pyvista_volume_snapshot_html", fake_snapshot)
     out = cdf._generate_trame_snapshot_html()
     assert "<img/>" in out or "Snapshot unavailable" in out
+    assert isinstance(captured.get("label_volume"), np.ndarray)
 
 
 def test_pyvista_volume_snapshot_html_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1501,6 +1639,140 @@ def test_pyvista_volume_snapshot_html_returns_none_when_no_image(
         dims=(2, 2, 2),
     )
     assert html is None
+
+
+def _install_fake_pyvista_with_records(  # noqa: C901
+    monkeypatch: pytest.MonkeyPatch,
+    records: dict[str, list[dict[str, object]]],
+) -> None:
+    """Install a lightweight fake PyVista module that records render calls."""
+    class FakePointData:
+        def __init__(self) -> None:
+            self.data = {}
+
+        def clear(self) -> None:
+            self.data = {}
+
+        def __setitem__(self, key: str, value: object) -> None:
+            self.data[key] = value
+
+        def set_active_scalars(self, _name: str) -> None:
+            raise AttributeError
+
+    class FakeImageData:
+        def __init__(self) -> None:
+            self.dimensions = None
+            self.spacing = None
+            self.origin = None
+            self.point_data = FakePointData()
+
+        def set_active_scalars(self, _name: str) -> None:
+            return None
+
+        def contour(self, *args: object, **kwargs: object) -> object:
+            return {"args": args, "kwargs": kwargs}
+
+    class FakeProp:
+        def SetInterpolationTypeToNearest(self) -> None:
+            return None
+
+        def SetInterpolationTypeToLinear(self) -> None:
+            return None
+
+        def SetInterpolateScalarsBeforeMapping(self, _value: bool) -> None:
+            return None
+
+        def SetScalarOpacityUnitDistance(self, _value: float) -> None:
+            return None
+
+    class FakeMapper:
+        def SetAutoAdjustSampleDistances(self, _value: bool) -> None:
+            return None
+
+        def SetUseJittering(self, _value: bool) -> None:
+            return None
+
+        def SetSampleDistance(self, _value: float) -> None:
+            return None
+
+    class FakeActor:
+        def __init__(self) -> None:
+            self.prop = FakeProp()
+            self.mapper = FakeMapper()
+
+        def GetProperty(self) -> FakeProp:
+            return self.prop
+
+        def GetMapper(self) -> FakeMapper:
+            return self.mapper
+
+    class FakePlotter:
+        def __init__(self, notebook: bool = False, off_screen: bool = False) -> None:
+            self.notebook = notebook
+            self.off_screen = off_screen
+
+        def set_background(self, _value: str) -> None:
+            return None
+
+        def add_volume(self, *args: object, **kwargs: object) -> FakeActor:
+            records["add_volume"].append({"args": args, "kwargs": kwargs})
+            return FakeActor()
+
+        def add_mesh(self, *args: object, **kwargs: object) -> object:
+            records["add_mesh"].append({"args": args, "kwargs": kwargs})
+            return object()
+
+        def screenshot(self, return_img: bool = True) -> np.ndarray | None:
+            if not return_img:
+                return None
+            return np.zeros((2, 2, 3), dtype=np.uint8)
+
+    fake_module = types.SimpleNamespace(
+        ImageData=FakeImageData,
+        Plotter=FakePlotter,
+        set_jupyter_backend=lambda _backend: None,
+        __spec__=ModuleSpec("pyvista", loader=None),
+    )
+    monkeypatch.setitem(sys.modules, "pyvista", fake_module)
+
+
+def test_pyvista_volume_snapshot_html_surface_adds_mesh_overlay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records = {"add_volume": [], "add_mesh": []}
+    _install_fake_pyvista_with_records(monkeypatch, records)
+    cdf = CytoDataFrame(
+        pd.DataFrame({"A": [1]}),
+        display_options={"label_overlay_mode": "surface"},
+    )
+    html = cdf._pyvista_volume_snapshot_html(
+        volume=np.ones((2, 2, 2), dtype=np.uint8),
+        dims=(2, 2, 2),
+        label_volume=np.ones((2, 2, 2), dtype=np.uint8),
+    )
+    assert html is not None
+    assert len(records["add_mesh"]) >= 2
+
+
+def test_pyvista_volume_snapshot_html_filled_adds_volume_overlay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records = {"add_volume": [], "add_mesh": []}
+    _install_fake_pyvista_with_records(monkeypatch, records)
+    cdf = CytoDataFrame(
+        pd.DataFrame({"A": [1]}),
+        display_options={"label_overlay_mode": "filled"},
+    )
+    html = cdf._pyvista_volume_snapshot_html(
+        volume=np.ones((2, 2, 2), dtype=np.uint8),
+        dims=(2, 2, 2),
+        label_volume=np.ones((2, 2, 2), dtype=np.uint8),
+    )
+    assert html is not None
+    assert len(records["add_volume"]) >= 2
+    assert any(
+        call["kwargs"].get("blending") == "maximum" for call in records["add_volume"]
+    )
 
 
 def test_show_trame_trame_layout_success(monkeypatch: pytest.MonkeyPatch) -> None:

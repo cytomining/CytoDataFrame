@@ -68,6 +68,28 @@ def test_build_3d_image_html_view_contains_vtk_script():
     assert "vtk.js" in html
 
 
+def test_build_3d_image_html_view_includes_label_overlay_data():
+    volume = np.zeros((2, 2, 2), dtype=np.uint8)
+    label = np.zeros((2, 2, 2), dtype=np.uint8)
+    label[0, 0, 0] = 1
+    html = build_3d_image_html_view(
+        volume=volume,
+        dims=(2, 2, 2),
+        data_value="volume.tiff",
+        candidate_path=pathlib.Path("volume.tiff"),
+        display_options={
+            "label_overlay_color": (255, 0, 0),
+            "label_overlay_opacity": 0.4,
+        },
+        label_volume=label,
+    )
+
+    assert 'data-label-volume="' in html
+    assert 'data-label-color="1.000000,0.000000,0.000000"' in html
+    assert 'data-label-opacity="0.400000"' in html
+    assert "labelVolume.getProperty().setInterpolationTypeToNearest();" in html
+
+
 def test_build_3d_image_html_view_uses_stub_when_inline_volume_too_large():
     volume = np.zeros((8, 8, 8), dtype=np.uint8)
     html = build_3d_image_html_view(

@@ -61,6 +61,7 @@ MIN_VOLUME_NDIM = 3
 RGB_LIKE_CHANNEL_COUNTS = (MIN_VOLUME_NDIM, 4)
 MIN_RGB_SPATIAL_DIM = 8
 MAX_RGB_ASPECT_RATIO = 4.0
+MIN_POSITION_COMPONENTS = 2
 
 # provide backwards compatibility for Self type in earlier Python versions.
 # see: https://peps.python.org/pep-0484/#annotating-instance-and-class-methods
@@ -2411,7 +2412,7 @@ class CytoDataFrame(pd.DataFrame):
         spacing: Tuple[float, float, float],
         base_sample: float,
         display_options: dict[str, Any],
-    ) -> None:
+    ) -> List[Any]:
         """Add a 3D label overlay to an existing PyVista plotter.
 
         Args:
@@ -2421,14 +2422,17 @@ class CytoDataFrame(pd.DataFrame):
             spacing: Voxel spacing tuple used when building label image data.
             base_sample: Base sampling distance used for volume overlays.
             display_options: Display options controlling overlay mode/style.
+        Returns:
+            A list of added overlay actor objects.
         """
+        overlay_actors: List[Any] = []
         if label_volume is None:
-            return
+            return overlay_actors
 
         try:
             import pyvista as pv  # type: ignore
         except Exception:
-            return
+            return overlay_actors
 
         try:
             label_arr = np.asarray(label_volume)
@@ -2441,7 +2445,7 @@ class CytoDataFrame(pd.DataFrame):
                     label_arr.shape,
                     volume.shape,
                 )
-                return
+                return overlay_actors
 
             label_xyz = np.transpose((label_arr > 0).astype(np.uint8), (2, 1, 0))
             label_grid = pv.ImageData()
@@ -2469,21 +2473,25 @@ class CytoDataFrame(pd.DataFrame):
             if overlay_mode == "surface":
                 contour = label_grid.contour(isosurfaces=[0.5], scalars="label_scalars")
                 edge_opacity = min(1.0, overlay_opacity + 0.15)
-                plotter.add_mesh(
-                    contour,
-                    color=overlay_color,
-                    opacity=overlay_opacity,
-                    smooth_shading=False,
-                    ambient=1.0,
-                    diffuse=0.0,
-                    specular=0.0,
+                overlay_actors.append(
+                    plotter.add_mesh(
+                        contour,
+                        color=overlay_color,
+                        opacity=overlay_opacity,
+                        smooth_shading=False,
+                        ambient=1.0,
+                        diffuse=0.0,
+                        specular=0.0,
+                    )
                 )
-                plotter.add_mesh(
-                    contour,
-                    color=overlay_color,
-                    style="wireframe",
-                    opacity=edge_opacity,
-                    line_width=2.5,
+                overlay_actors.append(
+                    plotter.add_mesh(
+                        contour,
+                        color=overlay_color,
+                        style="wireframe",
+                        opacity=edge_opacity,
+                        line_width=2.5,
+                    )
                 )
             else:
                 label_xyz_u8 = np.where(label_xyz > 0, 255, 0).astype(
@@ -2505,6 +2513,7 @@ class CytoDataFrame(pd.DataFrame):
                     opacity_unit_distance=base_sample,
                     blending="maximum",
                 )
+                overlay_actors.append(label_actor)
                 with contextlib.suppress(Exception):
                     label_prop = (
                         getattr(label_actor, "prop", None) or label_actor.GetProperty()
@@ -2514,12 +2523,14 @@ class CytoDataFrame(pd.DataFrame):
                     contour = label_grid.contour(
                         isosurfaces=[0.5], scalars="label_scalars"
                     )
-                    plotter.add_mesh(
-                        contour,
-                        color=overlay_color,
-                        style="wireframe",
-                        opacity=min(1.0, overlay_opacity + 0.05),
-                        line_width=2.0,
+                    overlay_actors.append(
+                        plotter.add_mesh(
+                            contour,
+                            color=overlay_color,
+                            style="wireframe",
+                            opacity=min(1.0, overlay_opacity + 0.05),
+                            line_width=2.0,
+                        )
                     )
 
             logger.info(
@@ -2530,6 +2541,133 @@ class CytoDataFrame(pd.DataFrame):
             )
         except Exception as exc:
             logger.debug("Unable to add 3D label overlay: %s", exc)
+            return overlay_actors
+        return overlay_actors
+
+    @staticmethod
+    def _set_overlay_actor_visibility(actor: Any, visible: bool) -> None:
+        """Set visibility for supported actor object variants."""
+        visible_flag = 1 if visible else 0
+        if hasattr(actor, "SetVisibility"):
+            actor.SetVisibility(visible_flag)
+            return
+        if hasattr(actor, "visibility"):
+            actor.visibility = bool(visible)
+            return
+        prop = getattr(actor, "prop", None)
+        if hasattr(prop, "SetOpacity"):
+            prop.SetOpacity(float(visible_flag))
+            return
+        getter = getattr(actor, "GetProperty", None)
+        if callable(getter):
+            with contextlib.suppress(Exception):
+                getter().SetOpacity(float(visible_flag))
+
+    @staticmethod
+    def _resolve_overlay_toggle_position(
+        plotter: Any,
+        display_options: dict[str, Any],
+        size: int,
+    ) -> Tuple[int, int]:
+        """Resolve checkbox position in display pixels (default lower-right)."""
+        configured = display_options.get("label_overlay_toggle_position")
+        if (
+            isinstance(configured, (tuple, list))
+            and len(configured) >= MIN_POSITION_COMPONENTS
+            and all(
+                isinstance(v, (int, float))
+                for v in configured[:MIN_POSITION_COMPONENTS]
+            )
+        ):
+            return int(configured[0]), int(configured[1])
+
+        width_px = 300
+        window_size = getattr(plotter, "window_size", None)
+        if (
+            isinstance(window_size, (tuple, list))
+            and len(window_size) >= MIN_POSITION_COMPONENTS
+            and isinstance(window_size[0], (int, float))
+        ):
+            width_px = int(window_size[0])
+        else:
+            configured_width = display_options.get("width", "300px")
+            width_digits = re.search(r"\d+", str(configured_width))
+            if width_digits:
+                width_px = int(width_digits.group(0))
+
+        margin = 10
+        x_pos = max(margin, width_px - int(size) - margin)
+        y_pos = int(display_options.get("label_overlay_toggle_vertical_offset", 10))
+        return x_pos, y_pos
+
+    @staticmethod
+    def _resolve_plotter_window_height(
+        plotter: Any,
+        display_options: dict[str, Any],
+    ) -> int:
+        """Resolve plotter pixel height for viewport text placement."""
+        window_size = getattr(plotter, "window_size", None)
+        if (
+            isinstance(window_size, (tuple, list))
+            and len(window_size) >= MIN_POSITION_COMPONENTS
+            and isinstance(window_size[1], (int, float))
+        ):
+            return int(window_size[1])
+        configured_height = display_options.get("height", "300px")
+        height_digits = re.search(r"\d+", str(configured_height))
+        if height_digits:
+            return int(height_digits.group(0))
+        return 300
+
+    def _add_label_overlay_toggle_control(
+        self: CytoDataFrame_type,
+        plotter: Any,
+        overlay_actors: List[Any],
+        display_options: dict[str, Any],
+    ) -> None:
+        """Add a PyVista checkbox widget to toggle label overlay visibility."""
+        if not overlay_actors:
+            return
+        if not bool(display_options.get("label_overlay_toggle", True)):
+            return
+        if not hasattr(plotter, "add_checkbox_button_widget"):
+            return
+
+        def _toggle_overlay(state: Any) -> None:
+            visible = bool(state)
+            for actor in overlay_actors:
+                with contextlib.suppress(Exception):
+                    self._set_overlay_actor_visibility(actor=actor, visible=visible)
+            with contextlib.suppress(Exception):
+                plotter.render()
+
+        size = int(display_options.get("label_overlay_toggle_size", 24))
+        position = self._resolve_overlay_toggle_position(
+            plotter=plotter,
+            display_options=display_options,
+            size=size,
+        )
+        with contextlib.suppress(Exception):
+            plotter.add_checkbox_button_widget(
+                callback=_toggle_overlay,
+                value=True,
+                size=size,
+                position=position,
+            )
+            logger.debug("Added 3D label overlay toggle checkbox to plotter view.")
+
+    def _toggle_overlay_actors_visibility(
+        self: CytoDataFrame_type,
+        plotter: Any,
+        overlay_actors: List[Any],
+        visible: bool,
+    ) -> None:
+        """Toggle all overlay actors and trigger a render."""
+        for actor in overlay_actors:
+            with contextlib.suppress(Exception):
+                self._set_overlay_actor_visibility(actor=actor, visible=visible)
+        with contextlib.suppress(Exception):
+            plotter.render()
 
     def _build_pyvista_viewer(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self: CytoDataFrame_type,
@@ -2540,6 +2678,7 @@ class CytoDataFrame(pd.DataFrame):
         opacity: Any = "sigmoid",
         shade: bool = False,
         label_volume: Optional[np.ndarray] = None,
+        include_plotter_overlay_toggle: bool = True,
         **kwargs: Any,
     ) -> Any:
         try:
@@ -2627,7 +2766,7 @@ class CytoDataFrame(pd.DataFrame):
         except Exception as exc:
             logger.debug("Unable to configure volume mapper sampling: %s", exc)
 
-        self._add_label_overlay_to_plotter(
+        overlay_actors = self._add_label_overlay_to_plotter(
             plotter=plotter,
             volume=volume,
             label_volume=label_volume,
@@ -2635,6 +2774,12 @@ class CytoDataFrame(pd.DataFrame):
             base_sample=base_sample,
             display_options=display_options,
         )
+        if include_plotter_overlay_toggle and overlay_actors:
+            self._add_label_overlay_toggle_control(
+                plotter=plotter,
+                overlay_actors=overlay_actors,
+                display_options=display_options,
+            )
 
         if show_axes:
             with contextlib.suppress(Exception):
@@ -2652,6 +2797,8 @@ class CytoDataFrame(pd.DataFrame):
         )
         with contextlib.suppress(Exception):
             setattr(viewer, "_cdf_plotter", plotter)
+        with contextlib.suppress(Exception):
+            setattr(viewer, "_cdf_overlay_actors", overlay_actors)
         if hasattr(viewer, "layout"):
             try:
                 import ipywidgets as widgets  # type: ignore
@@ -2985,6 +3132,11 @@ class CytoDataFrame(pd.DataFrame):
                         volume, _dims = self._get_3d_volume_from_cell(
                             row=row_label, column=col
                         )
+                        label_overlay = self._get_3d_label_overlay_from_cell(
+                            row=row_label,
+                            column=col,
+                            expected_shape=volume.shape,
+                        )
                         effective_height = (
                             row_height if widget_height == "100%" else widget_height
                         )
@@ -2992,11 +3144,7 @@ class CytoDataFrame(pd.DataFrame):
                             volume=volume,
                             backend=backend,
                             widget_height=effective_height,
-                            label_volume=self._get_3d_label_overlay_from_cell(
-                                row=row_label,
-                                column=col,
-                                expected_shape=volume.shape,
-                            ),
+                            label_volume=label_overlay,
                         )
                         grid[row_idx, col_idx] = widgets.Box(
                             [viewer],

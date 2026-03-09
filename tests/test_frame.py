@@ -1392,6 +1392,75 @@ def test_build_pyvista_viewer_with_surface_label_overlay_mode(
     assert hasattr(viewer, "_cdf_plotter")
 
 
+def test_add_label_overlay_toggle_control_toggles_overlay_actor_visibility() -> None:
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
+    toggles: list[int] = []
+    renders: list[bool] = []
+    checkbox_kwargs: dict[str, object] = {}
+
+    class FakeActor:
+        def SetVisibility(self, value: int) -> None:
+            toggles.append(value)
+
+    class FakePlotter:
+        window_size = (300, 300)
+
+        def render(self) -> None:
+            renders.append(True)
+
+        def add_checkbox_button_widget(
+            self,
+            callback: object,
+            value: bool,
+            size: int,
+            position: tuple[int, int],
+        ) -> None:
+            checkbox_kwargs["callback"] = callback
+            checkbox_kwargs["value"] = value
+            checkbox_kwargs["size"] = size
+            checkbox_kwargs["position"] = position
+
+    actor = FakeActor()
+    plotter = FakePlotter()
+    cdf._add_label_overlay_toggle_control(
+        plotter=plotter,
+        overlay_actors=[actor],
+        display_options={},
+    )
+
+    assert checkbox_kwargs["value"] is True
+    assert checkbox_kwargs["size"] == 24
+    assert checkbox_kwargs["position"] == (266, 10)
+    callback = checkbox_kwargs["callback"]
+    assert callable(callback)
+
+    callback(False)
+    callback(True)
+    assert toggles == [0, 1]
+    assert len(renders) == 2
+
+
+def test_add_label_overlay_toggle_control_respects_disable_option() -> None:
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
+    checkbox_added: list[bool] = []
+
+    class FakeActor:
+        def SetVisibility(self, _value: int) -> None:
+            return None
+
+    class FakePlotter:
+        def add_checkbox_button_widget(self, **_kwargs: object) -> None:
+            checkbox_added.append(True)
+
+    cdf._add_label_overlay_toggle_control(
+        plotter=FakePlotter(),
+        overlay_actors=[FakeActor()],
+        display_options={"label_overlay_toggle": False},
+    )
+
+    assert checkbox_added == []
+
+
 def test_show_trame_falls_back_to_ipywidgets(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_fake_pyvista(
         monkeypatch,

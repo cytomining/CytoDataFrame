@@ -1338,16 +1338,18 @@ class CytoDataFrame(pd.DataFrame):
                     return file
         return None
 
-    @staticmethod
     def _prepare_3d_label_overlay(
+        self: CytoDataFrame_type,
         segmentation_path: pathlib.Path,
         expected_shape: Tuple[int, ...],
+        row: Optional[Any] = None,
     ) -> Optional[np.ndarray]:
         """Load and normalize a 3D segmentation image for volume overlays.
 
         Args:
             segmentation_path: Path to the mask/outline image file.
             expected_shape: Expected ``(z, y, x)`` array shape.
+            row: Optional row label/index used to apply 3D bounding-box cropping.
 
         Returns:
             A uint8 binary array (0/255) matching ``expected_shape``, or ``None``
@@ -1360,6 +1362,15 @@ class CytoDataFrame(pd.DataFrame):
 
         if mask_array.ndim > MIN_VOLUME_NDIM and mask_array.shape[-1] in (1, 3, 4):
             mask_array = mask_array[..., 0]
+
+        if row is not None:
+            bounds = self._get_3d_bbox_crop_bounds(
+                row=row,
+                volume_shape=tuple(int(v) for v in mask_array.shape),
+            )
+            if bounds is not None:
+                x_min, x_max, y_min, y_max, z_min, z_max = bounds
+                mask_array = mask_array[z_min:z_max, y_min:y_max, x_min:x_max]
 
         if mask_array.shape != expected_shape:
             return None
@@ -2200,7 +2211,7 @@ class CytoDataFrame(pd.DataFrame):
                 cache.popitem(last=False)
         return volume, dims
 
-    def _get_3d_label_overlay_from_cell(  # noqa: C901, PLR0912
+    def _get_3d_label_overlay_from_cell(  # noqa: C901
         self: CytoDataFrame_type,
         row: Any,
         column: Any,
@@ -2269,29 +2280,8 @@ class CytoDataFrame(pd.DataFrame):
         overlay = self._prepare_3d_label_overlay(
             segmentation_path=segmentation_path,
             expected_shape=expected_shape,
+            row=row,
         )
-        if overlay is None:
-            try:
-                raw_overlay = np.asarray(imageio.imread(segmentation_path))
-                if raw_overlay.ndim > MIN_VOLUME_NDIM and raw_overlay.shape[-1] in (
-                    1,
-                    3,
-                    4,
-                ):
-                    raw_overlay = raw_overlay[..., 0]
-                bounds = self._get_3d_bbox_crop_bounds(
-                    row=row,
-                    volume_shape=tuple(int(v) for v in raw_overlay.shape),
-                )
-                if bounds is not None:
-                    x_min, x_max, y_min, y_max, z_min, z_max = bounds
-                    raw_overlay = raw_overlay[z_min:z_max, y_min:y_max, x_min:x_max]
-                if raw_overlay.shape == expected_shape:
-                    overlay = np.where(raw_overlay > 0, 255, 0).astype(
-                        np.uint8, copy=False
-                    )
-            except (FileNotFoundError, ValueError):
-                overlay = None
         if overlay is not None:
             logger.debug(
                 "Prepared 3D mask/outline overlay for image %s with shape %s",
@@ -2465,7 +2455,7 @@ class CytoDataFrame(pd.DataFrame):
 
             overlay_mode = str(display_options.get("label_overlay_mode", "surface"))
             overlay_mode = overlay_mode.lower()
-            overlay_color = display_options.get("label_overlay_color", (0, 1, 0))
+            overlay_color = display_options.get("label_overlay_color", (0, 255, 0))
             if (
                 isinstance(overlay_color, (tuple, list))
                 and len(overlay_color) >= MIN_VOLUME_NDIM

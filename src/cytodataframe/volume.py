@@ -313,7 +313,7 @@ def _build_vtk_js_renderer_core(*, include_container_size: bool) -> str:
         "const labelColor=(container.dataset.labelColor||'0,1,0')"
         ".split(',').map(Number);"
         "const r=Math.min(1,Math.max(0,labelColor[0]||0));"
-        "const g=Math.min(1,Math.max(0,labelColor[1]||1));"
+        "const g=Math.min(1,Math.max(0,labelColor[1]||0));"
         "const b=Math.min(1,Math.max(0,labelColor[2]||0));"
         "const labelOpacityRaw=Number(container.dataset.labelOpacity||0.95);"
         "const labelOpacity=Math.min(1,Math.max(0,labelOpacityRaw));"

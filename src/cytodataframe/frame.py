@@ -2449,9 +2449,9 @@ class CytoDataFrame(pd.DataFrame):
             label_grid.spacing = spacing
             label_grid.origin = (0.0, 0.0, 0.0)
             label_grid.point_data.clear()
-            label_grid.point_data["label_scalars"] = np.asfortranarray(
-                label_xyz
-            ).ravel(order="F")
+            label_grid.point_data["label_scalars"] = np.asfortranarray(label_xyz).ravel(
+                order="F"
+            )
 
             overlay_mode = str(display_options.get("label_overlay_mode", "surface"))
             overlay_mode = overlay_mode.lower()

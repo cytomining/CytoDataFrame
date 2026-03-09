@@ -2261,7 +2261,7 @@ class CytoDataFrame(pd.DataFrame):
             logger.debug("No 3D mask/outline found for image %s", data_value)
             return None
 
-        logger.info(
+        logger.debug(
             "Found 3D mask/outline for image %s at %s",
             data_value,
             segmentation_path,
@@ -2293,7 +2293,7 @@ class CytoDataFrame(pd.DataFrame):
             except (FileNotFoundError, ValueError):
                 overlay = None
         if overlay is not None:
-            logger.info(
+            logger.debug(
                 "Prepared 3D mask/outline overlay for image %s with shape %s",
                 data_value,
                 overlay.shape,
@@ -2413,6 +2413,134 @@ class CytoDataFrame(pd.DataFrame):
 
         return columns_3d
 
+    def _add_label_overlay_to_plotter(  # noqa: PLR0913
+        self: CytoDataFrame_type,
+        plotter: Any,
+        volume: np.ndarray,
+        label_volume: Optional[np.ndarray],
+        spacing: Tuple[float, float, float],
+        base_sample: float,
+        display_options: dict[str, Any],
+    ) -> None:
+        """Add a 3D label overlay to an existing PyVista plotter.
+
+        Args:
+            plotter: Target PyVista plotter receiving overlay actors.
+            volume: Source image volume in ``(z, y, x)`` order.
+            label_volume: Optional label/mask volume aligned to ``volume``.
+            spacing: Voxel spacing tuple used when building label image data.
+            base_sample: Base sampling distance used for volume overlays.
+            display_options: Display options controlling overlay mode/style.
+        """
+        if label_volume is None:
+            return
+
+        try:
+            import pyvista as pv  # type: ignore
+        except Exception:
+            return
+
+        try:
+            label_arr = np.asarray(label_volume)
+            if label_arr.shape != volume.shape:
+                logger.warning(
+                    (
+                        "Skipping 3D label overlay due to shape mismatch: "
+                        "label=%s volume=%s"
+                    ),
+                    label_arr.shape,
+                    volume.shape,
+                )
+                return
+
+            label_xyz = np.transpose((label_arr > 0).astype(np.uint8), (2, 1, 0))
+            label_grid = pv.ImageData()
+            label_grid.dimensions = tuple(int(v) for v in label_xyz.shape)
+            label_grid.spacing = spacing
+            label_grid.origin = (0.0, 0.0, 0.0)
+            label_grid.point_data.clear()
+            label_grid.point_data["label_scalars"] = np.asfortranarray(
+                label_xyz
+            ).ravel(order="F")
+
+            overlay_mode = str(display_options.get("label_overlay_mode", "surface"))
+            overlay_mode = overlay_mode.lower()
+            overlay_color = display_options.get("label_overlay_color", (0, 1, 0))
+            if (
+                isinstance(overlay_color, (tuple, list))
+                and len(overlay_color) >= MIN_VOLUME_NDIM
+            ):
+                overlay_color = tuple(
+                    (float(v) / 255.0 if float(v) > 1.0 else float(v))
+                    for v in overlay_color[:3]
+                )
+            overlay_opacity = float(display_options.get("label_overlay_opacity", 0.95))
+
+            if overlay_mode == "surface":
+                contour = label_grid.contour(isosurfaces=[0.5], scalars="label_scalars")
+                edge_opacity = min(1.0, overlay_opacity + 0.15)
+                plotter.add_mesh(
+                    contour,
+                    color=overlay_color,
+                    opacity=overlay_opacity,
+                    smooth_shading=False,
+                    ambient=1.0,
+                    diffuse=0.0,
+                    specular=0.0,
+                )
+                plotter.add_mesh(
+                    contour,
+                    color=overlay_color,
+                    style="wireframe",
+                    opacity=edge_opacity,
+                    line_width=2.5,
+                )
+            else:
+                label_xyz_u8 = np.where(label_xyz > 0, 255, 0).astype(
+                    np.uint8, copy=False
+                )
+                label_grid.point_data["label_scalars"] = np.asfortranarray(
+                    label_xyz_u8
+                ).ravel(order="F")
+                filled_opacity = np.zeros(256, dtype=np.float32)
+                filled_opacity[255] = overlay_opacity
+                label_actor = plotter.add_volume(
+                    label_grid,
+                    scalars="label_scalars",
+                    clim=(0, 255),
+                    cmap=[(0.0, 0.0, 0.0), overlay_color],
+                    opacity=filled_opacity,
+                    shade=False,
+                    show_scalar_bar=False,
+                    opacity_unit_distance=base_sample,
+                    blending="maximum",
+                )
+                with contextlib.suppress(Exception):
+                    label_prop = (
+                        getattr(label_actor, "prop", None) or label_actor.GetProperty()
+                    )
+                    label_prop.SetInterpolationTypeToNearest()
+                with contextlib.suppress(Exception):
+                    contour = label_grid.contour(
+                        isosurfaces=[0.5], scalars="label_scalars"
+                    )
+                    plotter.add_mesh(
+                        contour,
+                        color=overlay_color,
+                        style="wireframe",
+                        opacity=min(1.0, overlay_opacity + 0.05),
+                        line_width=2.0,
+                    )
+
+            logger.info(
+                "Added 3D label overlay (shape=%s, opacity=%s, mode=%s)",
+                label_arr.shape,
+                overlay_opacity,
+                overlay_mode,
+            )
+        except Exception as exc:
+            logger.debug("Unable to add 3D label overlay: %s", exc)
+
     def _build_pyvista_viewer(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self: CytoDataFrame_type,
         volume: np.ndarray,
@@ -2509,119 +2637,14 @@ class CytoDataFrame(pd.DataFrame):
         except Exception as exc:
             logger.debug("Unable to configure volume mapper sampling: %s", exc)
 
-        if label_volume is not None:
-            try:
-                label_arr = np.asarray(label_volume)
-                if label_arr.shape == volume.shape:
-                    label_xyz = np.transpose(
-                        (label_arr > 0).astype(np.uint8), (2, 1, 0)
-                    )
-                    label_grid = pv.ImageData()
-                    label_grid.dimensions = tuple(int(v) for v in label_xyz.shape)
-                    label_grid.spacing = spacing
-                    label_grid.origin = (0.0, 0.0, 0.0)
-                    label_grid.point_data.clear()
-                    label_grid.point_data["label_scalars"] = np.asfortranarray(
-                        label_xyz
-                    ).ravel(order="F")
-                    display_options = (
-                        self._custom_attrs.get("display_options", {}) or {}
-                    )
-                    overlay_mode = str(
-                        display_options.get("label_overlay_mode", "surface")
-                    ).lower()
-                    overlay_color = display_options.get(
-                        "label_overlay_color", (0, 1, 0)
-                    )
-                    if (
-                        isinstance(overlay_color, (tuple, list))
-                        and len(overlay_color) >= MIN_VOLUME_NDIM
-                    ):
-                        overlay_color = tuple(
-                            (float(v) / 255.0 if float(v) > 1.0 else float(v))
-                            for v in overlay_color[:3]
-                        )
-                    overlay_opacity = display_options.get("label_overlay_opacity", 0.95)
-                    if overlay_mode == "surface":
-                        contour = label_grid.contour(
-                            isosurfaces=[0.5], scalars="label_scalars"
-                        )
-                        edge_opacity = min(1.0, float(overlay_opacity) + 0.15)
-                        plotter.add_mesh(
-                            contour,
-                            color=overlay_color,
-                            opacity=float(overlay_opacity),
-                            smooth_shading=False,
-                            ambient=1.0,
-                            diffuse=0.0,
-                            specular=0.0,
-                        )
-                        plotter.add_mesh(
-                            contour,
-                            color=overlay_color,
-                            style="wireframe",
-                            opacity=edge_opacity,
-                            line_width=2.5,
-                        )
-                    else:
-                        label_xyz_u8 = np.where(label_xyz > 0, 255, 0).astype(
-                            np.uint8, copy=False
-                        )
-                        label_grid.point_data["label_scalars"] = np.asfortranarray(
-                            label_xyz_u8
-                        ).ravel(order="F")
-                        filled_opacity = np.zeros(256, dtype=np.float32)
-                        filled_opacity[255] = float(overlay_opacity)
-                        label_actor = plotter.add_volume(
-                            label_grid,
-                            scalars="label_scalars",
-                            clim=(0, 255),
-                            cmap=[(0.0, 0.0, 0.0), overlay_color],
-                            opacity=filled_opacity,
-                            shade=False,
-                            show_scalar_bar=False,
-                            opacity_unit_distance=base_sample,
-                            blending="maximum",
-                        )
-                        with contextlib.suppress(Exception):
-                            label_prop = (
-                                getattr(label_actor, "prop", None)
-                                or label_actor.GetProperty()
-                            )
-                            label_prop.SetInterpolationTypeToNearest()
-                        # Add an edge pass to keep the overlay visible in dense scenes.
-                        edge_opacity = min(1.0, float(overlay_opacity) + 0.05)
-                        with contextlib.suppress(Exception):
-                            contour = label_grid.contour(
-                                isosurfaces=[0.5], scalars="label_scalars"
-                            )
-                            plotter.add_mesh(
-                                contour,
-                                color=overlay_color,
-                                style="wireframe",
-                                opacity=edge_opacity,
-                                line_width=2.0,
-                            )
-                    logger.info(
-                        (
-                            "Added 3D label overlay to PyVista view "
-                            "(shape=%s, opacity=%s, mode=%s)"
-                        ),
-                        label_arr.shape,
-                        overlay_opacity,
-                        overlay_mode,
-                    )
-                else:
-                    logger.warning(
-                        (
-                            "Skipping 3D label overlay in PyVista view due to shape "
-                            "mismatch: label=%s volume=%s"
-                        ),
-                        label_arr.shape,
-                        volume.shape,
-                    )
-            except Exception as exc:
-                logger.debug("Unable to add 3D label overlay: %s", exc)
+        self._add_label_overlay_to_plotter(
+            plotter=plotter,
+            volume=volume,
+            label_volume=label_volume,
+            spacing=spacing,
+            base_sample=base_sample,
+            display_options=display_options,
+        )
 
         if show_axes:
             with contextlib.suppress(Exception):
@@ -3500,105 +3523,14 @@ class CytoDataFrame(pd.DataFrame):
         except Exception as exc:
             logger.debug("Unable to configure snapshot mapper sampling: %s", exc)
 
-        if label_volume is not None:
-            try:
-                label_arr = np.asarray(label_volume)
-                if label_arr.shape == volume.shape:
-                    label_xyz = np.transpose(
-                        (label_arr > 0).astype(np.uint8), (2, 1, 0)
-                    )
-                    label_grid = pv.ImageData()
-                    label_grid.dimensions = tuple(int(v) for v in label_xyz.shape)
-                    label_grid.spacing = spacing
-                    label_grid.origin = (0.0, 0.0, 0.0)
-                    label_grid.point_data.clear()
-                    label_grid.point_data["label_scalars"] = np.asfortranarray(
-                        label_xyz
-                    ).ravel(order="F")
-                    overlay_mode = str(
-                        display_options.get("label_overlay_mode", "surface")
-                    ).lower()
-                    overlay_color = display_options.get(
-                        "label_overlay_color", (0, 1, 0)
-                    )
-                    if (
-                        isinstance(overlay_color, (tuple, list))
-                        and len(overlay_color) >= MIN_VOLUME_NDIM
-                    ):
-                        overlay_color = tuple(
-                            (float(v) / 255.0 if float(v) > 1.0 else float(v))
-                            for v in overlay_color[:3]
-                        )
-                    overlay_opacity = display_options.get("label_overlay_opacity", 0.95)
-                    if overlay_mode == "surface":
-                        contour = label_grid.contour(
-                            isosurfaces=[0.5], scalars="label_scalars"
-                        )
-                        edge_opacity = min(1.0, float(overlay_opacity) + 0.15)
-                        plotter.add_mesh(
-                            contour,
-                            color=overlay_color,
-                            opacity=float(overlay_opacity),
-                            smooth_shading=False,
-                            ambient=1.0,
-                            diffuse=0.0,
-                            specular=0.0,
-                        )
-                        plotter.add_mesh(
-                            contour,
-                            color=overlay_color,
-                            style="wireframe",
-                            opacity=edge_opacity,
-                            line_width=2.5,
-                        )
-                    else:
-                        label_xyz_u8 = np.where(label_xyz > 0, 255, 0).astype(
-                            np.uint8, copy=False
-                        )
-                        label_grid.point_data["label_scalars"] = np.asfortranarray(
-                            label_xyz_u8
-                        ).ravel(order="F")
-                        filled_opacity = np.zeros(256, dtype=np.float32)
-                        filled_opacity[255] = float(overlay_opacity)
-                        label_actor = plotter.add_volume(
-                            label_grid,
-                            scalars="label_scalars",
-                            clim=(0, 255),
-                            cmap=[(0.0, 0.0, 0.0), overlay_color],
-                            opacity=filled_opacity,
-                            shade=False,
-                            show_scalar_bar=False,
-                            opacity_unit_distance=base_sample,
-                            blending="maximum",
-                        )
-                        with contextlib.suppress(Exception):
-                            label_prop = (
-                                getattr(label_actor, "prop", None)
-                                or label_actor.GetProperty()
-                            )
-                            label_prop.SetInterpolationTypeToNearest()
-                        with contextlib.suppress(Exception):
-                            contour = label_grid.contour(
-                                isosurfaces=[0.5], scalars="label_scalars"
-                            )
-                            plotter.add_mesh(
-                                contour,
-                                color=overlay_color,
-                                style="wireframe",
-                                opacity=min(1.0, float(overlay_opacity) + 0.05),
-                                line_width=2.0,
-                            )
-                    logger.info(
-                        (
-                            "Added 3D label overlay to static snapshot "
-                            "(shape=%s, opacity=%s, mode=%s)"
-                        ),
-                        label_arr.shape,
-                        overlay_opacity,
-                        overlay_mode,
-                    )
-            except Exception as exc:
-                logger.debug("Unable to add 3D label overlay to snapshot: %s", exc)
+        self._add_label_overlay_to_plotter(
+            plotter=plotter,
+            volume=volume,
+            label_volume=label_volume,
+            spacing=spacing,
+            base_sample=base_sample,
+            display_options=display_options,
+        )
 
         try:
             img = plotter.screenshot(return_img=True)

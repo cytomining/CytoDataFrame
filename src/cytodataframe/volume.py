@@ -112,14 +112,23 @@ def build_3d_image_html_view(  # noqa: C901, PLR0912, PLR0913, PLR0915
         max_inline_volume_bytes = DEFAULT_MAX_INLINE_VOLUME_BYTES
 
     volume_uint8 = np.array(volume, dtype=np.uint8, copy=True)
-    if volume_uint8.nbytes > max_inline_volume_bytes:
+    label_binary: Optional[np.ndarray] = None
+    if label_volume is not None:
+        label_arr = np.asarray(label_volume)
+        if label_arr.shape == volume_uint8.shape:
+            label_binary = np.where(label_arr > 0, 255, 0).astype(np.uint8, copy=False)
+
+    inline_payload_nbytes = volume_uint8.nbytes
+    if label_binary is not None:
+        inline_payload_nbytes += label_binary.nbytes
+    if inline_payload_nbytes > max_inline_volume_bytes:
         return build_3d_image_html_stub(
             data_value=data_value,
             candidate_path=candidate_path,
             display_options=display_options,
             message=(
                 "3D image too large for inline rendering "
-                f"({volume_uint8.nbytes} bytes > {max_inline_volume_bytes} bytes)"
+                f"({inline_payload_nbytes} bytes > {max_inline_volume_bytes} bytes)"
             ),
         )
 
@@ -128,33 +137,28 @@ def build_3d_image_html_view(  # noqa: C901, PLR0912, PLR0913, PLR0915
     label_b64 = ""
     label_color_attr = "0,1,0"
     label_opacity_attr = "0.95"
-    if label_volume is not None:
-        label_arr = np.asarray(label_volume)
-        if label_arr.shape == volume_uint8.shape:
-            label_binary = np.where(label_arr > 0, 255, 0).astype(np.uint8, copy=False)
-            label_b64 = base64.b64encode(label_binary.tobytes()).decode("utf-8")
-            overlay_color = display_options.get("label_overlay_color", (0, 255, 0))
-            if (
-                isinstance(overlay_color, (list, tuple))
-                and len(overlay_color) >= MIN_VOLUME_NDIM
-            ):
-                try:
-                    color = np.asarray(
-                        overlay_color[:MIN_VOLUME_NDIM], dtype=np.float32
-                    )
-                    if np.max(color, initial=0.0) > 1.0:
-                        color = np.clip(color / 255.0, 0.0, 1.0)
-                    else:
-                        color = np.clip(color, 0.0, 1.0)
-                    label_color_attr = ",".join(f"{float(v):.6f}" for v in color)
-                except Exception:
-                    label_color_attr = "0,1,0"
+    if label_binary is not None:
+        label_b64 = base64.b64encode(label_binary.tobytes()).decode("utf-8")
+        overlay_color = display_options.get("label_overlay_color", (0, 255, 0))
+        if (
+            isinstance(overlay_color, (list, tuple))
+            and len(overlay_color) >= MIN_VOLUME_NDIM
+        ):
             try:
-                opacity = float(display_options.get("label_overlay_opacity", 0.95))
-                opacity = min(1.0, max(0.0, opacity))
-                label_opacity_attr = f"{opacity:.6f}"
-            except (TypeError, ValueError):
-                label_opacity_attr = "0.95"
+                color = np.asarray(overlay_color[:MIN_VOLUME_NDIM], dtype=np.float32)
+                if np.max(color, initial=0.0) > 1.0:
+                    color = np.clip(color / 255.0, 0.0, 1.0)
+                else:
+                    color = np.clip(color, 0.0, 1.0)
+                label_color_attr = ",".join(f"{float(v):.6f}" for v in color)
+            except Exception:
+                label_color_attr = "0,1,0"
+        try:
+            opacity = float(display_options.get("label_overlay_opacity", 0.95))
+            opacity = min(1.0, max(0.0, opacity))
+            label_opacity_attr = f"{opacity:.6f}"
+        except (TypeError, ValueError):
+            label_opacity_attr = "0.95"
     dims_attr = ",".join(str(value) for value in dims)
     element_id = f"cyto-3d-{uuid.uuid4().hex}"
     path_attr = html.escape(str(candidate_path), quote=True)

@@ -356,7 +356,8 @@ cdf = CytoDataFrame(
 cdf[["ImageNumber", "ObjectNumber", "FileName_Nuclei"]][:3]
 # +
 # %%time
-# read 3d images with segmentation masks and show how the segmentation masks are also 3D.
+# read 3d images with segmentation masks and show the
+# segmentation masks are also 3D.
 cdf = CytoDataFrame(
     data=pathlib.Path(cp_3d_path) / "output/MyExpt_RealsizeNuclei.csv",
     data_context_dir=str(pathlib.Path(cp_3d_path) / "input"),

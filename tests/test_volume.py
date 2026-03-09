@@ -105,6 +105,25 @@ def test_build_3d_image_html_view_uses_stub_when_inline_volume_too_large():
     assert "too large for inline rendering" in html
 
 
+def test_build_3d_image_html_view_uses_stub_when_volume_and_label_exceed_limit():
+    volume = np.zeros((2, 2, 2), dtype=np.uint8)
+    label = np.zeros((2, 2, 2), dtype=np.uint8)
+    label[0, 0, 0] = 1
+    html = build_3d_image_html_view(
+        volume=volume,
+        dims=(2, 2, 2),
+        data_value="volume.tiff",
+        candidate_path=pathlib.Path("volume.tiff"),
+        display_options={"max_inline_volume_bytes": 12},
+        label_volume=label,
+    )
+
+    assert 'class="cyto-3d-image"' in html
+    assert "data-volume=" not in html
+    assert "data-label-volume=" not in html
+    assert "too large for inline rendering" in html
+
+
 def test_build_3d_image_html_view_defaults_when_limit_value_invalid():
     volume = np.zeros((2, 2, 2), dtype=np.uint8)
     html = build_3d_image_html_view(

@@ -240,7 +240,13 @@ class CytoDataFrame(pd.DataFrame):
                 continuous_update=False,
                 style={"description_width": "auto"},
             ),
-            "_output": widgets.Output(),
+            "_output": widgets.Output(
+                layout=widgets.Layout(
+                    width="100%",
+                    max_height="700px",
+                    overflow="visible",
+                )
+            ),
         }
 
         if self._custom_attrs["data_context_dir"] is not None:
@@ -1358,12 +1364,24 @@ class CytoDataFrame(pd.DataFrame):
             candidate_roots.append(root)
 
             for search_root in candidate_roots:
+                normalized_identifiers = [
+                    re.escape(idf.lower()) for idf in identifiers if idf
+                ]
                 matching_files = [
                     file
                     for file in sorted(search_root.rglob("*"))
                     if file.is_file()
                     and re.search(file_pattern, file.name)
-                    and any(idf in file.stem for idf in identifiers)
+                    and (
+                        not normalized_identifiers
+                        or any(
+                            re.search(
+                                rf"(?<![0-9A-Za-z]){idf}(?![0-9A-Za-z])",
+                                file.stem.lower(),
+                            )
+                            for idf in normalized_identifiers
+                        )
+                    )
                 ]
                 if matching_files:
                     return matching_files[0]
@@ -1407,6 +1425,39 @@ class CytoDataFrame(pd.DataFrame):
             return None
 
         return np.where(mask_array > 0, 255, 0).astype(np.uint8, copy=False)
+
+    def _resolve_volume_candidate(
+        self: CytoDataFrame_type,
+        raw_value: Union[str, pathlib.Path],
+    ) -> Tuple[str, pathlib.Path]:
+        """Resolve normalized 3D image value and best-effort candidate path.
+
+        Args:
+            raw_value: Raw path-like cell value for a 3D image.
+
+        Returns:
+            A tuple of ``(data_value, candidate_path)`` where ``data_value`` is
+            normalized for context-dir lookups and ``candidate_path`` points to a
+            best-effort on-disk match when available.
+        """
+        data_value = str(raw_value)
+        context_dir = self._custom_attrs.get("data_context_dir")
+        if context_dir:
+            normalized = data_value
+            if normalized.startswith("file:"):
+                normalized = normalized[len("file:") :]
+            if "/" in normalized or "\\" in normalized:
+                normalized = pathlib.Path(normalized).name
+            data_value = normalized
+
+        candidate_path = pathlib.Path(data_value)
+        if not candidate_path.is_file() and context_dir:
+            matches = sorted(
+                pathlib.Path(context_dir).rglob(pathlib.Path(data_value).name)
+            )
+            if matches:
+                candidate_path = matches[0]
+        return data_value, candidate_path
 
     def _extract_array_from_ome_arrow(  # noqa: C901, PLR0911, PLR0912
         self: CytoDataFrame_type,
@@ -2079,17 +2130,8 @@ class CytoDataFrame(pd.DataFrame):
         elif isinstance(value, (str, pathlib.Path)):
             volume_ndim = 3
             color_channel_counts = (1, volume_ndim, 4)
-            data_value = str(value)
             context_dir = self._custom_attrs.get("data_context_dir")
-            if context_dir:
-                normalized = data_value
-                if normalized.startswith("file:"):
-                    normalized = normalized[len("file:") :]
-                if "/" in normalized or "\\" in normalized:
-                    normalized = pathlib.Path(normalized).name
-                data_value = normalized
-
-            data_path = pathlib.Path(data_value)
+            data_value, data_path = self._resolve_volume_candidate(raw_value=value)
             candidate_paths: List[pathlib.Path] = []
             seen_candidates: set[str] = set()
 
@@ -2242,7 +2284,7 @@ class CytoDataFrame(pd.DataFrame):
                 cache.popitem(last=False)
         return volume, dims
 
-    def _get_3d_label_overlay_from_cell(  # noqa: C901
+    def _get_3d_label_overlay_from_cell(
         self: CytoDataFrame_type,
         row: Any,
         column: Any,
@@ -2267,23 +2309,7 @@ class CytoDataFrame(pd.DataFrame):
         if not isinstance(value, (str, pathlib.Path)):
             return None
 
-        data_value = str(value)
-        if self._custom_attrs.get("data_context_dir"):
-            normalized = data_value
-            if normalized.startswith("file:"):
-                normalized = normalized[len("file:") :]
-            if "/" in normalized or "\\" in normalized:
-                normalized = pathlib.Path(normalized).name
-            data_value = normalized
-
-        candidate_path = pathlib.Path(data_value)
-        context_dir = self._custom_attrs.get("data_context_dir")
-        if not candidate_path.is_file() and context_dir:
-            matches = sorted(
-                pathlib.Path(context_dir).rglob(pathlib.Path(data_value).name)
-            )
-            if matches:
-                candidate_path = matches[0]
+        data_value, candidate_path = self._resolve_volume_candidate(raw_value=value)
 
         pattern_map = self._custom_attrs.get("segmentation_file_regex")
         segmentation_path = self._find_matching_segmentation_path(
@@ -3156,13 +3182,19 @@ class CytoDataFrame(pd.DataFrame):
         )
         debug = kwargs.pop("debug", False)
 
+        table_height = _css_size(
+            kwargs.pop("table_height", kwargs.pop("table_max_height", "700px")),
+            "700px",
+        )
+
         grid = widgets.GridspecLayout(
             len(display_rows) + 1,
             len(columns) + 1,
             layout=widgets.Layout(
-                width="auto",
+                width="100%",
                 max_width="100%",
-                max_height=_css_size(kwargs.pop("table_max_height", "700px"), "700px"),
+                height=table_height,
+                max_height=table_height,
                 overflow="auto",
             ),
         )
@@ -3624,9 +3656,21 @@ class CytoDataFrame(pd.DataFrame):
     def _render_output(self: CytoDataFrame_type) -> None:
         # Return a hidden div that nbconvert will keep but Jupyter will ignore
         html_content = self._generate_jupyter_dataframe_html()
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        table_height = str(
+            display_options.get(
+                "table_height",
+                display_options.get("table_max_height", "700px"),
+            )
+        )
+        scroll_wrapped_html = (
+            "<div style='width:100%;max-width:100%;overflow:auto;"
+            f"max-height:{table_height};'>"
+            f"{html_content}</div>"
+        )
 
         with self._custom_attrs["_output"]:
-            display(HTML(html_content))
+            display(HTML(scroll_wrapped_html))
             if "cyto-3d-image" in html_content and "data-volume" in html_content:
                 display(
                     Javascript(

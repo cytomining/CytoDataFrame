@@ -1134,6 +1134,9 @@ def test_show_widget_table_renders_fallback_when_3d_fails():
     # Header + 2 rows, index + 2 columns
     assert grid.n_rows == 3
     assert grid.n_columns == 3
+    assert grid.layout.width == "100%"
+    assert grid.layout.height == "700px"
+    assert grid.layout.overflow == "auto"
     assert "3D render failed" in grid[1, 1].value
     assert "\u2026" in grid[2, 1].value
 

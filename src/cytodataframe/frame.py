@@ -4008,9 +4008,7 @@ class CytoDataFrame(pd.DataFrame):
                         ]
                     )
                 )
-                if bool(
-                    display_options.get("show_static_snapshot_details", True)
-                ):
+                if bool(display_options.get("show_static_snapshot_details", True)):
                     snapshot_html = self._generate_jupyter_dataframe_html()
                     details_html = (
                         '<details class="cyto-static-snapshot">'

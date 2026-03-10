@@ -1332,11 +1332,41 @@ class CytoDataFrame(pd.DataFrame):
             return matching_files[0] if matching_files else None
 
         for file_pattern, original_pattern in pattern_map.items():
-            if not re.search(original_pattern, data_value):
+            matched = re.search(original_pattern, data_value)
+            if not matched:
                 continue
-            for file in sorted(root.rglob("*")):
-                if re.search(file_pattern, file.name):
-                    return file
+            identifiers: list[str] = []
+            identifiers.extend(
+                str(group)
+                for group in matched.groups()
+                if isinstance(group, str) and group.strip()
+            )
+            identifiers.extend(
+                [
+                    pathlib.Path(data_value).stem,
+                    pathlib.Path(candidate_path).stem,
+                ]
+            )
+            identifiers = list(dict.fromkeys(idf for idf in identifiers if idf))
+
+            candidate_roots: list[pathlib.Path] = []
+            parent_name = pathlib.Path(candidate_path).parent.name
+            if parent_name:
+                parent_scoped_root = root / parent_name
+                if parent_scoped_root.exists():
+                    candidate_roots.append(parent_scoped_root)
+            candidate_roots.append(root)
+
+            for search_root in candidate_roots:
+                matching_files = [
+                    file
+                    for file in sorted(search_root.rglob("*"))
+                    if file.is_file()
+                    and re.search(file_pattern, file.name)
+                    and any(idf in file.stem for idf in identifiers)
+                ]
+                if matching_files:
+                    return matching_files[0]
         return None
 
     def _prepare_3d_label_overlay(
@@ -2619,7 +2649,7 @@ class CytoDataFrame(pd.DataFrame):
             return int(height_digits.group(0))
         return 300
 
-    def _add_label_overlay_toggle_control(
+    def _add_label_overlay_toggle_control(  # noqa: C901
         self: CytoDataFrame_type,
         plotter: Any,
         overlay_actors: List[Any],
@@ -2654,6 +2684,80 @@ class CytoDataFrame(pd.DataFrame):
                 size=size,
                 position=position,
             )
+            label_text = str(display_options.get("label_overlay_toggle_label", "Mask"))
+            label_font_size = int(
+                display_options.get("label_overlay_toggle_font_size", 9)
+            )
+            label_gap = int(display_options.get("label_overlay_toggle_label_gap", 24))
+            label_shift_left = int(
+                display_options.get("label_overlay_toggle_label_shift_left", 212)
+            )
+            estimated_text_px = int(max(32, len(label_text) * label_font_size * 0.95))
+            label_pos = (
+                max(
+                    0,
+                    int(position[0]) - estimated_text_px - label_gap - label_shift_left,
+                ),
+                max(0, int(position[1]) + 10),
+            )
+            window_size = getattr(plotter, "window_size", None)
+            window_width = 300
+            if (
+                isinstance(window_size, (tuple, list))
+                and len(window_size) >= MIN_POSITION_COMPONENTS
+                and isinstance(window_size[0], (int, float))
+            ):
+                window_width = int(window_size[0])
+            window_width = max(1, window_width)
+            window_height = max(
+                1,
+                self._resolve_plotter_window_height(
+                    plotter=plotter,
+                    display_options=display_options,
+                ),
+            )
+            label_pos_norm = (
+                max(0.01, min(0.95, float(label_pos[0]) / float(window_width))),
+                max(0.01, min(0.95, float(label_pos[1]) / float(window_height))),
+            )
+            label_name = f"cdf-label-toggle-{uuid.uuid4().hex}"
+            text_added = False
+            try:
+                plotter.add_text(
+                    label_text,
+                    position=label_pos_norm,
+                    font_size=label_font_size,
+                    color="white",
+                    name=label_name,
+                    viewport=True,
+                    shadow=True,
+                )
+                text_added = True
+            except Exception:
+                pass
+            if not text_added:
+                try:
+                    plotter.add_text(
+                        label_text,
+                        position=label_pos,
+                        font_size=label_font_size,
+                        color="white",
+                        name=label_name,
+                        shadow=True,
+                    )
+                    text_added = True
+                except Exception:
+                    pass
+            if not text_added:
+                with contextlib.suppress(Exception):
+                    plotter.add_text(
+                        label_text,
+                        position="lower_right",
+                        font_size=label_font_size,
+                        color="white",
+                        name=label_name,
+                        shadow=True,
+                    )
             logger.debug("Added 3D label overlay toggle checkbox to plotter view.")
 
     def _toggle_overlay_actors_visibility(

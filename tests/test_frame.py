@@ -360,6 +360,45 @@ def test_get_3d_label_overlay_from_cell_applies_bbox_crop(
     assert overlay.max() == 255
 
 
+def test_find_matching_segmentation_path_filters_by_image_identifier(
+    tmp_path: pathlib.Path,
+) -> None:
+    mask_dir = tmp_path / "masks"
+    mask_dir.mkdir()
+    (mask_dir / "img_a_mask.tiff").write_bytes(b"")
+    (mask_dir / "img_b_mask.tiff").write_bytes(b"")
+
+    matched = CytoDataFrame._find_matching_segmentation_path(
+        data_value="img_a.tiff",
+        pattern_map={r".*_mask\.tiff$": r".*"},
+        file_dir=str(mask_dir),
+        candidate_path=pathlib.Path("img_a.tiff"),
+    )
+
+    assert matched is not None
+    assert matched.name == "img_a_mask.tiff"
+
+
+def test_find_matching_segmentation_path_prefers_candidate_parent_tree(
+    tmp_path: pathlib.Path,
+) -> None:
+    mask_dir = tmp_path / "masks"
+    (mask_dir / "plate_a").mkdir(parents=True)
+    (mask_dir / "plate_b").mkdir(parents=True)
+    (mask_dir / "plate_a" / "nuclei1_mask.tiff").write_bytes(b"")
+    (mask_dir / "plate_b" / "nuclei1_mask.tiff").write_bytes(b"")
+
+    matched = CytoDataFrame._find_matching_segmentation_path(
+        data_value="plate_a/nuclei1.tiff",
+        pattern_map={r".*_mask\.tiff$": r".*"},
+        file_dir=str(mask_dir),
+        candidate_path=pathlib.Path("/tmp/plate_a/nuclei1.tiff"),
+    )
+
+    assert matched is not None
+    assert matched.parent.name == "plate_a"
+
+
 def test_cytodataframe_input(
     tmp_path: pathlib.Path,
     basic_outlier_dataframe: pd.DataFrame,
@@ -1164,6 +1203,8 @@ def test_show_widget_table_renders_3d_viewer_cells_successfully(
     assert captured["backend"] == "trame"
     assert captured["widget_height"] == "140px"
     assert isinstance(captured.get("label_volume"), np.ndarray)
+    assert isinstance(grid[1, 1], widgets.Box)
+    assert len(grid[1, 1].children) == 1
 
 
 def test_get_displayed_rows_when_under_limit(monkeypatch: pytest.MonkeyPatch):
@@ -1397,6 +1438,7 @@ def test_add_label_overlay_toggle_control_toggles_overlay_actor_visibility() -> 
     toggles: list[int] = []
     renders: list[bool] = []
     checkbox_kwargs: dict[str, object] = {}
+    label_kwargs: dict[str, object] = {}
 
     class FakeActor:
         def SetVisibility(self, value: int) -> None:
@@ -1420,6 +1462,9 @@ def test_add_label_overlay_toggle_control_toggles_overlay_actor_visibility() -> 
             checkbox_kwargs["size"] = size
             checkbox_kwargs["position"] = position
 
+        def add_text(self, *_args: object, **kwargs: object) -> None:
+            label_kwargs.update(kwargs)
+
     actor = FakeActor()
     plotter = FakePlotter()
     cdf._add_label_overlay_toggle_control(
@@ -1431,6 +1476,12 @@ def test_add_label_overlay_toggle_control_toggles_overlay_actor_visibility() -> 
     assert checkbox_kwargs["value"] is True
     assert checkbox_kwargs["size"] == 24
     assert checkbox_kwargs["position"] == (266, 10)
+    label_position = label_kwargs["position"]
+    assert isinstance(label_position, tuple)
+    assert label_position == pytest.approx((0.01, 20 / 300))
+    assert label_kwargs["viewport"] is True
+    assert label_kwargs["color"] == "white"
+    assert label_kwargs["font_size"] == 9
     callback = checkbox_kwargs["callback"]
     assert callable(callback)
 

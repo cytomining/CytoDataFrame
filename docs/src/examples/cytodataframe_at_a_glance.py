@@ -356,6 +356,7 @@ cdf = CytoDataFrame(
 cdf[["ImageNumber", "ObjectNumber", "FileName_Nuclei"]][:3]
 # +
 # %%time
+
 # read 3d images with segmentation masks and show the
 # segmentation masks are also 3D.
 cdf = CytoDataFrame(
@@ -365,3 +366,6 @@ cdf = CytoDataFrame(
 )
 
 cdf[["ImageNumber", "ObjectNumber", "FileName_Nuclei"]][:3]
+# -
+
+

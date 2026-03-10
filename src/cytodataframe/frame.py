@@ -4008,6 +4008,16 @@ class CytoDataFrame(pd.DataFrame):
                         ]
                     )
                 )
+                if bool(
+                    display_options.get("show_static_snapshot_details", True)
+                ):
+                    snapshot_html = self._generate_jupyter_dataframe_html()
+                    details_html = (
+                        '<details class="cyto-static-snapshot">'
+                        "<summary>Static snapshot (for non-interactive view)</summary>"
+                        f"{snapshot_html}</details>"
+                    )
+                    display(HTML(details_html))
                 self._custom_attrs["_widget_state"]["shown"] = True
 
             # Attach the slider observer exactly once

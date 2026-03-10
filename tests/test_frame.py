@@ -1087,6 +1087,31 @@ def test_repr_html_force_trame_falls_back_to_candidate_columns(
     assert displayed
 
 
+def test_repr_html_2d_displays_static_snapshot_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
+    displayed: list[object] = []
+
+    monkeypatch.setattr(cdf, "_find_3d_columns_for_display", lambda: [])
+    monkeypatch.setattr(cdf, "_render_output", lambda: None)
+    monkeypatch.setattr(cdf, "_generate_jupyter_dataframe_html", lambda: "<table/>")
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda _name: True)
+
+    def capture_display(value: object) -> None:
+        displayed.append(value)
+
+    monkeypatch.setattr("cytodataframe.frame.display", capture_display)
+
+    assert cdf._repr_html_() is None
+    html_blocks = [
+        str(getattr(widget, "data", ""))
+        for widget in displayed
+        if hasattr(widget, "data")
+    ]
+    assert any("cyto-static-snapshot" in block for block in html_blocks)
+
+
 def test_is_notebook_or_lab_detects_zmq_shell(monkeypatch: pytest.MonkeyPatch) -> None:
     zmq_shell = type("ZMQInteractiveShell", (), {})()
     monkeypatch.setattr("cytodataframe.frame.get_ipython", lambda: zmq_shell)

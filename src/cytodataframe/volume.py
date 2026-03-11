@@ -134,8 +134,11 @@ def build_3d_image_html_view(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
     volume_bytes = volume_uint8.tobytes()
     volume_b64 = base64.b64encode(volume_bytes).decode("utf-8")
+    # Default to "no label overlay payload" unless label data is provided.
     label_b64 = ""
+    # Default overlay tint is green in normalized RGB (0, 1, 0).
     label_color_attr = "0,1,0"
+    # Default overlay opacity is 95%.
     label_opacity_attr = "0.95"
     if label_binary is not None:
         label_b64 = base64.b64encode(label_binary.tobytes()).decode("utf-8")
@@ -248,6 +251,8 @@ def build_3d_vtk_js_script(element_id: str, vtk_js_url: Optional[str] = None) ->
 
 
 def _build_vtk_js_renderer_core(*, include_container_size: bool) -> str:
+    # NOTE: This function returns JavaScript source (as a Python string) that runs
+    # in the notebook/browser to render VTK.js volumes.
     size_config = ""
     if include_container_size:
         size_config = (
@@ -291,6 +296,7 @@ def _build_vtk_js_renderer_core(*, include_container_size: bool) -> str:
         ".newInstance();"
         "interactor.setInteractorStyle(style);"
         "renderer.addVolume(volume);"
+        "/* Decode and render optional label-overlay volume client-side. */"
         "if(labelRawB64){"
         "const labelRaw=atob(labelRawB64);"
         "if(labelRaw.length===bytes.length){"

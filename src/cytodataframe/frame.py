@@ -21,6 +21,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Sequence,
     Tuple,
     TypeVar,
     Union,
@@ -88,6 +89,9 @@ class CytoDataFrame(pd.DataFrame):
 
     _metadata: ClassVar = ["_custom_attrs"]
     _HTML_3D_STUB_KEY: ClassVar[str] = "_cyto_3d_html_stub"
+    # Default notebook table/view height keeps ~2 rows visible with 300px cells
+    # while avoiding oversized outputs in typical Jupyter viewports.
+    _DEFAULT_TABLE_MAX_HEIGHT: ClassVar[str] = "700px"
 
     def __init__(  # noqa: PLR0913
         self: CytoDataFrame_type,
@@ -243,7 +247,7 @@ class CytoDataFrame(pd.DataFrame):
             "_output": widgets.Output(
                 layout=widgets.Layout(
                     width="100%",
-                    max_height="700px",
+                    max_height=self._DEFAULT_TABLE_MAX_HEIGHT,
                     overflow="visible",
                 )
             ),
@@ -1318,9 +1322,28 @@ class CytoDataFrame(pd.DataFrame):
         Args:
             data_value: Raw image value from the table row.
             pattern_map: Optional regex mapping from segmentation filename
-                patterns to source image patterns.
+                patterns to source image patterns. When provided, this method
+                extracts identifiers from ``data_value`` with each
+                ``original_pattern`` and finds files whose names match the
+                corresponding ``file_pattern`` and include one of those
+                identifiers.
             file_dir: Root directory containing mask/outline files.
-            candidate_path: Resolved image candidate path used for stem matching.
+            candidate_path: Best-effort resolved source image path returned by
+                ``_resolve_volume_candidate``. Used as a fallback identifier in
+                regex mode and as the primary stem in non-regex mode.
+
+                Example (no ``pattern_map``):
+                If ``candidate_path`` is
+                ``.../images/plateA/well_B03/site_1.tif``, the function looks
+                for files under ``file_dir`` that start with ``site_1``.
+
+                Example (with ``pattern_map``):
+                If ``data_value`` is
+                ``plateA/well_B03/site_1.tif`` and ``candidate_path`` is the
+                resolved on-disk path to the same image, regex captures from
+                ``data_value`` are tried first, then stems from both
+                ``data_value`` and ``candidate_path`` are used as fallback
+                identifiers.
 
         Returns:
             The first matching segmentation file path, or ``None`` when no match is
@@ -1385,6 +1408,37 @@ class CytoDataFrame(pd.DataFrame):
                 ]
                 if matching_files:
                     return matching_files[0]
+        return None
+
+    @staticmethod
+    def _find_matching_segmentation_in_dirs(
+        data_value: str,
+        pattern_map: Optional[dict],
+        candidate_path: pathlib.Path,
+        file_dirs: Sequence[Optional[str]],
+    ) -> Optional[pathlib.Path]:
+        """Find the first matching segmentation path across ordered directories.
+
+        Args:
+            data_value: Raw image value from the table row.
+            pattern_map: Optional regex mapping from segmentation filename
+                patterns to source image patterns.
+            candidate_path: Best-effort resolved source image path.
+            file_dirs: Ordered directories to search for segmentation files.
+
+        Returns:
+            The first matching segmentation file path, or ``None`` when no match is
+            found in any directory.
+        """
+        for file_dir in file_dirs:
+            segmentation_path = CytoDataFrame._find_matching_segmentation_path(
+                data_value=data_value,
+                pattern_map=pattern_map,
+                file_dir=file_dir,
+                candidate_path=candidate_path,
+            )
+            if segmentation_path is not None:
+                return segmentation_path
         return None
 
     def _prepare_3d_label_overlay(
@@ -1670,19 +1724,15 @@ class CytoDataFrame(pd.DataFrame):
 
             if volume_array.ndim == MIN_VOLUME_NDIM:
                 label_overlay = None
-                segmentation_path = self._find_matching_segmentation_path(
+                segmentation_path = self._find_matching_segmentation_in_dirs(
                     data_value=data_value,
                     pattern_map=pattern_map,
-                    file_dir=self._custom_attrs.get("data_mask_context_dir"),
                     candidate_path=candidate_path,
+                    file_dirs=(
+                        self._custom_attrs.get("data_mask_context_dir"),
+                        self._custom_attrs.get("data_outline_context_dir"),
+                    ),
                 )
-                if segmentation_path is None:
-                    segmentation_path = self._find_matching_segmentation_path(
-                        data_value=data_value,
-                        pattern_map=pattern_map,
-                        file_dir=self._custom_attrs.get("data_outline_context_dir"),
-                        candidate_path=candidate_path,
-                    )
                 if segmentation_path is not None:
                     label_overlay = self._prepare_3d_label_overlay(
                         segmentation_path=segmentation_path,
@@ -2312,19 +2362,15 @@ class CytoDataFrame(pd.DataFrame):
         data_value, candidate_path = self._resolve_volume_candidate(raw_value=value)
 
         pattern_map = self._custom_attrs.get("segmentation_file_regex")
-        segmentation_path = self._find_matching_segmentation_path(
+        segmentation_path = self._find_matching_segmentation_in_dirs(
             data_value=data_value,
             pattern_map=pattern_map,
-            file_dir=self._custom_attrs.get("data_mask_context_dir"),
             candidate_path=candidate_path,
+            file_dirs=(
+                self._custom_attrs.get("data_mask_context_dir"),
+                self._custom_attrs.get("data_outline_context_dir"),
+            ),
         )
-        if segmentation_path is None:
-            segmentation_path = self._find_matching_segmentation_path(
-                data_value=data_value,
-                pattern_map=pattern_map,
-                file_dir=self._custom_attrs.get("data_outline_context_dir"),
-                candidate_path=candidate_path,
-            )
         if segmentation_path is None:
             logger.debug("No 3D mask/outline found for image %s", data_value)
             return None
@@ -2372,6 +2418,12 @@ class CytoDataFrame(pd.DataFrame):
             A tuple of ``(x_min, x_max, y_min, y_max, z_min, z_max)`` bounds, or
             ``None`` when bounding-box columns are unavailable or cropping is
             disabled.
+
+            CellProfiler ``AreaShape_BoundingBox...`` columns are preferred when
+            available. Non-CellProfiler schemas can be mapped explicitly through
+            ``display_options["volume_bbox_column_map"]`` with keys:
+            ``x_min``, ``x_max``, ``y_min``, ``y_max``, and optionally
+            ``z_min``/``z_max``.
         """
         display_options = self._custom_attrs.get("display_options", {}) or {}
         if display_options.get("volume_disable_bbox_crop"):
@@ -2386,16 +2438,17 @@ class CytoDataFrame(pd.DataFrame):
             if bbox_source is not None
             else self.columns.tolist()
         )
-
-        def _find_col(tag: str) -> Optional[str]:
-            return next((col for col in bbox_cols if tag in str(col)), None)
-
-        x_min_col = _find_col("Minimum_X")
-        x_max_col = _find_col("Maximum_X")
-        y_min_col = _find_col("Minimum_Y")
-        y_max_col = _find_col("Maximum_Y")
-        z_min_col = _find_col("Minimum_Z")
-        z_max_col = _find_col("Maximum_Z")
+        (
+            x_min_col,
+            x_max_col,
+            y_min_col,
+            y_max_col,
+            z_min_col,
+            z_max_col,
+        ) = self._resolve_3d_bbox_columns(
+            bbox_cols=bbox_cols,
+            display_options=display_options,
+        )
 
         if not all(
             col is not None for col in (x_min_col, x_max_col, y_min_col, y_max_col)
@@ -2429,6 +2482,101 @@ class CytoDataFrame(pd.DataFrame):
         x_min = max(0, min(x_min, volume_shape[2]))
         x_max = max(x_min + 1, min(x_max, volume_shape[2]))
         return x_min, x_max, y_min, y_max, z_min, z_max
+
+    @staticmethod
+    def _resolve_3d_bbox_columns(
+        bbox_cols: Sequence[Any],
+        display_options: dict[str, Any],
+    ) -> Tuple[
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+    ]:
+        """Resolve bbox columns with custom, CP, then substring matching."""
+        custom_map = (
+            display_options.get("volume_bbox_column_map")
+            if isinstance(display_options.get("volume_bbox_column_map"), dict)
+            else {}
+        )
+
+        custom_cols = CytoDataFrame._resolve_bbox_columns_from_custom_map(
+            bbox_cols=bbox_cols,
+            custom_map=custom_map if isinstance(custom_map, dict) else {},
+        )
+        if all(col is not None for col in custom_cols[:4]):
+            return custom_cols
+
+        cp_cols = CytoDataFrame._resolve_bbox_columns_from_cp_convention(bbox_cols)
+        if all(col is not None for col in cp_cols[:4]):
+            return cp_cols
+
+        return (
+            CytoDataFrame._find_bbox_col_by_substring(bbox_cols, "Minimum_X"),
+            CytoDataFrame._find_bbox_col_by_substring(bbox_cols, "Maximum_X"),
+            CytoDataFrame._find_bbox_col_by_substring(bbox_cols, "Minimum_Y"),
+            CytoDataFrame._find_bbox_col_by_substring(bbox_cols, "Maximum_Y"),
+            CytoDataFrame._find_bbox_col_by_substring(bbox_cols, "Minimum_Z"),
+            CytoDataFrame._find_bbox_col_by_substring(bbox_cols, "Maximum_Z"),
+        )
+
+    @staticmethod
+    def _resolve_bbox_columns_from_custom_map(
+        bbox_cols: Sequence[Any],
+        custom_map: dict[str, Any],
+    ) -> Tuple[
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+    ]:
+        """Resolve bbox columns from display_options custom mapping."""
+        col_by_name = {str(col): col for col in bbox_cols}
+        return (
+            col_by_name.get(str(custom_map.get("x_min"))),
+            col_by_name.get(str(custom_map.get("x_max"))),
+            col_by_name.get(str(custom_map.get("y_min"))),
+            col_by_name.get(str(custom_map.get("y_max"))),
+            col_by_name.get(str(custom_map.get("z_min"))),
+            col_by_name.get(str(custom_map.get("z_max"))),
+        )
+
+    @staticmethod
+    def _resolve_bbox_columns_from_cp_convention(
+        bbox_cols: Sequence[Any],
+    ) -> Tuple[
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+    ]:
+        """Resolve bbox columns using preferred CellProfiler AreaShape names."""
+        col_by_name = {str(col): col for col in bbox_cols}
+        cp_prefixes = ("Cytoplasm_", "Nuclei_", "Cells_", "")
+        for prefix in cp_prefixes:
+            x_min = col_by_name.get(f"{prefix}AreaShape_BoundingBoxMinimum_X")
+            x_max = col_by_name.get(f"{prefix}AreaShape_BoundingBoxMaximum_X")
+            y_min = col_by_name.get(f"{prefix}AreaShape_BoundingBoxMinimum_Y")
+            y_max = col_by_name.get(f"{prefix}AreaShape_BoundingBoxMaximum_Y")
+            if not all(col is not None for col in (x_min, x_max, y_min, y_max)):
+                continue
+            z_min = col_by_name.get(f"{prefix}AreaShape_BoundingBoxMinimum_Z")
+            z_max = col_by_name.get(f"{prefix}AreaShape_BoundingBoxMaximum_Z")
+            return x_min, x_max, y_min, y_max, z_min, z_max
+        return None, None, None, None, None, None
+
+    @staticmethod
+    def _find_bbox_col_by_substring(
+        bbox_cols: Sequence[Any], tag: str
+    ) -> Optional[Any]:
+        """Find the first bbox column containing ``tag`` as a substring."""
+        return next((col for col in bbox_cols if tag in str(col)), None)
 
     def _find_3d_columns_for_display(
         self: CytoDataFrame_type,
@@ -3002,13 +3150,13 @@ class CytoDataFrame(pd.DataFrame):
         spacing = kwargs.pop("spacing", (1.0, 1.0, 1.0))
         opacity = kwargs.pop("opacity", "sigmoid")
         shade = kwargs.pop("shade", False)
-        widget_height = kwargs.pop("widget_height", "700px")
+        widget_height = kwargs.pop("widget_height", self._DEFAULT_TABLE_MAX_HEIGHT)
         table_width = kwargs.pop("table_width", "60%")
         view_width = kwargs.pop("view_width", "40%")
         table_max_height = kwargs.pop(
             "table_max_height",
             (self._custom_attrs.get("display_options") or {}).get(
-                "table_max_height", "700px"
+                "table_max_height", self._DEFAULT_TABLE_MAX_HEIGHT
             ),
         )
 
@@ -3115,7 +3263,11 @@ class CytoDataFrame(pd.DataFrame):
         backend: Optional[str] = "trame",
         **kwargs: Any,
     ) -> Any:
-        """Render a widget-based table with 3D views embedded in columns."""
+        """Render a widget-based table with 3D views embedded in columns.
+
+        Use ``table_height`` (or ``table_max_height``) to override the default
+        notebook table height.
+        """
 
         if backend is None:
             display_options = self._custom_attrs.get("display_options", {}) or {}
@@ -3183,8 +3335,16 @@ class CytoDataFrame(pd.DataFrame):
         debug = kwargs.pop("debug", False)
 
         table_height = _css_size(
-            kwargs.pop("table_height", kwargs.pop("table_max_height", "700px")),
-            "700px",
+            kwargs.pop(
+                "table_height",
+                kwargs.pop(
+                    "table_max_height",
+                    display_options.get(
+                        "table_max_height", self._DEFAULT_TABLE_MAX_HEIGHT
+                    ),
+                ),
+            ),
+            self._DEFAULT_TABLE_MAX_HEIGHT,
         )
 
         grid = widgets.GridspecLayout(
@@ -3660,7 +3820,7 @@ class CytoDataFrame(pd.DataFrame):
         table_height = str(
             display_options.get(
                 "table_height",
-                display_options.get("table_max_height", "700px"),
+                display_options.get("table_max_height", self._DEFAULT_TABLE_MAX_HEIGHT),
             )
         )
         scroll_wrapped_html = (

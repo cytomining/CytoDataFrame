@@ -360,6 +360,58 @@ def test_get_3d_label_overlay_from_cell_applies_bbox_crop(
     assert overlay.max() == 255
 
 
+def test_get_3d_bbox_crop_bounds_prefers_cellprofiler_columns() -> None:
+    cdf = CytoDataFrame(
+        data=pd.DataFrame(
+            {
+                "Other_Minimum_X": [0],
+                "Other_Maximum_X": [10],
+                "Other_Minimum_Y": [0],
+                "Other_Maximum_Y": [10],
+                "Cells_AreaShape_BoundingBoxMinimum_X": [2],
+                "Cells_AreaShape_BoundingBoxMaximum_X": [6],
+                "Cells_AreaShape_BoundingBoxMinimum_Y": [3],
+                "Cells_AreaShape_BoundingBoxMaximum_Y": [7],
+                "Cells_AreaShape_BoundingBoxMinimum_Z": [1],
+                "Cells_AreaShape_BoundingBoxMaximum_Z": [4],
+            }
+        )
+    )
+
+    bounds = cdf._get_3d_bbox_crop_bounds(row=0, volume_shape=(8, 8, 8))
+
+    assert bounds == (2, 6, 3, 7, 1, 4)
+
+
+def test_get_3d_bbox_crop_bounds_accepts_custom_column_map() -> None:
+    cdf = CytoDataFrame(
+        data=pd.DataFrame(
+            {
+                "bbox_x0": [1],
+                "bbox_x1": [5],
+                "bbox_y0": [2],
+                "bbox_y1": [6],
+                "bbox_z0": [0],
+                "bbox_z1": [3],
+            }
+        ),
+        display_options={
+            "volume_bbox_column_map": {
+                "x_min": "bbox_x0",
+                "x_max": "bbox_x1",
+                "y_min": "bbox_y0",
+                "y_max": "bbox_y1",
+                "z_min": "bbox_z0",
+                "z_max": "bbox_z1",
+            }
+        },
+    )
+
+    bounds = cdf._get_3d_bbox_crop_bounds(row=0, volume_shape=(8, 8, 8))
+
+    assert bounds == (1, 5, 2, 6, 0, 3)
+
+
 def test_find_matching_segmentation_path_filters_by_image_identifier(
     tmp_path: pathlib.Path,
 ) -> None:

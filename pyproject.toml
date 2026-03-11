@@ -130,7 +130,6 @@ run.omit = [
 formats = "ipynb,py:light"
 
 # specify where version replacement is performed
-
 [tool.bandit]
 exclude_dirs = [ "tests" ]
 

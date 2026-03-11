@@ -5,6 +5,9 @@ set -euo pipefail
 CPDOCKER_RUNDIR=$PWD/tests/data/CP_tutorial_3D_noise_nuclei_segmentation
 CPDOCKER_IMAGE_NAME=cp-3d-nuclei-profiling
 
+# Ensure dedicated output folder for segmentation masks exists.
+mkdir -p "$CPDOCKER_RUNDIR/output/masks"
+
 # build image
 docker build --platform linux/amd64 -t "$CPDOCKER_IMAGE_NAME" -f "$CPDOCKER_RUNDIR/Dockerfile" .
 

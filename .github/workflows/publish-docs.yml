@@ -30,7 +30,7 @@ jobs:
           mkdir pages
           touch pages/.nojekyll
           cd docs
-          uv run --frozen --with docs sphinx-build src build
+          uv run --frozen --group docs sphinx-build src build
           # remove any doctrees dirs which aren't needed for publishing
           find ./build -type d -name '.doctrees' -exec rm -rf {} +
           cp -r build/* ../pages/

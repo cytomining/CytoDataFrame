@@ -30,7 +30,7 @@
   <link href="_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
 <link href="_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
 
-    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=a746c00c" />
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="_static/mystnb.8ecb98da25f57f5357bf6f572d296f466b2cfe2517ffebfabe82451661e28f02.css" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=76a74e97" />
   
@@ -416,7 +416,7 @@ Please open a <a class="reference external" href="https://github.com/cytomining/
 </section>
 <section id="development">
 <h2>Development<a class="headerlink" href="#development" title="Link to this heading">#</a></h2>
-<p>This project leverages development environments managed by Python <a class="reference external" href="https://python-poetry.org/">Poetry</a>.
+<p>This project leverages development environments managed by <a class="reference external" href="https://docs.astral.sh/uv/">uv</a>.
 We leverage interactions with the Docker through Python to achieve reproducible results through containers.
 We use <a class="reference external" href="https://docs.pytest.org/">pytest</a> for testing and <a class="reference external" href="https://docs.github.com/en/actions">GitHub actions</a> for automated tests.</p>
 <section id="development-setup">
@@ -424,8 +424,8 @@ We use <a class="reference external" href="https://docs.pytest.org/">pytest</a> 
 <p>Perform the following steps to setup a Python development environment.</p>
 <ol class="arabic simple">
 <li><p><a class="reference external" href="https://www.python.org/downloads/">Install Python</a> (we recommend using <a class="reference external" href="https://github.com/pyenv/pyenv"><code class="docutils literal notranslate"><span class="pre">pyenv</span></code></a> or similar)</p></li>
-<li><p><a class="reference external" href="https://python-poetry.org/docs/#installation">Install Poetry</a></p></li>
-<li><p><a class="reference external" href="https://python-poetry.org/docs/basic-usage/#installing-dependencies">Install Poetry Environment</a>: <code class="docutils literal notranslate"><span class="pre">poetry</span> <span class="pre">install</span></code></p></li>
+<li><p><a class="reference external" href="https://docs.astral.sh/uv/getting-started/installation/">Install uv</a></p></li>
+<li><p>Install project dependencies: <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">sync</span> <span class="pre">--all-groups</span></code></p></li>
 </ol>
 </section>
 <section id="linting">
@@ -442,10 +442,10 @@ These automated tests generally must pass in order to merge work into this repos
 <section id="testing">
 <h3>Testing<a class="headerlink" href="#testing" title="Link to this heading">#</a></h3>
 <p>Work added to this project is automatically tested using <a class="reference external" href="https://docs.pytest.org/">pytest</a> via <a class="reference external" href="https://docs.github.com/en/actions">GitHub Actions</a>.
-Pytest is installed through the Poetry environment for this project.
+Pytest is installed through the uv-managed environment for this project.
 We recommend testing your work before opening pull requests with proposed changes.</p>
 <p>You can run pytest on your work using the following example:</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>%<span class="w"> </span>poetry<span class="w"> </span>run<span class="w"> </span>pytest
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>%<span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>pytest
 </pre></div>
 </div>
 <p>Pytest output includes a terminal coverage summary to help track current
@@ -485,13 +485,12 @@ We will check for accuracy, style, code coverage, and scope.</p>
 </section>
 <section id="versioning">
 <h2>Versioning<a class="headerlink" href="#versioning" title="Link to this heading">#</a></h2>
-<p>We use <a class="reference external" href="https://github.com/mtkennerly/poetry-dynamic-versioning"><code class="docutils literal notranslate"><span class="pre">poetry-dynamic-versioning</span></code></a> to help version this software through <a class="reference external" href="https://peps.python.org/pep-0440/"><code class="docutils literal notranslate"><span class="pre">PEP</span> <span class="pre">440</span></code></a> standards.
+<p>We use <a class="reference external" href="https://setuptools-scm.readthedocs.io/"><code class="docutils literal notranslate"><span class="pre">setuptools-scm</span></code></a> to help version this software through <a class="reference external" href="https://peps.python.org/pep-0440/"><code class="docutils literal notranslate"><span class="pre">PEP</span> <span class="pre">440</span></code></a> standards.
 Configuration for versioning is found within the <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code> file.
 All builds for packages include dynamic version data to help label distinct versions of the software.
-<code class="docutils literal notranslate"><span class="pre">poetry-dynamic-versioning</span></code> uses <code class="docutils literal notranslate"><span class="pre">git</span></code> tags to help distinguish version data.
-We also use the <code class="docutils literal notranslate"><span class="pre">__init__.py</span></code> file as a place to persist the version data for occaissions where the <code class="docutils literal notranslate"><span class="pre">git</span></code> history is unavailable or unwanted.</p>
-<p>The following command is used to add <code class="docutils literal notranslate"><span class="pre">poetry-dynamic-versioning</span></code> to Poetry for use with this project: <code class="docutils literal notranslate"><span class="pre">poetry</span> <span class="pre">self</span> <span class="pre">add</span> <span class="pre">&quot;poetry-dynamic-versioning[plugin]&quot;</span></code>.
-Versioning for the project is intended to align with GitHub Releases which provide <code class="docutils literal notranslate"><span class="pre">git</span></code> tag capabilities.</p>
+<code class="docutils literal notranslate"><span class="pre">setuptools-scm</span></code> uses <code class="docutils literal notranslate"><span class="pre">git</span></code> tags to help distinguish version data.
+We also use <code class="docutils literal notranslate"><span class="pre">src/cytodataframe/_version.py</span></code> as a place to persist version data for occasions where the <code class="docutils literal notranslate"><span class="pre">git</span></code> history is unavailable or unwanted.</p>
+<p>Versioning for the project is intended to align with GitHub Releases which provide <code class="docutils literal notranslate"><span class="pre">git</span></code> tag capabilities.</p>
 <section id="releases">
 <h3>Releases<a class="headerlink" href="#releases" title="Link to this heading">#</a></h3>
 <p>We publish source code by using <a class="reference external" href="https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases">GitHub Releases</a> available <a class="reference external" href="https://github.com/cytomining/CytoDataFrame/releases">here</a>.
@@ -501,7 +500,7 @@ We publish a related Python package through the <a class="reference external" hr
 <p>Several manual and automated steps are involved with publishing CytoDataFrame releases.
 See below for an overview of how this works.</p>
 <p>Notes about <a class="reference external" href="https://en.wikipedia.org/wiki/Software_versioning#Semantic_versioning">semantic version</a> (semver) specifications:
-CytoDataFrame version specifications are controlled through <a class="reference external" href="https://github.com/mtkennerly/poetry-dynamic-versioning"><code class="docutils literal notranslate"><span class="pre">poetry-dynamic-versioning</span></code></a> which leverages <a class="reference external" href="https://github.com/mtkennerly/dunamai"><code class="docutils literal notranslate"><span class="pre">dunamai</span></code></a> to create version data based on <a class="reference external" href="https://git-scm.com/book/en/v2/Git-Basics-Tagging">git tags</a> and commits.
+CytoDataFrame version specifications are controlled through <a class="reference external" href="https://setuptools-scm.readthedocs.io/"><code class="docutils literal notranslate"><span class="pre">setuptools-scm</span></code></a> to create version data based on <a class="reference external" href="https://git-scm.com/book/en/v2/Git-Basics-Tagging">git tags</a> and commits.
 CytoDataFrame release git tags are automatically applied through <a class="reference external" href="https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases">GitHub Releases</a> and related inferred changes from <a class="reference external" href="https://github.com/release-drafter/release-drafter"><code class="docutils literal notranslate"><span class="pre">release-drafter</span></code></a>.</p>
 <ol class="arabic simple">
 <li><p>Open a pull request and use a repository label for <code class="docutils literal notranslate"><span class="pre">release-&lt;semver</span> <span class="pre">release</span> <span class="pre">type&gt;</span></code> to label the pull request for visibility with <a class="reference external" href="https://github.com/release-drafter/release-drafter"><code class="docutils literal notranslate"><span class="pre">release-drafter</span></code></a> (for example, see <a class="reference external" href="https://github.com/cytomining/CytoDataFrame/pull/24">CytoDataFrame#24</a> as a reference of a semver patch update).</p></li>
@@ -522,11 +521,11 @@ Documentation is versioned as outlined earlier sections covering versioning deta
 See below for some examples of how to build documentation locally.</p>
 <div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="c1"># build single-version sphinx documentation</span>
 <span class="c1"># (useful for troubleshooting potential issues)</span>
-poetry<span class="w"> </span>run<span class="w"> </span>sphinx-build<span class="w"> </span>docs/src<span class="w"> </span>docs/build
+uv<span class="w"> </span>run<span class="w"> </span>sphinx-build<span class="w"> </span>docs/src<span class="w"> </span>docs/build
 
 <span class="c1"># build multi-version sphinx documentation</span>
 <span class="c1"># (used in production)</span>
-poetry<span class="w"> </span>run<span class="w"> </span>sphinx-multiversion<span class="w"> </span>docs/src<span class="w"> </span>docs/build
+uv<span class="w"> </span>run<span class="w"> </span>sphinx-multiversion<span class="w"> </span>docs/src<span class="w"> </span>docs/build
 </pre></div>
 </div>
 </section>

@@ -858,6 +858,67 @@ def test_slider_updates_state(monkeypatch: MonkeyPatch):
     assert render_called.get("called", False)
 
 
+def test_filter_slider_updates_state(monkeypatch: MonkeyPatch):
+    """Test that the filter slider updates internal state and triggers render."""
+    cdf = CytoDataFrame(
+        pd.DataFrame({"Image_FileName_DNA": ["example.tif"], "AreaShape_Area": [2.0]}),
+        display_options={"filter_column": "AreaShape_Area"},
+    )
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "AreaShape_Area"
+    render_called = {}
+
+    def mock_render_output() -> None:
+        render_called["called"] = True
+
+    monkeypatch.setattr(cdf, "_render_output", mock_render_output)
+    cdf._on_filter_slider_change({"new": (1.5, 2.5)})
+
+    assert cdf._custom_attrs["_widget_state"]["filter_range"] == (1.5, 2.5)
+    assert render_called.get("called", False)
+
+
+def test_filter_display_indices_by_widget_range() -> None:
+    cdf = CytoDataFrame(pd.DataFrame({"FilterScore": [1.0, 2.0, 3.0]}))
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_range"] = (1.5, 2.5)
+
+    filtered = cdf._filter_display_indices_by_widget_range(
+        data=cdf, display_indices=[0, 1, 2]
+    )
+
+    assert filtered == [1]
+
+
+def test_generate_html_removes_rows_outside_filter_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "Label": ["keep-row", "drop-row"],
+                "FilterScore": [2.0, 9.0],
+            }
+        ),
+        display_options={"filter_column": "FilterScore"},
+    )
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_range"] = (1.5, 2.5)
+
+    options = {
+        "display.notebook_repr_html": True,
+        "display.max_rows": 10,
+        "display.min_rows": 10,
+        "display.max_columns": 10,
+        "display.show_dimensions": False,
+    }
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda name: options[name])
+
+    html = cdf._generate_jupyter_dataframe_html()
+
+    assert "keep-row" in html
+    assert "drop-row" not in html
+
+
 def test_get_3d_volume_from_cell_loads_3d_tiff(tmp_path: pathlib.Path) -> None:
     volume = np.arange(4 * 5 * 6, dtype=np.uint8).reshape(4, 5, 6)
     image_path = tmp_path / "volume.tiff"
@@ -1162,6 +1223,38 @@ def test_repr_html_2d_displays_static_snapshot_details(
         if hasattr(widget, "data")
     ]
     assert any("cyto-static-snapshot" in block for block in html_blocks)
+
+
+def test_repr_html_2d_places_filter_slider_next_to_image_adjustment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [1.0, 2.0, 3.0]}),
+        display_options={"filter_column": "FilterScore"},
+    )
+    displayed: list[object] = []
+
+    monkeypatch.setattr(cdf, "_find_3d_columns_for_display", lambda: [])
+    monkeypatch.setattr(cdf, "_render_output", lambda: None)
+    monkeypatch.setattr(cdf, "_generate_jupyter_dataframe_html", lambda: "<table/>")
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda _name: True)
+
+    def capture_display(value: object) -> None:
+        displayed.append(value)
+
+    monkeypatch.setattr("cytodataframe.frame.display", capture_display)
+
+    assert cdf._repr_html_() is None
+
+    container = next(widget for widget in displayed if isinstance(widget, widgets.VBox))
+    controls_row = container.children[0]
+    assert isinstance(controls_row, widgets.HBox)
+    assert len(controls_row.children) == 2
+    filter_control = controls_row.children[1]
+    assert isinstance(filter_control, widgets.VBox)
+    assert isinstance(filter_control.children[0], widgets.HTML)
+    assert "<svg " in filter_control.children[0].value
+    assert isinstance(filter_control.children[1], widgets.SelectionRangeSlider)
 
 
 def test_is_notebook_or_lab_detects_zmq_shell(monkeypatch: pytest.MonkeyPatch) -> None:

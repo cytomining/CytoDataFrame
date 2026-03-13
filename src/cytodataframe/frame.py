@@ -63,6 +63,9 @@ RGB_LIKE_CHANNEL_COUNTS = (MIN_VOLUME_NDIM, 4)
 MIN_RGB_SPATIAL_DIM = 8
 MAX_RGB_ASPECT_RATIO = 4.0
 MIN_POSITION_COMPONENTS = 2
+FILTER_SLIDER_TOTAL_WIDTH_PX = 460
+FILTER_SLIDER_LABEL_WIDTH_PX = 140
+FILTER_SLIDER_READOUT_WIDTH_PX = 92
 
 # provide backwards compatibility for Self type in earlier Python versions.
 # see: https://peps.python.org/pep-0484/#annotating-instance-and-class-methods
@@ -230,8 +233,11 @@ class CytoDataFrame(pd.DataFrame):
             # add widget control meta
             "_widget_state": {
                 "scale": initial_brightness,
+                "filter_column": None,
+                "filter_range": None,
                 "shown": False,  # whether VBox has been displayed
                 "observing": False,  # whether slider observer is attached
+                "filter_observing": False,  # whether filter observer is attached
             },
             "_snapshot_cache": {},
             "_volume_cache": {},
@@ -251,6 +257,7 @@ class CytoDataFrame(pd.DataFrame):
                     overflow="visible",
                 )
             ),
+            "_filter_range_slider": None,
         }
 
         if self._custom_attrs["data_context_dir"] is not None:
@@ -361,6 +368,9 @@ class CytoDataFrame(pd.DataFrame):
             # add widget control meta
             cdf._custom_attrs["_widget_state"] = self._custom_attrs["_widget_state"]
             cdf._custom_attrs["_scale_slider"] = self._custom_attrs["_scale_slider"]
+            cdf._custom_attrs["_filter_range_slider"] = self._custom_attrs[
+                "_filter_range_slider"
+            ]
             cdf._custom_attrs["_output"] = self._custom_attrs["_output"]
 
             return cdf
@@ -417,6 +427,9 @@ class CytoDataFrame(pd.DataFrame):
             # add widget control meta
             cdf._custom_attrs["_widget_state"] = self._custom_attrs["_widget_state"]
             cdf._custom_attrs["_scale_slider"] = self._custom_attrs["_scale_slider"]
+            cdf._custom_attrs["_filter_range_slider"] = self._custom_attrs[
+                "_filter_range_slider"
+            ]
             cdf._custom_attrs["_output"] = self._custom_attrs["_output"]
 
         return cdf
@@ -520,6 +533,255 @@ class CytoDataFrame(pd.DataFrame):
 
         # redraw output after adjustments to scale state
         self._render_output()
+
+    def _on_filter_slider_change(
+        self: CytoDataFrame_type, change: Dict[str, Any]
+    ) -> None:
+        """Update widget filter state when the selection range changes."""
+        selection = change.get("new")
+        if (
+            not isinstance(selection, tuple)
+            or len(selection) != MIN_POSITION_COMPONENTS
+        ):
+            return
+        try:
+            lower = float(selection[0])
+            upper = float(selection[1])
+        except (TypeError, ValueError):
+            return
+
+        self._custom_attrs["_widget_state"]["filter_range"] = (
+            min(lower, upper),
+            max(lower, upper),
+        )
+        self._custom_attrs["_output"].clear_output(wait=True)
+        self._render_output()
+
+    def _get_filter_slider_column(self: CytoDataFrame_type) -> Optional[Any]:
+        """Return the configured filter column label when available."""
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        configured = display_options.get("filter_column")
+        if configured is None:
+            return None
+        configured_text = str(configured)
+        return next((col for col in self.columns if str(col) == configured_text), None)
+
+    def _ensure_filter_range_slider(self: CytoDataFrame_type) -> Optional[Any]:
+        """Build or refresh the range slider for row filtering."""
+        filter_col = self._get_filter_slider_column()
+        state = self._custom_attrs["_widget_state"]
+        if filter_col is None:
+            self._custom_attrs["_filter_range_slider"] = None
+            state["filter_column"] = None
+            state["filter_range"] = None
+            state["filter_observing"] = False
+            return None
+
+        if state.get("filter_column") != filter_col:
+            state["filter_column"] = filter_col
+            state["filter_range"] = None
+            state["filter_observing"] = False
+
+        numeric_values = pd.to_numeric(self[filter_col], errors="coerce").dropna()
+        if numeric_values.empty:
+            self._custom_attrs["_filter_range_slider"] = None
+            state["filter_range"] = None
+            state["filter_observing"] = False
+            return None
+
+        unique_values = sorted(float(value) for value in pd.unique(numeric_values))
+        if not unique_values:
+            self._custom_attrs["_filter_range_slider"] = None
+            state["filter_range"] = None
+            state["filter_observing"] = False
+            return None
+
+        options = [
+            (
+                f"{int(value)}" if float(value).is_integer() else f"{value:g}",
+                value,
+            )
+            for value in unique_values
+        ]
+        default_lower = unique_values[0]
+        default_upper = unique_values[-1]
+        selected_range = state.get("filter_range")
+        if (
+            not isinstance(selected_range, tuple)
+            or len(selected_range) != MIN_POSITION_COMPONENTS
+        ):
+            selected_range = (default_lower, default_upper)
+        lower = min(float(selected_range[0]), float(selected_range[1]))
+        upper = max(float(selected_range[0]), float(selected_range[1]))
+        lower = max(default_lower, min(lower, default_upper))
+        upper = max(lower, min(upper, default_upper))
+        state["filter_range"] = (lower, upper)
+
+        slider = widgets.SelectionRangeSlider(
+            options=options,
+            value=(lower, upper),
+            description=f"{filter_col}:",
+            continuous_update=False,
+            style={"description_width": f"{FILTER_SLIDER_LABEL_WIDTH_PX}px"},
+            layout=widgets.Layout(width=f"{FILTER_SLIDER_TOTAL_WIDTH_PX}px"),
+        )
+        self._custom_attrs["_filter_range_slider"] = slider
+        return slider
+
+    @staticmethod
+    def _build_filter_distribution_html(
+        values: pd.Series,
+        selected_range: Tuple[float, float],
+        width: int = FILTER_SLIDER_TOTAL_WIDTH_PX,
+        height: int = 96,
+        track_padding_px: Tuple[int, int] = (
+            FILTER_SLIDER_LABEL_WIDTH_PX,
+            FILTER_SLIDER_READOUT_WIDTH_PX,
+        ),
+    ) -> str:
+        """Build an inline SVG area/line plot for filter-value counts."""
+        numeric_values = pd.to_numeric(values, errors="coerce").dropna()
+        if numeric_values.empty:
+            return ""
+
+        values_array = numeric_values.to_numpy(dtype=np.float64, copy=False)
+        x_min = float(np.min(values_array))
+        original_x_max = float(np.max(values_array))
+        x_max = original_x_max
+        if x_max == x_min:
+            x_max = x_min + 1.0
+        # Use bins to avoid visually flat one-count-per-unique-value traces.
+        bin_count = int(min(40, max(10, np.sqrt(values_array.size))))
+        hist_counts, bin_edges = np.histogram(values_array, bins=bin_count)
+        y_max = float(max(1, int(hist_counts.max(initial=0))))
+
+        lower, upper = selected_range
+        lower = max(x_min, min(float(lower), x_max))
+        upper = max(lower, min(float(upper), x_max))
+
+        track_left_px, track_right_px = track_padding_px
+        plot_left = float(max(8, track_left_px))
+        plot_right = float(max(plot_left + 1, width - track_right_px))
+        plot_top = 2.0
+        # Align plot baseline with the slider track zone in the overlapped control.
+        plot_bottom = 26.0
+        plot_w = max(1.0, plot_right - plot_left)
+        plot_h = max(1.0, plot_bottom - plot_top)
+
+        def _sx(value: float) -> float:
+            return plot_left + ((value - x_min) / (x_max - x_min) * plot_w)
+
+        def _sy(value: float) -> float:
+            return plot_bottom - (value / y_max * plot_h)
+
+        highlight_x = _sx(lower)
+        highlight_w = max(1.0, _sx(upper) - highlight_x)
+        centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+        line_points = " ".join(
+            f"{_sx(float(center)):.2f},{_sy(float(count)):.2f}"
+            for center, count in zip(centers, hist_counts, strict=False)
+        )
+        area_points = (
+            f"{_sx(float(centers[0])):.2f},{plot_bottom:.2f} "
+            f"{line_points} "
+            f"{_sx(float(centers[-1])):.2f},{plot_bottom:.2f}"
+        )
+
+        return (
+            f"<div style='width:{width}px;margin:0 0 2px 0;'>"
+            f"<svg width='{width}' height='{height}' viewBox='0 0 {width} {height}' "
+            "preserveAspectRatio='none' role='img' aria-label='Filter distribution'>"
+            "<rect x='0' y='0' width='100%' height='100%' fill='#ffffff'/>"
+            f"<rect x='{highlight_x:.2f}' y='0' width='{highlight_w:.2f}' "
+            "height='100%' fill='#ffffff'/>"
+            f"<line x1='{plot_left:.2f}' y1='{plot_bottom:.2f}' "
+            f"x2='{plot_right:.2f}' y2='{plot_bottom:.2f}' stroke='#64748b'/>"
+            f"<line x1='{plot_left:.2f}' y1='{plot_top:.2f}' "
+            f"x2='{plot_left:.2f}' y2='{plot_bottom:.2f}' stroke='#64748b'/>"
+            "<polygon "
+            f"points='{area_points}' fill='#93c5fd' opacity='0.55'/>"
+            "<polyline "
+            f"points='{line_points}' fill='none' stroke='#1d4ed8' stroke-width='2'/>"
+            "</svg></div>"
+        )
+
+    def _build_filter_slider_control(
+        self: CytoDataFrame_type,
+    ) -> Tuple[Optional[Any], Optional[Any]]:
+        """Return the filter slider and its display control widget."""
+        slider = self._ensure_filter_range_slider()
+        if slider is None:
+            return None, None
+        filter_col = self._custom_attrs["_widget_state"].get("filter_column")
+        selected_range = self._custom_attrs["_widget_state"].get("filter_range")
+        if (
+            filter_col is None
+            or not isinstance(selected_range, tuple)
+            or len(selected_range) != MIN_POSITION_COMPONENTS
+            or filter_col not in self.columns
+        ):
+            return slider, slider
+
+        distribution_html = self._build_filter_distribution_html(
+            values=self[filter_col],
+            selected_range=(float(selected_range[0]), float(selected_range[1])),
+            height=52,
+            width=FILTER_SLIDER_TOTAL_WIDTH_PX,
+            track_padding_px=(
+                FILTER_SLIDER_LABEL_WIDTH_PX,
+                FILTER_SLIDER_READOUT_WIDTH_PX,
+            ),
+        )
+        if not distribution_html:
+            return slider, slider
+
+        plot_widget = widgets.HTML(
+            value=distribution_html,
+            layout=widgets.Layout(
+                width=f"{FILTER_SLIDER_TOTAL_WIDTH_PX}px",
+                height="52px",
+            ),
+        )
+        slider.layout = widgets.Layout(
+            width=f"{FILTER_SLIDER_TOTAL_WIDTH_PX}px",
+            margin="-44px 0 0 0",
+        )
+        return slider, widgets.VBox(
+            [plot_widget, slider],
+            layout=widgets.Layout(
+                width=f"{FILTER_SLIDER_TOTAL_WIDTH_PX}px",
+                height="52px",
+                align_items="center",
+                overflow="hidden",
+            ),
+        )
+
+    def _filter_display_indices_by_widget_range(
+        self: CytoDataFrame_type,
+        data: pd.DataFrame,
+        display_indices: List[Any],
+    ) -> List[Any]:
+        """Filter row labels by configured slider range."""
+        filter_col = self._custom_attrs["_widget_state"].get("filter_column")
+        filter_range = self._custom_attrs["_widget_state"].get("filter_range")
+        if (
+            filter_col is None
+            or filter_col not in data.columns
+            or not isinstance(filter_range, tuple)
+            or len(filter_range) != MIN_POSITION_COMPONENTS
+        ):
+            return display_indices
+
+        try:
+            lower = float(filter_range[0])
+            upper = float(filter_range[1])
+        except (TypeError, ValueError):
+            return display_indices
+
+        numeric_values = pd.to_numeric(data[filter_col], errors="coerce")
+        in_range = numeric_values[(numeric_values >= lower) & (numeric_values <= upper)]
+        allowed = set(in_range.index.tolist())
+        return [row_label for row_label in display_indices if row_label in allowed]
 
     def get_bounding_box_from_data(
         self: CytoDataFrame_type,
@@ -3661,6 +3923,17 @@ class CytoDataFrame(pd.DataFrame):
 
             # gather indices which will be displayed based on pandas configuration
             display_indices = CytoDataFrame(data).get_displayed_rows()
+            display_indices = self._filter_display_indices_by_widget_range(
+                data=data,
+                display_indices=display_indices,
+            )
+            if self._custom_attrs["_widget_state"].get(
+                "filter_column"
+            ) is not None and isinstance(
+                self._custom_attrs["_widget_state"].get("filter_range"), tuple
+            ):
+                data = data.loc[display_indices]
+                display_indices = data.index.tolist()
 
             # gather bounding box columns for use below
             if self._custom_attrs["data_bounding_box"] is not None:
@@ -4106,6 +4379,93 @@ class CytoDataFrame(pd.DataFrame):
             logger.debug("Failed to build trame snapshot HTML: %s", exc)
             return html_content
 
+    def _try_render_trame_widget_table(
+        self: CytoDataFrame_type, debug: bool, display_options: dict[str, Any]
+    ) -> bool:
+        """Try rendering the trame widget table and return ``True`` on success."""
+        if debug:
+            return False
+        force_trame = display_options.get("view") == "trame"
+        auto_trame_for_3d = display_options.get("auto_trame_for_3d", True)
+        columns_3d = self._find_3d_columns_for_display() if auto_trame_for_3d else []
+        if not (force_trame or columns_3d):
+            return False
+        if force_trame and not columns_3d:
+            columns_3d = list(
+                dict.fromkeys(
+                    [
+                        *(self.find_image_columns() or []),
+                        *self.find_ome_arrow_columns(self),
+                    ]
+                )
+            )
+        if not columns_3d:
+            return False
+        try:
+            widget_table = self.show_widget_table(
+                column=columns_3d[0],
+                columns_3d=columns_3d,
+                backend=None,
+            )
+            display(widget_table)
+            html_content = self._generate_trame_snapshot_html()
+            details_html = (
+                '<details class="cyto-static-snapshot">'
+                "<summary>Static snapshot (for non-interactive view)</summary>"
+                f"{html_content}</details>"
+            )
+            display(HTML(details_html))
+            return True
+        except Exception as exc:
+            logger.debug(
+                "Trame widget table render failed, falling back to HTML: %s",
+                exc,
+            )
+            return False
+
+    def _render_notebook_widget_output(
+        self: CytoDataFrame_type, display_options: dict[str, Any]
+    ) -> None:
+        """Render ipywidgets controls and the notebook HTML table output."""
+        filter_slider, filter_control = self._build_filter_slider_control()
+        controls: List[Any] = [self._custom_attrs["_scale_slider"]]
+        if filter_control is not None:
+            controls.append(filter_control)
+        controls_row = widgets.HBox(controls)
+
+        if not self._custom_attrs["_widget_state"]["shown"]:
+            display(
+                widgets.VBox(
+                    [
+                        controls_row,
+                        self._custom_attrs["_output"],
+                    ]
+                )
+            )
+            if bool(display_options.get("show_static_snapshot_details", True)):
+                snapshot_html = self._generate_jupyter_dataframe_html()
+                details_html = (
+                    '<details class="cyto-static-snapshot">'
+                    "<summary>Static snapshot (for non-interactive view)</summary>"
+                    f"{snapshot_html}</details>"
+                )
+                display(HTML(details_html))
+            self._custom_attrs["_widget_state"]["shown"] = True
+
+        if not self._custom_attrs["_widget_state"]["observing"]:
+            self._custom_attrs["_scale_slider"].observe(
+                self._on_slider_change, names="value"
+            )
+            self._custom_attrs["_widget_state"]["observing"] = True
+        if (
+            filter_slider is not None
+            and not self._custom_attrs["_widget_state"]["filter_observing"]
+        ):
+            filter_slider.observe(self._on_filter_slider_change, names="value")
+            self._custom_attrs["_widget_state"]["filter_observing"] = True
+
+        self._render_output()
+
     def _repr_html_(self: CytoDataFrame_type, debug: bool = False) -> str:
         """
         Returns HTML representation of the underlying pandas DataFrame
@@ -4120,82 +4480,17 @@ class CytoDataFrame(pd.DataFrame):
         Returns:
             str: The data in a pandas DataFrame.
         """
-
         display_options = self._custom_attrs.get("display_options", {}) or {}
-        force_trame = display_options.get("view") == "trame"
-        auto_trame_for_3d = display_options.get("auto_trame_for_3d", True)
-        columns_3d = self._find_3d_columns_for_display() if auto_trame_for_3d else []
-        if (force_trame or columns_3d) and not debug:
-            if force_trame and not columns_3d:
-                columns_3d = list(
-                    dict.fromkeys(
-                        [
-                            *(self.find_image_columns() or []),
-                            *self.find_ome_arrow_columns(self),
-                        ]
-                    )
-                )
-            if columns_3d:
-                try:
-                    widget_table = self.show_widget_table(
-                        column=columns_3d[0],
-                        columns_3d=columns_3d,
-                        backend=None,
-                    )
-                    display(widget_table)
-                    html_content = self._generate_trame_snapshot_html()
-                    details_html = (
-                        '<details class="cyto-static-snapshot">'
-                        "<summary>Static snapshot (for non-interactive view)</summary>"
-                        f"{html_content}</details>"
-                    )
-                    display(HTML(details_html))
-                    return None
-                except Exception as exc:
-                    logger.debug(
-                        "Trame widget table render failed, falling back to HTML: %s",
-                        exc,
-                    )
-
-        # if we're in a notebook process as though in a jupyter environment
-        if get_option("display.notebook_repr_html") and not debug:
-            if not self._custom_attrs["_widget_state"]["shown"]:
-                display(
-                    widgets.VBox(
-                        [
-                            self._custom_attrs["_scale_slider"],
-                            self._custom_attrs["_output"],
-                        ]
-                    )
-                )
-                if bool(display_options.get("show_static_snapshot_details", True)):
-                    snapshot_html = self._generate_jupyter_dataframe_html()
-                    details_html = (
-                        '<details class="cyto-static-snapshot">'
-                        "<summary>Static snapshot (for non-interactive view)</summary>"
-                        f"{snapshot_html}</details>"
-                    )
-                    display(HTML(details_html))
-                self._custom_attrs["_widget_state"]["shown"] = True
-
-            # Attach the slider observer exactly once
-            if not self._custom_attrs["_widget_state"]["observing"]:
-                self._custom_attrs["_scale_slider"].observe(
-                    self._on_slider_change, names="value"
-                )
-                self._custom_attrs["_widget_state"]["observing"] = True
-
-            # render fresh HTML for this cell
-            self._render_output()
-
-        # allow for debug mode to be set which returns the HTML
-        # without widgets.
-
-        elif debug:
-            return self._generate_jupyter_dataframe_html()
-
-        else:
+        if self._try_render_trame_widget_table(
+            debug=debug, display_options=display_options
+        ):
             return None
+        if get_option("display.notebook_repr_html") and not debug:
+            self._render_notebook_widget_output(display_options=display_options)
+            return None
+        if debug:
+            return self._generate_jupyter_dataframe_html()
+        return None
 
     def __repr__(self: CytoDataFrame_type, debug: bool = False) -> str:
         """

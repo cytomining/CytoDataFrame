@@ -65,7 +65,7 @@ MAX_RGB_ASPECT_RATIO = 4.0
 MIN_POSITION_COMPONENTS = 2
 FILTER_SLIDER_TOTAL_WIDTH_PX = 460
 FILTER_SLIDER_LABEL_WIDTH_PX = 140
-FILTER_SLIDER_READOUT_WIDTH_PX = 92
+FILTER_SLIDER_READOUT_WIDTH_PX = 72
 
 # provide backwards compatibility for Self type in earlier Python versions.
 # see: https://peps.python.org/pep-0484/#annotating-instance-and-class-methods
@@ -235,9 +235,11 @@ class CytoDataFrame(pd.DataFrame):
                 "scale": initial_brightness,
                 "filter_column": None,
                 "filter_range": None,
+                "filter_columns": [],
+                "filter_ranges": {},
                 "shown": False,  # whether VBox has been displayed
                 "observing": False,  # whether slider observer is attached
-                "filter_observing": False,  # whether filter observer is attached
+                "filter_observing": {},  # per-column observer attachment flags
             },
             "_snapshot_cache": {},
             "_volume_cache": {},
@@ -257,7 +259,7 @@ class CytoDataFrame(pd.DataFrame):
                     overflow="visible",
                 )
             ),
-            "_filter_range_slider": None,
+            "_filter_range_sliders": {},
         }
 
         if self._custom_attrs["data_context_dir"] is not None:
@@ -368,8 +370,8 @@ class CytoDataFrame(pd.DataFrame):
             # add widget control meta
             cdf._custom_attrs["_widget_state"] = self._custom_attrs["_widget_state"]
             cdf._custom_attrs["_scale_slider"] = self._custom_attrs["_scale_slider"]
-            cdf._custom_attrs["_filter_range_slider"] = self._custom_attrs[
-                "_filter_range_slider"
+            cdf._custom_attrs["_filter_range_sliders"] = self._custom_attrs[
+                "_filter_range_sliders"
             ]
             cdf._custom_attrs["_output"] = self._custom_attrs["_output"]
 
@@ -427,8 +429,8 @@ class CytoDataFrame(pd.DataFrame):
             # add widget control meta
             cdf._custom_attrs["_widget_state"] = self._custom_attrs["_widget_state"]
             cdf._custom_attrs["_scale_slider"] = self._custom_attrs["_scale_slider"]
-            cdf._custom_attrs["_filter_range_slider"] = self._custom_attrs[
-                "_filter_range_slider"
+            cdf._custom_attrs["_filter_range_sliders"] = self._custom_attrs[
+                "_filter_range_sliders"
             ]
             cdf._custom_attrs["_output"] = self._custom_attrs["_output"]
 
@@ -538,6 +540,12 @@ class CytoDataFrame(pd.DataFrame):
         self: CytoDataFrame_type, change: Dict[str, Any]
     ) -> None:
         """Update widget filter state when the selection range changes."""
+        slider_owner = change.get("owner")
+        filter_col = (
+            getattr(slider_owner, "_cyto_filter_column", None)
+            if slider_owner is not None
+            else None
+        )
         selection = change.get("new")
         if (
             not isinstance(selection, tuple)
@@ -550,62 +558,110 @@ class CytoDataFrame(pd.DataFrame):
         except (TypeError, ValueError):
             return
 
-        self._custom_attrs["_widget_state"]["filter_range"] = (
+        normalized_range = (
             min(lower, upper),
             max(lower, upper),
         )
+        state = self._custom_attrs["_widget_state"]
+        if filter_col is not None:
+            state.setdefault("filter_ranges", {})[str(filter_col)] = normalized_range
+            # preserve legacy single-filter fields for backward compatibility
+            if state.get("filter_column") is None:
+                state["filter_column"] = filter_col
+            if str(state.get("filter_column")) == str(filter_col):
+                state["filter_range"] = normalized_range
+        else:
+            state["filter_range"] = normalized_range
+            if state.get("filter_column") is not None:
+                state.setdefault("filter_ranges", {})[str(state["filter_column"])] = (
+                    normalized_range
+                )
         self._custom_attrs["_output"].clear_output(wait=True)
         self._render_output()
 
-    def _get_filter_slider_column(self: CytoDataFrame_type) -> Optional[Any]:
-        """Return the configured filter column label when available."""
+    def _get_filter_slider_columns(self: CytoDataFrame_type) -> List[Any]:
+        """Return configured filter columns, preserving user-specified order."""
         display_options = self._custom_attrs.get("display_options", {}) or {}
-        configured = display_options.get("filter_column")
-        if configured is None:
-            return None
-        configured_text = str(configured)
-        return next((col for col in self.columns if str(col) == configured_text), None)
+        configured_many = display_options.get("filter_columns")
+        configured_single = display_options.get("filter_column")
+        configured: List[Any] = []
+        if isinstance(configured_many, (list, tuple)):
+            configured.extend(configured_many)
+        elif configured_many is not None:
+            configured.append(configured_many)
+        elif configured_single is not None:
+            configured.append(configured_single)
 
-    def _ensure_filter_range_slider(self: CytoDataFrame_type) -> Optional[Any]:
-        """Build or refresh the range slider for row filtering."""
-        filter_col = self._get_filter_slider_column()
+        if not configured:
+            return []
+
+        selected_columns: List[Any] = []
+        seen: set[str] = set()
+        for requested in configured:
+            requested_str = str(requested)
+            matched = next(
+                (col for col in self.columns if str(col) == requested_str),
+                None,
+            )
+            if matched is None:
+                continue
+            key = str(matched)
+            if key in seen:
+                continue
+            seen.add(key)
+            selected_columns.append(matched)
+        return selected_columns
+
+    def _ensure_filter_range_slider(
+        self: CytoDataFrame_type, filter_col: Optional[Any] = None
+    ) -> Optional[Any]:
+        """Build or refresh one range slider for row filtering."""
+        if filter_col is None:
+            columns = self._get_filter_slider_columns()
+            filter_col = columns[0] if columns else None
         state = self._custom_attrs["_widget_state"]
         if filter_col is None:
-            self._custom_attrs["_filter_range_slider"] = None
+            self._custom_attrs["_filter_range_sliders"] = {}
+            state["filter_columns"] = []
             state["filter_column"] = None
             state["filter_range"] = None
-            state["filter_observing"] = False
+            state["filter_ranges"] = {}
+            state["filter_observing"] = {}
             return None
 
-        if state.get("filter_column") != filter_col:
-            state["filter_column"] = filter_col
-            state["filter_range"] = None
-            state["filter_observing"] = False
+        slider_key = str(filter_col)
+        state["filter_column"] = state.get("filter_column") or filter_col
+        state.setdefault("filter_ranges", {})
+        state.setdefault("filter_observing", {})
 
         numeric_values = pd.to_numeric(self[filter_col], errors="coerce").dropna()
         if numeric_values.empty:
-            self._custom_attrs["_filter_range_slider"] = None
-            state["filter_range"] = None
-            state["filter_observing"] = False
+            self._custom_attrs.setdefault("_filter_range_sliders", {}).pop(
+                slider_key, None
+            )
+            state["filter_ranges"].pop(slider_key, None)
+            state["filter_observing"].pop(slider_key, None)
+            if str(state.get("filter_column")) == slider_key:
+                state["filter_range"] = None
             return None
 
         unique_values = sorted(float(value) for value in pd.unique(numeric_values))
         if not unique_values:
-            self._custom_attrs["_filter_range_slider"] = None
-            state["filter_range"] = None
-            state["filter_observing"] = False
+            self._custom_attrs.setdefault("_filter_range_sliders", {}).pop(
+                slider_key, None
+            )
+            state["filter_ranges"].pop(slider_key, None)
+            state["filter_observing"].pop(slider_key, None)
+            if str(state.get("filter_column")) == slider_key:
+                state["filter_range"] = None
             return None
 
         options = [
-            (
-                f"{int(value)}" if float(value).is_integer() else f"{value:g}",
-                value,
-            )
-            for value in unique_values
+            (self._format_filter_slider_label(value), value) for value in unique_values
         ]
         default_lower = unique_values[0]
         default_upper = unique_values[-1]
-        selected_range = state.get("filter_range")
+        selected_range = state["filter_ranges"].get(slider_key)
         if (
             not isinstance(selected_range, tuple)
             or len(selected_range) != MIN_POSITION_COMPONENTS
@@ -615,7 +671,10 @@ class CytoDataFrame(pd.DataFrame):
         upper = max(float(selected_range[0]), float(selected_range[1]))
         lower = max(default_lower, min(lower, default_upper))
         upper = max(lower, min(upper, default_upper))
-        state["filter_range"] = (lower, upper)
+        normalized_range = (lower, upper)
+        state["filter_ranges"][slider_key] = normalized_range
+        if str(state.get("filter_column")) == slider_key:
+            state["filter_range"] = normalized_range
 
         slider = widgets.SelectionRangeSlider(
             options=options,
@@ -625,8 +684,17 @@ class CytoDataFrame(pd.DataFrame):
             style={"description_width": f"{FILTER_SLIDER_LABEL_WIDTH_PX}px"},
             layout=widgets.Layout(width=f"{FILTER_SLIDER_TOTAL_WIDTH_PX}px"),
         )
-        self._custom_attrs["_filter_range_slider"] = slider
+        slider._cyto_filter_column = filter_col  # type: ignore[attr-defined]
+        self._custom_attrs.setdefault("_filter_range_sliders", {})[slider_key] = slider
         return slider
+
+    @staticmethod
+    def _format_filter_slider_label(value: float) -> str:
+        """Format displayed slider labels with two decimals for float values."""
+        value = float(value)
+        if value.is_integer():
+            return f"{int(value)}"
+        return f"{value:.2f}"
 
     @staticmethod
     def _build_filter_distribution_html(
@@ -662,9 +730,10 @@ class CytoDataFrame(pd.DataFrame):
         track_left_px, track_right_px = track_padding_px
         plot_left = float(max(8, track_left_px))
         plot_right = float(max(plot_left + 1, width - track_right_px))
-        plot_top = 2.0
-        # Align plot baseline with the slider track zone in the overlapped control.
-        plot_bottom = 26.0
+        plot_top = 6.0
+        # Keep slider widget position fixed; shift only plotted data upward by
+        # using extra bottom padding inside the background SVG.
+        plot_bottom = 22.0
         plot_w = max(1.0, plot_right - plot_left)
         plot_h = max(1.0, plot_bottom - plot_top)
 
@@ -694,10 +763,6 @@ class CytoDataFrame(pd.DataFrame):
             "<rect x='0' y='0' width='100%' height='100%' fill='#ffffff'/>"
             f"<rect x='{highlight_x:.2f}' y='0' width='{highlight_w:.2f}' "
             "height='100%' fill='#ffffff'/>"
-            f"<line x1='{plot_left:.2f}' y1='{plot_bottom:.2f}' "
-            f"x2='{plot_right:.2f}' y2='{plot_bottom:.2f}' stroke='#64748b'/>"
-            f"<line x1='{plot_left:.2f}' y1='{plot_top:.2f}' "
-            f"x2='{plot_left:.2f}' y2='{plot_bottom:.2f}' stroke='#64748b'/>"
             "<polygon "
             f"points='{area_points}' fill='#93c5fd' opacity='0.55'/>"
             "<polyline "
@@ -705,18 +770,20 @@ class CytoDataFrame(pd.DataFrame):
             "</svg></div>"
         )
 
-    def _build_filter_slider_control(
-        self: CytoDataFrame_type,
+    def _build_filter_slider_control_for_column(
+        self: CytoDataFrame_type, filter_col: Any
     ) -> Tuple[Optional[Any], Optional[Any]]:
-        """Return the filter slider and its display control widget."""
-        slider = self._ensure_filter_range_slider()
+        """Return one filter slider and its display control widget."""
+        slider = self._ensure_filter_range_slider(filter_col=filter_col)
         if slider is None:
             return None, None
-        filter_col = self._custom_attrs["_widget_state"].get("filter_column")
-        selected_range = self._custom_attrs["_widget_state"].get("filter_range")
+        selected_range = (
+            self._custom_attrs["_widget_state"]
+            .get("filter_ranges", {})
+            .get(str(filter_col))
+        )
         if (
-            filter_col is None
-            or not isinstance(selected_range, tuple)
+            not isinstance(selected_range, tuple)
             or len(selected_range) != MIN_POSITION_COMPONENTS
             or filter_col not in self.columns
         ):
@@ -756,32 +823,74 @@ class CytoDataFrame(pd.DataFrame):
             ),
         )
 
+    def _build_filter_slider_controls(
+        self: CytoDataFrame_type,
+    ) -> Tuple[List[Any], List[Any]]:
+        """Return slider widgets and filter controls for all configured columns."""
+        columns = self._get_filter_slider_columns()
+        state = self._custom_attrs["_widget_state"]
+        state["filter_columns"] = columns
+        if columns and state.get("filter_column") is None:
+            state["filter_column"] = columns[0]
+        if not columns:
+            state["filter_ranges"] = {}
+            state["filter_observing"] = {}
+            self._custom_attrs["_filter_range_sliders"] = {}
+            return [], []
+
+        sliders: List[Any] = []
+        controls: List[Any] = []
+        for filter_col in columns:
+            slider, control = self._build_filter_slider_control_for_column(filter_col)
+            if slider is None:
+                continue
+            sliders.append(slider)
+            controls.append(control if control is not None else slider)
+        return sliders, controls
+
     def _filter_display_indices_by_widget_range(
         self: CytoDataFrame_type,
         data: pd.DataFrame,
         display_indices: List[Any],
     ) -> List[Any]:
-        """Filter row labels by configured slider range."""
-        filter_col = self._custom_attrs["_widget_state"].get("filter_column")
-        filter_range = self._custom_attrs["_widget_state"].get("filter_range")
-        if (
-            filter_col is None
-            or filter_col not in data.columns
-            or not isinstance(filter_range, tuple)
-            or len(filter_range) != MIN_POSITION_COMPONENTS
-        ):
+        """Filter row labels by all configured slider ranges."""
+        state = self._custom_attrs["_widget_state"]
+        filter_columns = state.get("filter_columns") or []
+        filter_ranges = state.get("filter_ranges") or {}
+        if not filter_columns and state.get("filter_column") is not None:
+            filter_columns = [state.get("filter_column")]
+            if isinstance(state.get("filter_range"), tuple):
+                filter_ranges = {
+                    str(state.get("filter_column")): state.get("filter_range")
+                }
+        if not filter_columns:
             return display_indices
 
-        try:
-            lower = float(filter_range[0])
-            upper = float(filter_range[1])
-        except (TypeError, ValueError):
-            return display_indices
+        active_indices = display_indices
+        for filter_col in filter_columns:
+            if filter_col not in data.columns:
+                continue
+            filter_range = filter_ranges.get(str(filter_col))
+            if (
+                not isinstance(filter_range, tuple)
+                or len(filter_range) != MIN_POSITION_COMPONENTS
+            ):
+                continue
+            try:
+                lower = float(filter_range[0])
+                upper = float(filter_range[1])
+            except (TypeError, ValueError):
+                continue
+            numeric_values = pd.to_numeric(data[filter_col], errors="coerce")
+            in_range = numeric_values[
+                (numeric_values >= lower) & (numeric_values <= upper)
+            ]
+            allowed = set(in_range.index.tolist())
+            active_indices = [
+                row_label for row_label in active_indices if row_label in allowed
+            ]
 
-        numeric_values = pd.to_numeric(data[filter_col], errors="coerce")
-        in_range = numeric_values[(numeric_values >= lower) & (numeric_values <= upper)]
-        allowed = set(in_range.index.tolist())
-        return [row_label for row_label in display_indices if row_label in allowed]
+        return active_indices
 
     def get_bounding_box_from_data(
         self: CytoDataFrame_type,
@@ -3927,10 +4036,30 @@ class CytoDataFrame(pd.DataFrame):
                 data=data,
                 display_indices=display_indices,
             )
-            if self._custom_attrs["_widget_state"].get(
-                "filter_column"
-            ) is not None and isinstance(
-                self._custom_attrs["_widget_state"].get("filter_range"), tuple
+            active_filter_columns = (
+                self._custom_attrs["_widget_state"].get("filter_columns") or []
+            )
+            active_filter_ranges = self._custom_attrs["_widget_state"].get(
+                "filter_ranges", {}
+            )
+            if (
+                not active_filter_columns
+                and self._custom_attrs["_widget_state"].get("filter_column") is not None
+            ):
+                active_filter_columns = [
+                    self._custom_attrs["_widget_state"].get("filter_column")
+                ]
+                if isinstance(
+                    self._custom_attrs["_widget_state"].get("filter_range"), tuple
+                ):
+                    active_filter_ranges = {
+                        str(active_filter_columns[0]): self._custom_attrs[
+                            "_widget_state"
+                        ].get("filter_range")
+                    }
+            if active_filter_columns and any(
+                isinstance(active_filter_ranges.get(str(col)), tuple)
+                for col in active_filter_columns
             ):
                 data = data.loc[display_indices]
                 display_indices = data.index.tolist()
@@ -4427,7 +4556,23 @@ class CytoDataFrame(pd.DataFrame):
         self: CytoDataFrame_type, display_options: dict[str, Any]
     ) -> None:
         """Render ipywidgets controls and the notebook HTML table output."""
-        filter_slider, filter_control = self._build_filter_slider_control()
+        filter_sliders, filter_controls = self._build_filter_slider_controls()
+        filter_control: Optional[Any] = None
+        if len(filter_controls) == 1:
+            filter_control = filter_controls[0]
+        elif len(filter_controls) >= MIN_POSITION_COMPONENTS:
+            accordion_content = widgets.VBox(
+                filter_controls,
+                layout=widgets.Layout(
+                    width=f"{FILTER_SLIDER_TOTAL_WIDTH_PX}px",
+                    align_items="stretch",
+                ),
+            )
+            accordion = widgets.Accordion(children=[accordion_content])
+            with contextlib.suppress(Exception):
+                accordion.set_title(0, "Filters")
+            accordion.selected_index = None
+            filter_control = accordion
         controls: List[Any] = [self._custom_attrs["_scale_slider"]]
         if filter_control is not None:
             controls.append(filter_control)
@@ -4457,12 +4602,15 @@ class CytoDataFrame(pd.DataFrame):
                 self._on_slider_change, names="value"
             )
             self._custom_attrs["_widget_state"]["observing"] = True
-        if (
-            filter_slider is not None
-            and not self._custom_attrs["_widget_state"]["filter_observing"]
-        ):
-            filter_slider.observe(self._on_filter_slider_change, names="value")
-            self._custom_attrs["_widget_state"]["filter_observing"] = True
+        filter_observing = self._custom_attrs["_widget_state"].setdefault(
+            "filter_observing", {}
+        )
+        for filter_slider in filter_sliders:
+            filter_col = getattr(filter_slider, "_cyto_filter_column", None)
+            key = str(filter_col) if filter_col is not None else ""
+            if key and not filter_observing.get(key):
+                filter_slider.observe(self._on_filter_slider_change, names="value")
+                filter_observing[key] = True
 
         self._render_output()
 

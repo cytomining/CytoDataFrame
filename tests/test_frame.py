@@ -889,6 +889,44 @@ def test_filter_display_indices_by_widget_range() -> None:
     assert filtered == [1]
 
 
+def test_filter_display_indices_by_widget_range_multiple_columns() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "FilterScoreA": [1.0, 2.0, 3.0, 4.0],
+                "FilterScoreB": [10.0, 20.0, 30.0, 40.0],
+            }
+        )
+    )
+    cdf._custom_attrs["_widget_state"]["filter_columns"] = [
+        "FilterScoreA",
+        "FilterScoreB",
+    ]
+    cdf._custom_attrs["_widget_state"]["filter_ranges"] = {
+        "FilterScoreA": (1.5, 3.5),
+        "FilterScoreB": (15.0, 35.0),
+    }
+
+    filtered = cdf._filter_display_indices_by_widget_range(
+        data=cdf, display_indices=[0, 1, 2, 3]
+    )
+
+    assert filtered == [1, 2]
+
+
+def test_filter_slider_rounds_labels_but_preserves_values() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [0.0123, 0.456, 9.87]}),
+        display_options={"filter_column": "FilterScore"},
+    )
+
+    slider = cdf._ensure_filter_range_slider()
+
+    assert isinstance(slider, widgets.SelectionRangeSlider)
+    options = list(slider.options)
+    assert options == [("0.01", 0.0123), ("0.46", 0.456), ("9.87", 9.87)]
+
+
 def test_generate_html_removes_rows_outside_filter_range(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1255,6 +1293,43 @@ def test_repr_html_2d_places_filter_slider_next_to_image_adjustment(
     assert isinstance(filter_control.children[0], widgets.HTML)
     assert "<svg " in filter_control.children[0].value
     assert isinstance(filter_control.children[1], widgets.SelectionRangeSlider)
+
+
+def test_repr_html_2d_uses_accordion_for_multiple_filter_columns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "FilterScoreA": [1.0, 2.0, 3.0],
+                "FilterScoreB": [10.0, 20.0, 30.0],
+            }
+        ),
+        display_options={"filter_columns": ["FilterScoreA", "FilterScoreB"]},
+    )
+    displayed: list[object] = []
+
+    monkeypatch.setattr(cdf, "_find_3d_columns_for_display", lambda: [])
+    monkeypatch.setattr(cdf, "_render_output", lambda: None)
+    monkeypatch.setattr(cdf, "_generate_jupyter_dataframe_html", lambda: "<table/>")
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda _name: True)
+
+    def capture_display(value: object) -> None:
+        displayed.append(value)
+
+    monkeypatch.setattr("cytodataframe.frame.display", capture_display)
+
+    assert cdf._repr_html_() is None
+
+    container = next(widget for widget in displayed if isinstance(widget, widgets.VBox))
+    controls_row = container.children[0]
+    assert isinstance(controls_row, widgets.HBox)
+    assert len(controls_row.children) == 2
+    accordion = controls_row.children[1]
+    assert isinstance(accordion, widgets.Accordion)
+    assert len(accordion.children) == 1
+    assert isinstance(accordion.children[0], widgets.VBox)
+    assert len(accordion.children[0].children) == 2
 
 
 def test_is_notebook_or_lab_detects_zmq_shell(monkeypatch: pytest.MonkeyPatch) -> None:

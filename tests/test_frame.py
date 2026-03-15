@@ -4,6 +4,7 @@ Tests cosmicqc CytoDataFrame module
 
 import logging
 import pathlib
+import re
 import sys
 import types
 from collections import OrderedDict
@@ -19,7 +20,12 @@ import tifffile
 from _pytest.monkeypatch import MonkeyPatch
 from pyarrow import parquet
 
-from cytodataframe.frame import CytoDataFrame
+from cytodataframe.frame import (
+    FILTER_SLIDER_LABEL_WIDTH_PX,
+    FILTER_SLIDER_READOUT_WIDTH_PX,
+    FILTER_SLIDER_TOTAL_WIDTH_PX,
+    CytoDataFrame,
+)
 from tests.utils import (
     cytodataframe_image_display_contains_pixels,
 )
@@ -925,6 +931,31 @@ def test_filter_slider_rounds_labels_but_preserves_values() -> None:
     assert isinstance(slider, widgets.SelectionRangeSlider)
     options = list(slider.options)
     assert options == [("0.01", 0.0123), ("0.46", 0.456), ("9.87", 9.87)]
+
+
+def test_filter_distribution_constant_values_stays_centered() -> None:
+    html = CytoDataFrame._build_filter_distribution_html(
+        values=pd.Series([0.47, 0.47, 0.47, 0.47]),
+        selected_range=(0.47, 0.47),
+        width=FILTER_SLIDER_TOTAL_WIDTH_PX,
+        height=52,
+        track_padding_px=(
+            FILTER_SLIDER_LABEL_WIDTH_PX,
+            FILTER_SLIDER_READOUT_WIDTH_PX,
+        ),
+    )
+
+    match = re.search(r"<polyline[^>]*points='([^']+)'", html)
+    assert match is not None
+    points = [
+        (float(part.split(",")[0]), float(part.split(",")[1]))
+        for part in match.group(1).split()
+    ]
+    peak_x = min(points, key=lambda point: point[1])[0]
+    track_left = float(FILTER_SLIDER_LABEL_WIDTH_PX)
+    track_right = float(FILTER_SLIDER_TOTAL_WIDTH_PX - FILTER_SLIDER_READOUT_WIDTH_PX)
+    track_mid = (track_left + track_right) / 2.0
+    assert abs(peak_x - track_mid) < 30.0
 
 
 def test_generate_html_removes_rows_outside_filter_range(

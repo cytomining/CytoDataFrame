@@ -717,10 +717,16 @@ class CytoDataFrame(pd.DataFrame):
         original_x_max = float(np.max(values_array))
         x_max = original_x_max
         if x_max == x_min:
-            x_max = x_min + 1.0
+            # Keep constant-value distributions centered in the track rather than
+            # collapsing to the left edge.
+            pad = max(abs(x_min) * 0.05, 1e-6)
+            x_min = x_min - pad
+            x_max = x_max + pad
         # Use bins to avoid visually flat one-count-per-unique-value traces.
         bin_count = int(min(40, max(10, np.sqrt(values_array.size))))
-        hist_counts, bin_edges = np.histogram(values_array, bins=bin_count)
+        hist_counts, bin_edges = np.histogram(
+            values_array, bins=bin_count, range=(x_min, x_max)
+        )
         y_max = float(max(1, int(hist_counts.max(initial=0))))
 
         lower, upper = selected_range

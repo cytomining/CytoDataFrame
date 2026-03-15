@@ -70,6 +70,10 @@ FILTER_SLIDER_READOUT_WIDTH_PX = 72
 # Positive values shift inward; negative values shift outward.
 FILTER_SLIDER_TRACK_LEFT_ADJUST_PX = 13
 FILTER_SLIDER_TRACK_RIGHT_INSET_PX = 23
+FILTER_PLOT_SMOOTH_MIN_BINS = 8
+FILTER_PLOT_SMOOTH_MAX_WINDOW = 9
+FILTER_PLOT_SMOOTH_BIN_DIVISOR = 10
+FILTER_PLOT_SMOOTH_MIN_WINDOW = 3
 
 # provide backwards compatibility for Self type in earlier Python versions.
 # see: https://peps.python.org/pep-0484/#annotating-instance-and-class-methods
@@ -774,12 +778,27 @@ class CytoDataFrame(pd.DataFrame):
             ],
             dtype=np.float64,
         )
+        smoothed_counts = binned_counts
+        if plot_bin_count >= FILTER_PLOT_SMOOTH_MIN_BINS:
+            smooth_window = int(
+                min(
+                    FILTER_PLOT_SMOOTH_MAX_WINDOW,
+                    max(
+                        FILTER_PLOT_SMOOTH_MIN_WINDOW,
+                        plot_bin_count // FILTER_PLOT_SMOOTH_BIN_DIVISOR,
+                    ),
+                )
+            )
+            if smooth_window % 2 == 0:
+                smooth_window += 1
+            kernel = np.ones(smooth_window, dtype=np.float64) / float(smooth_window)
+            smoothed_counts = np.convolve(binned_counts, kernel, mode="same")
         binned_option_centers = (
             plot_bin_edges[:-1].astype(np.float64)
             + plot_bin_edges[1:].astype(np.float64)
             - 1.0
         ) / 2.0
-        y_max = float(max(1.0, float(np.max(binned_counts, initial=1.0))))
+        y_max = float(max(1.0, float(np.max(smoothed_counts, initial=1.0))))
 
         lower, upper = selected_range
         lower = max(x_min, min(float(lower), x_max))
@@ -821,7 +840,7 @@ class CytoDataFrame(pd.DataFrame):
         line_points = " ".join(
             f"{_sx_from_option_index(float(option_center)):.2f},{_sy(float(count)):.2f}"
             for option_center, count in zip(
-                binned_option_centers, binned_counts, strict=False
+                binned_option_centers, smoothed_counts, strict=False
             )
         )
         area_points = (

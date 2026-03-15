@@ -937,8 +937,7 @@ def test_filter_distribution_constant_values_stays_centered() -> None:
     html = CytoDataFrame._build_filter_distribution_html(
         values=pd.Series([0.47, 0.47, 0.47, 0.47]),
         selected_range=(0.47, 0.47),
-        width=FILTER_SLIDER_TOTAL_WIDTH_PX,
-        height=52,
+        size_px=(FILTER_SLIDER_TOTAL_WIDTH_PX, 52),
         track_padding_px=(
             FILTER_SLIDER_LABEL_WIDTH_PX,
             FILTER_SLIDER_READOUT_WIDTH_PX,
@@ -956,6 +955,128 @@ def test_filter_distribution_constant_values_stays_centered() -> None:
     track_right = float(FILTER_SLIDER_TOTAL_WIDTH_PX - FILTER_SLIDER_READOUT_WIDTH_PX)
     track_mid = (track_left + track_right) / 2.0
     assert abs(peak_x - track_mid) < 30.0
+
+
+def test_filter_slider_control_renders_threshold_line() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [1.0, 2.0, 3.0]}),
+        display_options={
+            "filter_column": "FilterScore",
+            "filter_plot_threshold": 2.0,
+        },
+    )
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_ranges"] = {"FilterScore": (1.0, 3.0)}
+
+    _slider, control = cdf._build_filter_slider_control_for_column("FilterScore")
+
+    assert isinstance(control, widgets.VBox)
+    assert isinstance(control.children[0], widgets.HTML)
+    assert "stroke='#dc2626'" in control.children[0].value
+    assert "y1='0'" in control.children[0].value
+
+
+def test_filter_slider_control_ignores_out_of_range_threshold(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [1.0, 2.0, 3.0]}),
+        display_options={
+            "filter_column": "FilterScore",
+            "filter_plot_threshold": 9.0,
+        },
+    )
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_ranges"] = {"FilterScore": (1.0, 3.0)}
+
+    with caplog.at_level(logging.WARNING):
+        _slider, control = cdf._build_filter_slider_control_for_column("FilterScore")
+
+    assert isinstance(control, widgets.VBox)
+    assert isinstance(control.children[0], widgets.HTML)
+    assert "stroke='#dc2626'" in control.children[0].value
+    assert "outside data range" in caplog.text
+
+
+def test_filter_slider_control_ignores_non_numeric_threshold(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [1.0, 2.0, 3.0]}),
+        display_options={
+            "filter_column": "FilterScore",
+            "filter_plot_threshold": "not-a-number",
+        },
+    )
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_ranges"] = {"FilterScore": (1.0, 3.0)}
+
+    with caplog.at_level(logging.WARNING):
+        _slider, control = cdf._build_filter_slider_control_for_column("FilterScore")
+
+    assert isinstance(control, widgets.VBox)
+    assert isinstance(control.children[0], widgets.HTML)
+    assert "stroke='#dc2626'" not in control.children[0].value
+    assert "is not numeric" in caplog.text
+
+
+def test_filter_slider_threshold_key_match_is_case_and_whitespace_tolerant() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [1.0, 2.0, 3.0]}),
+        display_options={
+            "filter_column": "FilterScore",
+            "filter_plot_thresholds": {"  filterscore  ": 2.0},
+        },
+    )
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_ranges"] = {"FilterScore": (1.0, 3.0)}
+
+    _slider, control = cdf._build_filter_slider_control_for_column("FilterScore")
+
+    assert isinstance(control, widgets.VBox)
+    assert isinstance(control.children[0], widgets.HTML)
+    assert "stroke='#dc2626'" in control.children[0].value
+
+
+def test_filter_slider_threshold_aligns_with_selection_slider_domain() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [0.0, 1.0, 100.0]}),
+        display_options={
+            "filter_column": "FilterScore",
+            "filter_plot_threshold": 1.0,
+        },
+    )
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_ranges"] = {"FilterScore": (0.0, 100.0)}
+
+    _slider, control = cdf._build_filter_slider_control_for_column("FilterScore")
+    assert isinstance(control, widgets.VBox)
+    assert isinstance(control.children[0], widgets.HTML)
+    html = control.children[0].value
+    x_match = re.search(r"x1='([0-9.]+)' y1='0'", html)
+    assert x_match is not None
+    x_val = float(x_match.group(1))
+
+    track_left = float(FILTER_SLIDER_LABEL_WIDTH_PX)
+    track_right = float(FILTER_SLIDER_TOTAL_WIDTH_PX - FILTER_SLIDER_READOUT_WIDTH_PX)
+    track_mid = (track_left + track_right) / 2.0
+    assert abs(x_val - track_mid) < 8.0
+
+
+def test_filter_distribution_is_not_flat_for_clustered_values() -> None:
+    html = CytoDataFrame._build_filter_distribution_html(
+        values=pd.Series([0.0] * 60 + [0.1] * 30 + [2.0] * 10),
+        selected_range=(0.0, 100.0),
+        size_px=(FILTER_SLIDER_TOTAL_WIDTH_PX, 52),
+        track_padding_px=(
+            FILTER_SLIDER_LABEL_WIDTH_PX,
+            FILTER_SLIDER_READOUT_WIDTH_PX,
+        ),
+    )
+    match = re.search(r"<polyline[^>]*points='([^']+)'", html)
+    assert match is not None
+    ys = [float(part.split(",")[1]) for part in match.group(1).split()]
+    assert max(ys) - min(ys) > 2.0
 
 
 def test_generate_html_removes_rows_outside_filter_range(

@@ -66,6 +66,10 @@ MIN_POSITION_COMPONENTS = 2
 FILTER_SLIDER_TOTAL_WIDTH_PX = 460
 FILTER_SLIDER_LABEL_WIDTH_PX = 140
 FILTER_SLIDER_READOUT_WIDTH_PX = 72
+# Fine-grained track-bound alignment for the background distribution plot.
+# Positive values shift inward; negative values shift outward.
+FILTER_SLIDER_TRACK_LEFT_ADJUST_PX = 13
+FILTER_SLIDER_TRACK_RIGHT_INSET_PX = 23
 
 # provide backwards compatibility for Self type in earlier Python versions.
 # see: https://peps.python.org/pep-0484/#annotating-instance-and-class-methods
@@ -697,17 +701,47 @@ class CytoDataFrame(pd.DataFrame):
         return f"{value:.2f}"
 
     @staticmethod
+    def _slider_relative_position(value: float, slider_domain: np.ndarray) -> float:
+        """Map a numeric value to SelectionRangeSlider's normalized track position."""
+        domain_size = int(slider_domain.size)
+        if domain_size == 0:
+            return 0.0
+        if domain_size == 1:
+            return 0.5
+
+        position: float
+        if value <= slider_domain[0]:
+            position = 0.0
+        elif value >= slider_domain[-1]:
+            position = 1.0
+        else:
+            right_idx = int(np.searchsorted(slider_domain, value, side="right"))
+            left_idx = max(0, right_idx - 1)
+            if right_idx >= domain_size:
+                position = 1.0
+            else:
+                left_val = float(slider_domain[left_idx])
+                right_val = float(slider_domain[right_idx])
+                if right_val == left_val:
+                    position = float(left_idx) / float(domain_size - 1)
+                else:
+                    frac = (value - left_val) / (right_val - left_val)
+                    position = (float(left_idx) + float(frac)) / float(domain_size - 1)
+        return position
+
+    @staticmethod
     def _build_filter_distribution_html(
         values: pd.Series,
         selected_range: Tuple[float, float],
-        width: int = FILTER_SLIDER_TOTAL_WIDTH_PX,
-        height: int = 96,
+        threshold_x: Optional[float] = None,
+        size_px: Tuple[int, int] = (FILTER_SLIDER_TOTAL_WIDTH_PX, 96),
         track_padding_px: Tuple[int, int] = (
             FILTER_SLIDER_LABEL_WIDTH_PX,
             FILTER_SLIDER_READOUT_WIDTH_PX,
         ),
     ) -> str:
         """Build an inline SVG area/line plot for filter-value counts."""
+        width, height = size_px
         numeric_values = pd.to_numeric(values, errors="coerce").dropna()
         if numeric_values.empty:
             return ""
@@ -716,26 +750,49 @@ class CytoDataFrame(pd.DataFrame):
         x_min = float(np.min(values_array))
         original_x_max = float(np.max(values_array))
         x_max = original_x_max
+        slider_domain = np.sort(np.unique(values_array))
         if x_max == x_min:
             # Keep constant-value distributions centered in the track rather than
             # collapsing to the left edge.
             pad = max(abs(x_min) * 0.05, 1e-6)
             x_min = x_min - pad
             x_max = x_max + pad
-        # Use bins to avoid visually flat one-count-per-unique-value traces.
-        bin_count = int(min(40, max(10, np.sqrt(values_array.size))))
-        hist_counts, bin_edges = np.histogram(
-            values_array, bins=bin_count, range=(x_min, x_max)
+        # Build y-shape in slider-option space so x positions align exactly with
+        # the discrete scroll points. Re-bin adjacent options so traces stay
+        # informative when columns contain many unique values.
+        unique_vals, inverse_idx = np.unique(values_array, return_inverse=True)
+        option_counts = np.bincount(inverse_idx, minlength=unique_vals.size)
+        option_count = int(unique_vals.size)
+        plot_bin_count = int(
+            min(option_count, 60, max(12, np.sqrt(max(1, option_count))))
         )
-        y_max = float(max(1, int(hist_counts.max(initial=0))))
+        plot_bin_edges = np.linspace(0, option_count, num=plot_bin_count + 1, dtype=int)
+        binned_counts = np.array(
+            [
+                int(option_counts[plot_bin_edges[i] : plot_bin_edges[i + 1]].sum())
+                for i in range(plot_bin_count)
+            ],
+            dtype=np.float64,
+        )
+        binned_option_centers = (
+            plot_bin_edges[:-1].astype(np.float64)
+            + plot_bin_edges[1:].astype(np.float64)
+            - 1.0
+        ) / 2.0
+        y_max = float(max(1.0, float(np.max(binned_counts, initial=1.0))))
 
         lower, upper = selected_range
         lower = max(x_min, min(float(lower), x_max))
         upper = max(lower, min(float(upper), x_max))
 
         track_left_px, track_right_px = track_padding_px
-        plot_left = float(max(8, track_left_px))
-        plot_right = float(max(plot_left + 1, width - track_right_px))
+        plot_left = float(max(8, track_left_px + FILTER_SLIDER_TRACK_LEFT_ADJUST_PX))
+        plot_right = float(
+            max(
+                plot_left + 1,
+                width - track_right_px - FILTER_SLIDER_TRACK_RIGHT_INSET_PX,
+            )
+        )
         plot_top = 6.0
         # Keep slider widget position fixed; shift only plotted data upward by
         # using extra bottom padding inside the background SVG.
@@ -744,23 +801,50 @@ class CytoDataFrame(pd.DataFrame):
         plot_h = max(1.0, plot_bottom - plot_top)
 
         def _sx(value: float) -> float:
-            return plot_left + ((value - x_min) / (x_max - x_min) * plot_w)
+            return plot_left + (
+                CytoDataFrame._slider_relative_position(
+                    value=value, slider_domain=slider_domain
+                )
+                * plot_w
+            )
 
         def _sy(value: float) -> float:
             return plot_bottom - (value / y_max * plot_h)
 
+        def _sx_from_option_index(index: float) -> float:
+            if unique_vals.size <= 1:
+                return plot_left + (0.5 * plot_w)
+            return plot_left + ((float(index) / float(unique_vals.size - 1)) * plot_w)
+
         highlight_x = _sx(lower)
         highlight_w = max(1.0, _sx(upper) - highlight_x)
-        centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
         line_points = " ".join(
-            f"{_sx(float(center)):.2f},{_sy(float(count)):.2f}"
-            for center, count in zip(centers, hist_counts, strict=False)
+            f"{_sx_from_option_index(float(option_center)):.2f},{_sy(float(count)):.2f}"
+            for option_center, count in zip(
+                binned_option_centers, binned_counts, strict=False
+            )
         )
         area_points = (
-            f"{_sx(float(centers[0])):.2f},{plot_bottom:.2f} "
+            f"{_sx_from_option_index(float(binned_option_centers[0])):.2f},"
+            f"{plot_bottom:.2f} "
             f"{line_points} "
-            f"{_sx(float(centers[-1])):.2f},{plot_bottom:.2f}"
+            f"{_sx_from_option_index(float(binned_option_centers[-1])):.2f},"
+            f"{plot_bottom:.2f}"
         )
+        threshold_line_html = ""
+        if threshold_x is not None:
+            try:
+                threshold_val = float(threshold_x)
+            except (TypeError, ValueError):
+                threshold_val = None
+            if threshold_val is not None and x_min <= threshold_val <= x_max:
+                threshold_px = _sx(threshold_val)
+                threshold_line_html = (
+                    "<line "
+                    f"x1='{threshold_px:.2f}' y1='0' "
+                    f"x2='{threshold_px:.2f}' y2='{height}' "
+                    "stroke='#dc2626' stroke-width='3' opacity='0.95'/>"
+                )
 
         return (
             f"<div style='width:{width}px;margin:0 0 2px 0;'>"
@@ -773,8 +857,104 @@ class CytoDataFrame(pd.DataFrame):
             f"points='{area_points}' fill='#93c5fd' opacity='0.55'/>"
             "<polyline "
             f"points='{line_points}' fill='none' stroke='#1d4ed8' stroke-width='2'/>"
+            f"{threshold_line_html}"
             "</svg></div>"
         )
+
+    def _get_raw_filter_plot_threshold(
+        self: CytoDataFrame_type,
+        filter_col: Any,
+    ) -> Tuple[bool, Optional[Any]]:
+        """Return whether threshold was configured and its raw value."""
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        threshold_explicitly_configured = False
+        raw_threshold: Optional[Any] = None
+        threshold_map = display_options.get("filter_plot_thresholds")
+        if isinstance(threshold_map, dict):
+            filter_col_str = str(filter_col)
+            normalized_filter_col = filter_col_str.strip().casefold()
+            for threshold_key, threshold_value in threshold_map.items():
+                threshold_key_str = str(threshold_key)
+                if threshold_key_str == filter_col_str:
+                    raw_threshold = threshold_value
+                    threshold_explicitly_configured = True
+                    break
+                if threshold_key_str.strip().casefold() == normalized_filter_col:
+                    raw_threshold = threshold_value
+                    threshold_explicitly_configured = True
+                    break
+        elif threshold_map is not None:
+            logger.warning(
+                (
+                    "Ignoring display option 'filter_plot_thresholds' because "
+                    "it is not a mapping."
+                )
+            )
+
+        if not threshold_explicitly_configured:
+            single_threshold = display_options.get("filter_plot_threshold")
+            if single_threshold is not None:
+                configured_columns = self._get_filter_slider_columns()
+                if len(configured_columns) <= 1:
+                    raw_threshold = single_threshold
+                    threshold_explicitly_configured = True
+        return threshold_explicitly_configured, raw_threshold
+
+    def _resolve_filter_plot_threshold(
+        self: CytoDataFrame_type,
+        filter_col: Any,
+        values: pd.Series,
+    ) -> Optional[float]:
+        """Resolve an optional threshold marker for a filter-column distribution."""
+        threshold_explicitly_configured, raw_threshold = (
+            self._get_raw_filter_plot_threshold(filter_col=filter_col)
+        )
+        if not threshold_explicitly_configured:
+            return None
+
+        try:
+            threshold = float(raw_threshold)
+        except (TypeError, ValueError):
+            logger.warning(
+                (
+                    "Ignoring filter plot threshold for column '%s': "
+                    "value %r is not numeric."
+                ),
+                filter_col,
+                raw_threshold,
+            )
+            return None
+
+        numeric_values = pd.to_numeric(values, errors="coerce").dropna()
+        if numeric_values.empty:
+            return None
+        data_min = float(numeric_values.min())
+        data_max = float(numeric_values.max())
+        if threshold < data_min:
+            logger.warning(
+                (
+                    "Ignoring filter plot threshold for column '%s': %s is outside "
+                    "data range [%s, %s]."
+                ),
+                filter_col,
+                threshold,
+                data_min,
+                data_max,
+            )
+            return data_min
+        if threshold > data_max:
+            logger.warning(
+                (
+                    "Ignoring filter plot threshold for column '%s': %s is outside "
+                    "data range [%s, %s]."
+                ),
+                filter_col,
+                threshold,
+                data_min,
+                data_max,
+            )
+            return data_max
+        return threshold
 
     def _build_filter_slider_control_for_column(
         self: CytoDataFrame_type, filter_col: Any
@@ -794,12 +974,15 @@ class CytoDataFrame(pd.DataFrame):
             or filter_col not in self.columns
         ):
             return slider, slider
+        threshold = self._resolve_filter_plot_threshold(
+            filter_col=filter_col, values=self[filter_col]
+        )
 
         distribution_html = self._build_filter_distribution_html(
             values=self[filter_col],
             selected_range=(float(selected_range[0]), float(selected_range[1])),
-            height=52,
-            width=FILTER_SLIDER_TOTAL_WIDTH_PX,
+            threshold_x=threshold,
+            size_px=(FILTER_SLIDER_TOTAL_WIDTH_PX, 52),
             track_padding_px=(
                 FILTER_SLIDER_LABEL_WIDTH_PX,
                 FILTER_SLIDER_READOUT_WIDTH_PX,

@@ -7,6 +7,7 @@ import pathlib
 import re
 import sys
 import types
+import warnings
 from collections import OrderedDict
 from contextlib import nullcontext
 from importlib.machinery import ModuleSpec
@@ -929,6 +930,7 @@ def test_filter_slider_rounds_labels_but_preserves_values() -> None:
     slider = cdf._ensure_filter_range_slider()
 
     assert isinstance(slider, widgets.SelectionRangeSlider)
+    assert "cdf-filter-range-slider" in getattr(slider, "_dom_classes", ())
     options = list(slider.options)
     assert options == [("0.01", 0.0123), ("0.46", 0.456), ("9.87", 9.87)]
 
@@ -973,7 +975,8 @@ def test_filter_slider_control_renders_threshold_line() -> None:
     assert isinstance(control, widgets.VBox)
     assert isinstance(control.children[0], widgets.HTML)
     assert "stroke='#dc2626'" in control.children[0].value
-    assert "y1='0'" in control.children[0].value
+    assert "y1='6.00'" in control.children[0].value
+    assert "y2='22.00'" in control.children[0].value
 
 
 def test_filter_slider_control_ignores_out_of_range_threshold(
@@ -1053,7 +1056,7 @@ def test_filter_slider_threshold_aligns_with_selection_slider_domain() -> None:
     assert isinstance(control, widgets.VBox)
     assert isinstance(control.children[0], widgets.HTML)
     html = control.children[0].value
-    x_match = re.search(r"x1='([0-9.]+)' y1='0'", html)
+    x_match = re.search(r"x1='([0-9.]+)' y1='[0-9.]+'", html)
     assert x_match is not None
     x_val = float(x_match.group(1))
 
@@ -1077,6 +1080,35 @@ def test_filter_distribution_is_not_flat_for_clustered_values() -> None:
     assert match is not None
     ys = [float(part.split(",")[1]) for part in match.group(1).split()]
     assert max(ys) - min(ys) > 2.0
+
+
+def test_filter_distribution_avoids_runtime_warnings_for_large_ranges() -> None:
+    values = pd.Series(
+        np.concatenate(
+            [
+                np.full(2000, 0.0),
+                np.full(1500, 1.0),
+                np.linspace(2.0, 5000.0, 2000),
+            ]
+        )
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        html = CytoDataFrame._build_filter_distribution_html(
+            values=values,
+            selected_range=(0.0, 5000.0),
+            size_px=(FILTER_SLIDER_TOTAL_WIDTH_PX, 52),
+            track_padding_px=(
+                FILTER_SLIDER_LABEL_WIDTH_PX,
+                FILTER_SLIDER_READOUT_WIDTH_PX,
+            ),
+        )
+
+    runtime_warnings = [
+        warning for warning in caught if issubclass(warning.category, RuntimeWarning)
+    ]
+    assert html
+    assert not runtime_warnings
 
 
 def test_generate_html_removes_rows_outside_filter_range(
@@ -1440,7 +1472,10 @@ def test_repr_html_2d_places_filter_slider_next_to_image_adjustment(
     controls_row = container.children[0]
     assert isinstance(controls_row, widgets.HBox)
     assert len(controls_row.children) == 2
-    filter_control = controls_row.children[1]
+    filter_wrapper = controls_row.children[1]
+    assert isinstance(filter_wrapper, widgets.VBox)
+    assert len(filter_wrapper.children) == 1
+    filter_control = filter_wrapper.children[0]
     assert isinstance(filter_control, widgets.VBox)
     assert isinstance(filter_control.children[0], widgets.HTML)
     assert "<svg " in filter_control.children[0].value

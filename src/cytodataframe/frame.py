@@ -63,17 +63,17 @@ RGB_LIKE_CHANNEL_COUNTS = (MIN_VOLUME_NDIM, 4)
 MIN_RGB_SPATIAL_DIM = 8
 MAX_RGB_ASPECT_RATIO = 4.0
 MIN_POSITION_COMPONENTS = 2
-FILTER_SLIDER_TOTAL_WIDTH_PX = 460
-FILTER_SLIDER_LABEL_WIDTH_PX = 140
-FILTER_SLIDER_READOUT_WIDTH_PX = 72
+FILTER_SLIDER_TOTAL_WIDTH_PX = 430
+FILTER_SLIDER_LABEL_WIDTH_PX = 170
+FILTER_SLIDER_READOUT_WIDTH_PX = 96
 # Fine-grained track-bound alignment for the background distribution plot.
 # Positive values shift inward; negative values shift outward.
 FILTER_SLIDER_TRACK_LEFT_ADJUST_PX = 13
-FILTER_SLIDER_TRACK_RIGHT_INSET_PX = 23
-FILTER_PLOT_SMOOTH_MIN_BINS = 8
-FILTER_PLOT_SMOOTH_MAX_WINDOW = 9
-FILTER_PLOT_SMOOTH_BIN_DIVISOR = 10
-FILTER_PLOT_SMOOTH_MIN_WINDOW = 3
+FILTER_SLIDER_TRACK_RIGHT_INSET_PX = 13
+FILTER_PLOT_KDE_MIN_SAMPLES = 60
+FILTER_PLOT_KDE_MAX_SAMPLES = 180
+FILTER_PLOT_KDE_MIN_BANDWIDTH = 0.7
+FILTER_SLIDER_CSS_CLASS = "cdf-filter-range-slider"
 
 # provide backwards compatibility for Self type in earlier Python versions.
 # see: https://peps.python.org/pep-0484/#annotating-instance-and-class-methods
@@ -248,6 +248,7 @@ class CytoDataFrame(pd.DataFrame):
                 "shown": False,  # whether VBox has been displayed
                 "observing": False,  # whether slider observer is attached
                 "filter_observing": {},  # per-column observer attachment flags
+                "filter_readout_css_injected": False,
             },
             "_snapshot_cache": {},
             "_volume_cache": {},
@@ -692,6 +693,7 @@ class CytoDataFrame(pd.DataFrame):
             style={"description_width": f"{FILTER_SLIDER_LABEL_WIDTH_PX}px"},
             layout=widgets.Layout(width=f"{FILTER_SLIDER_TOTAL_WIDTH_PX}px"),
         )
+        slider.add_class(FILTER_SLIDER_CSS_CLASS)
         slider._cyto_filter_column = filter_col  # type: ignore[attr-defined]
         self._custom_attrs.setdefault("_filter_range_sliders", {})[slider_key] = slider
         return slider
@@ -734,7 +736,7 @@ class CytoDataFrame(pd.DataFrame):
         return position
 
     @staticmethod
-    def _build_filter_distribution_html(
+    def _build_filter_distribution_html(  # noqa: C901, PLR0915
         values: pd.Series,
         selected_range: Tuple[float, float],
         threshold_x: Optional[float] = None,
@@ -761,44 +763,54 @@ class CytoDataFrame(pd.DataFrame):
             pad = max(abs(x_min) * 0.05, 1e-6)
             x_min = x_min - pad
             x_max = x_max + pad
-        # Build y-shape in slider-option space so x positions align exactly with
-        # the discrete scroll points. Re-bin adjacent options so traces stay
-        # informative when columns contain many unique values.
+        # Build a smooth, KDE-like density in slider-option space so the curve
+        # aligns to scroll points without fixed value bins.
         unique_vals, inverse_idx = np.unique(values_array, return_inverse=True)
         option_counts = np.bincount(inverse_idx, minlength=unique_vals.size)
         option_count = int(unique_vals.size)
-        plot_bin_count = int(
-            min(option_count, 60, max(12, np.sqrt(max(1, option_count))))
-        )
-        plot_bin_edges = np.linspace(0, option_count, num=plot_bin_count + 1, dtype=int)
-        binned_counts = np.array(
-            [
-                int(option_counts[plot_bin_edges[i] : plot_bin_edges[i + 1]].sum())
-                for i in range(plot_bin_count)
-            ],
-            dtype=np.float64,
-        )
-        smoothed_counts = binned_counts
-        if plot_bin_count >= FILTER_PLOT_SMOOTH_MIN_BINS:
-            smooth_window = int(
+        option_positions = np.arange(option_count, dtype=np.float64)
+        if option_count <= 1:
+            kde_x = np.array([0.5], dtype=np.float64)
+            kde_y = np.array([float(option_counts.sum())], dtype=np.float64)
+        else:
+            kde_sample_count = int(
                 min(
-                    FILTER_PLOT_SMOOTH_MAX_WINDOW,
-                    max(
-                        FILTER_PLOT_SMOOTH_MIN_WINDOW,
-                        plot_bin_count // FILTER_PLOT_SMOOTH_BIN_DIVISOR,
-                    ),
+                    FILTER_PLOT_KDE_MAX_SAMPLES,
+                    max(FILTER_PLOT_KDE_MIN_SAMPLES, option_count * 2),
                 )
             )
-            if smooth_window % 2 == 0:
-                smooth_window += 1
-            kernel = np.ones(smooth_window, dtype=np.float64) / float(smooth_window)
-            smoothed_counts = np.convolve(binned_counts, kernel, mode="same")
-        binned_option_centers = (
-            plot_bin_edges[:-1].astype(np.float64)
-            + plot_bin_edges[1:].astype(np.float64)
-            - 1.0
-        ) / 2.0
-        y_max = float(max(1.0, float(np.max(smoothed_counts, initial=1.0))))
+            kde_x = np.linspace(0.0, float(option_count - 1), num=kde_sample_count)
+            weights = option_counts.astype(np.float64, copy=False)
+            weight_sum = float(weights.sum())
+            weighted_mean = float(
+                np.sum(option_positions * weights) / max(weight_sum, 1)
+            )
+            weighted_var = float(
+                np.sum(weights * (option_positions - weighted_mean) ** 2)
+                / max(weight_sum, 1)
+            )
+            weighted_std = float(max(0.0, np.sqrt(weighted_var)))
+            n_eff = float((weight_sum**2) / max(float(np.sum(weights**2)), 1.0))
+            silverman_bw = 1.06 * weighted_std * (max(n_eff, 1.0) ** (-0.2))
+            bandwidth = max(
+                FILTER_PLOT_KDE_MIN_BANDWIDTH,
+                silverman_bw if np.isfinite(silverman_bw) and silverman_bw > 0 else 0.0,
+            )
+            # Numerically stable KDE-like smoothing in option-index space:
+            # smooth discrete option counts with a Gaussian kernel, then sample
+            # onto the denser x-grid via interpolation.
+            radius = int(max(1, np.ceil(3.0 * bandwidth)))
+            kernel_x = np.arange(-radius, radius + 1, dtype=np.float64)
+            kernel = np.exp(-0.5 * ((kernel_x / bandwidth) ** 2))
+            kernel_sum = float(np.sum(kernel))
+            if kernel_sum > 0:
+                kernel = kernel / kernel_sum
+            smoothed_full = np.convolve(weights, kernel, mode="full")
+            start = int((kernel.size - 1) // 2)
+            smoothed_weights = smoothed_full[start : start + option_count]
+            kde_y = np.interp(kde_x, option_positions, smoothed_weights)
+            kde_y = np.nan_to_num(kde_y, nan=0.0, posinf=0.0, neginf=0.0)
+        y_max = float(max(1.0, float(np.max(kde_y, initial=1.0))))
 
         lower, upper = selected_range
         lower = max(x_min, min(float(lower), x_max))
@@ -838,16 +850,14 @@ class CytoDataFrame(pd.DataFrame):
         highlight_x = _sx(lower)
         highlight_w = max(1.0, _sx(upper) - highlight_x)
         line_points = " ".join(
-            f"{_sx_from_option_index(float(option_center)):.2f},{_sy(float(count)):.2f}"
-            for option_center, count in zip(
-                binned_option_centers, smoothed_counts, strict=False
-            )
+            f"{_sx_from_option_index(float(option_index)):.2f},{_sy(float(count)):.2f}"
+            for option_index, count in zip(kde_x, kde_y, strict=False)
         )
         area_points = (
-            f"{_sx_from_option_index(float(binned_option_centers[0])):.2f},"
+            f"{_sx_from_option_index(float(kde_x[0])):.2f},"
             f"{plot_bottom:.2f} "
             f"{line_points} "
-            f"{_sx_from_option_index(float(binned_option_centers[-1])):.2f},"
+            f"{_sx_from_option_index(float(kde_x[-1])):.2f},"
             f"{plot_bottom:.2f}"
         )
         threshold_line_html = ""
@@ -860,8 +870,8 @@ class CytoDataFrame(pd.DataFrame):
                 threshold_px = _sx(threshold_val)
                 threshold_line_html = (
                     "<line "
-                    f"x1='{threshold_px:.2f}' y1='0' "
-                    f"x2='{threshold_px:.2f}' y2='{height}' "
+                    f"x1='{threshold_px:.2f}' y1='{plot_top:.2f}' "
+                    f"x2='{threshold_px:.2f}' y2='{plot_bottom:.2f}' "
                     "stroke='#dc2626' stroke-width='3' opacity='0.95'/>"
                 )
 
@@ -3846,6 +3856,10 @@ class CytoDataFrame(pd.DataFrame):
 
         Use ``table_height`` (or ``table_max_height``) to override the default
         notebook table height.
+
+        Row rendering follows pandas display limits. If the DataFrame is larger
+        than ``display.max_rows``, the widget table inserts a midpoint ellipsis
+        marker row (``…``) to indicate omitted rows.
         """
 
         if backend is None:
@@ -4764,10 +4778,41 @@ class CytoDataFrame(pd.DataFrame):
         self: CytoDataFrame_type, display_options: dict[str, Any]
     ) -> None:
         """Render ipywidgets controls and the notebook HTML table output."""
+        if not self._custom_attrs["_widget_state"].get(
+            "filter_readout_css_injected", False
+        ):
+            display(
+                HTML(
+                    "<style>"
+                    f".{FILTER_SLIDER_CSS_CLASS} .widget-readout,"
+                    f".{FILTER_SLIDER_CSS_CLASS} input.widget-readout {{"
+                    f"min-width:{FILTER_SLIDER_READOUT_WIDTH_PX}px !important;"
+                    f"max-width:{FILTER_SLIDER_READOUT_WIDTH_PX}px !important;"
+                    f"width:{FILTER_SLIDER_READOUT_WIDTH_PX}px !important;"
+                    "font-size:11px !important;"
+                    "text-align:right;"
+                    "font-family:ui-monospace, SFMono-Regular, Menlo, monospace;"
+                    "}"
+                    f".{FILTER_SLIDER_CSS_CLASS} .widget-label {{"
+                    "font-size:11px !important;"
+                    "line-height:1.2 !important;"
+                    "margin-top:8px !important;"
+                    "}"
+                    "</style>"
+                )
+            )
+            self._custom_attrs["_widget_state"]["filter_readout_css_injected"] = True
+
         filter_sliders, filter_controls = self._build_filter_slider_controls()
         filter_control: Optional[Any] = None
         if len(filter_controls) == 1:
-            filter_control = filter_controls[0]
+            filter_control = widgets.VBox(
+                filter_controls,
+                layout=widgets.Layout(
+                    width=f"{FILTER_SLIDER_TOTAL_WIDTH_PX}px",
+                    align_items="stretch",
+                ),
+            )
         elif len(filter_controls) >= MIN_POSITION_COMPONENTS:
             accordion_content = widgets.VBox(
                 filter_controls,

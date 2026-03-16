@@ -66,6 +66,7 @@ MIN_POSITION_COMPONENTS = 2
 FILTER_SLIDER_TOTAL_WIDTH_PX = 430
 FILTER_SLIDER_LABEL_WIDTH_PX = 170
 FILTER_SLIDER_READOUT_WIDTH_PX = 96
+MAX_FILTER_SLIDER_STOPS = 500
 # Fine-grained track-bound alignment for the background distribution plot.
 # Positive values shift inward; negative values shift outward.
 FILTER_SLIDER_TRACK_LEFT_ADJUST_PX = 13
@@ -540,7 +541,7 @@ class CytoDataFrame(pd.DataFrame):
         """
 
         self._custom_attrs["_widget_state"]["scale"] = change["new"]
-        self._custom_attrs["_output"].clear_output(wait=True)
+        self._show_output_loading_indicator()
 
         # redraw output after adjustments to scale state
         self._render_output()
@@ -585,8 +586,32 @@ class CytoDataFrame(pd.DataFrame):
                 state.setdefault("filter_ranges", {})[str(state["filter_column"])] = (
                     normalized_range
                 )
-        self._custom_attrs["_output"].clear_output(wait=True)
+        self._show_output_loading_indicator()
         self._render_output()
+
+    def _show_output_loading_indicator(
+        self: CytoDataFrame_type,
+        message: str = "Updating table...",
+    ) -> None:
+        """Render a lightweight loading indicator in the output area."""
+        self._custom_attrs["_output"].clear_output(wait=True)
+        with self._custom_attrs["_output"]:
+            display(
+                HTML(
+                    "<style>"
+                    "@keyframes cdf-spin{to{transform:rotate(360deg)}}"
+                    ".cdf-loading{display:flex;align-items:center;gap:8px;"
+                    "padding:8px 6px;color:#1f2937;font-size:12px;}"
+                    ".cdf-loading-spinner{width:12px;height:12px;border-radius:50%;"
+                    "border:2px solid #93c5fd;border-top-color:#1d4ed8;"
+                    "animation:cdf-spin .7s linear infinite;}"
+                    "</style>"
+                    "<div class='cdf-loading'>"
+                    "<span class='cdf-loading-spinner' aria-hidden='true'></span>"
+                    f"<span>{message}</span>"
+                    "</div>"
+                )
+            )
 
     def _get_filter_slider_columns(self: CytoDataFrame_type) -> List[Any]:
         """Return configured filter columns, preserving user-specified order."""
@@ -621,7 +646,7 @@ class CytoDataFrame(pd.DataFrame):
             selected_columns.append(matched)
         return selected_columns
 
-    def _ensure_filter_range_slider(
+    def _ensure_filter_range_slider(  # noqa: PLR0915
         self: CytoDataFrame_type, filter_col: Optional[Any] = None
     ) -> Optional[Any]:
         """Build or refresh one range slider for row filtering."""
@@ -665,11 +690,19 @@ class CytoDataFrame(pd.DataFrame):
                 state["filter_range"] = None
             return None
 
+        slider_values = unique_values
+        if len(unique_values) > MAX_FILTER_SLIDER_STOPS:
+            sample_idx = np.linspace(
+                0, len(unique_values) - 1, num=MAX_FILTER_SLIDER_STOPS, dtype=int
+            )
+            slider_values = [unique_values[idx] for idx in sample_idx]
+            # Guard against accidental duplicate picks if index rounding occurs.
+            slider_values = list(dict.fromkeys(slider_values))
         options = [
-            (self._format_filter_slider_label(value), value) for value in unique_values
+            (self._format_filter_slider_label(value), value) for value in slider_values
         ]
-        default_lower = unique_values[0]
-        default_upper = unique_values[-1]
+        default_lower = slider_values[0]
+        default_upper = slider_values[-1]
         selected_range = state["filter_ranges"].get(slider_key)
         if (
             not isinstance(selected_range, tuple)
@@ -4254,10 +4287,6 @@ class CytoDataFrame(pd.DataFrame):
 
             # gather indices which will be displayed based on pandas configuration
             display_indices = CytoDataFrame(data).get_displayed_rows()
-            display_indices = self._filter_display_indices_by_widget_range(
-                data=data,
-                display_indices=display_indices,
-            )
             active_filter_columns = (
                 self._custom_attrs["_widget_state"].get("filter_columns") or []
             )
@@ -4283,8 +4312,17 @@ class CytoDataFrame(pd.DataFrame):
                 isinstance(active_filter_ranges.get(str(col)), tuple)
                 for col in active_filter_columns
             ):
-                data = data.loc[display_indices]
-                display_indices = data.index.tolist()
+                full_filtered_indices = self._filter_display_indices_by_widget_range(
+                    data=data,
+                    display_indices=data.index.tolist(),
+                )
+                data = data.loc[full_filtered_indices]
+                display_indices = CytoDataFrame(data).get_displayed_rows()
+            else:
+                display_indices = self._filter_display_indices_by_widget_range(
+                    data=data,
+                    display_indices=display_indices,
+                )
 
             # gather bounding box columns for use below
             if self._custom_attrs["data_bounding_box"] is not None:
@@ -4452,8 +4490,10 @@ class CytoDataFrame(pd.DataFrame):
             f"max-height:{table_height};'>"
             f"{html_content}</div>"
         )
-
-        with self._custom_attrs["_output"]:
+        output_widget = self._custom_attrs["_output"]
+        if hasattr(output_widget, "clear_output"):
+            output_widget.clear_output(wait=True)
+        with output_widget:
             display(HTML(scroll_wrapped_html))
             if "cyto-3d-image" in html_content and "data-volume" in html_content:
                 display(
@@ -4730,11 +4770,17 @@ class CytoDataFrame(pd.DataFrame):
             logger.debug("Failed to build trame snapshot HTML: %s", exc)
             return html_content
 
-    def _try_render_trame_widget_table(
+    def _try_render_trame_widget_table(  # noqa: PLR0911
         self: CytoDataFrame_type, debug: bool, display_options: dict[str, Any]
     ) -> bool:
         """Try rendering the trame widget table and return ``True`` on success."""
         if debug:
+            return False
+        configured_filter_columns = display_options.get("filter_columns")
+        if isinstance(configured_filter_columns, (list, tuple)):
+            if len(configured_filter_columns) > 0:
+                return False
+        elif configured_filter_columns:
             return False
         force_trame = display_options.get("view") == "trame"
         auto_trame_for_3d = display_options.get("auto_trame_for_3d", True)
@@ -4827,6 +4873,7 @@ class CytoDataFrame(pd.DataFrame):
             accordion.selected_index = None
             filter_control = accordion
         controls: List[Any] = [self._custom_attrs["_scale_slider"]]
+        self._custom_attrs["_scale_slider"].layout = widgets.Layout(margin="10px 0 0 0")
         if filter_control is not None:
             controls.append(filter_control)
         controls_row = widgets.HBox(controls)
@@ -4840,6 +4887,7 @@ class CytoDataFrame(pd.DataFrame):
                     ]
                 )
             )
+            self._show_output_loading_indicator(message="Loading table...")
             if bool(display_options.get("show_static_snapshot_details", True)):
                 snapshot_html = self._generate_jupyter_dataframe_html()
                 details_html = (

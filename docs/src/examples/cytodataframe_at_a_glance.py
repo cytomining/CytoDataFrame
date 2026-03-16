@@ -379,12 +379,6 @@ cdf = CytoDataFrame(
 cdf[["ImageNumber", "ObjectNumber", "FileName_Nuclei"]][:3]
 # +
 # %%time
-import pathlib
-
-from cytodataframe.frame import CytoDataFrame
-
-cp_3d_path = "../../../tests/data/CP_tutorial_3D_noise_nuclei_segmentation"
-
 # read 3d images with segmentation masks and show the
 # segmentation masks are also 3D.
 cdf = CytoDataFrame(

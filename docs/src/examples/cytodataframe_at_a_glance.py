@@ -41,7 +41,7 @@ pediatric_cancer_atlas_path = (
 frame = CytoDataFrame(
     data=f"{jump_data_path}/BR00117006_shrunken.parquet",
     data_context_dir=f"{jump_data_path}/images/orig",
-)[      
+)[
     [
         "Metadata_ImageNumber",
         "Cells_Number_Object_Number",
@@ -314,7 +314,9 @@ CytoDataFrame(
     data=f"{nuclear_speckles_path}/test_slide1_converted.parquet",
     data_context_dir=f"{nuclear_speckles_path}/images/plate1",
     data_mask_context_dir=f"{nuclear_speckles_path}/masks/plate1",
-    display_options={"filter_columns": ["Nuclei_Texture_Variance_DAPI_3_03_256"],}
+    display_options={
+        "filter_columns": ["Nuclei_Texture_Variance_DAPI_3_03_256"],
+    },
 )[
     [
         "Metadata_ImageNumber",
@@ -378,6 +380,7 @@ cdf[["ImageNumber", "ObjectNumber", "FileName_Nuclei"]][:3]
 # +
 # %%time
 import pathlib
+
 from cytodataframe.frame import CytoDataFrame
 
 cp_3d_path = "../../../tests/data/CP_tutorial_3D_noise_nuclei_segmentation"

@@ -965,6 +965,26 @@ def test_filter_slider_caps_option_count_for_near_unique_values() -> None:
     assert slider.value == (float(values.min()), float(values.max()))
 
 
+def test_filter_slider_reuses_cached_widget_instance() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [1.0, 2.0, 3.0]}),
+        display_options={"filter_column": "FilterScore"},
+    )
+
+    first_slider = cdf._ensure_filter_range_slider(filter_col="FilterScore")
+    assert isinstance(first_slider, widgets.SelectionRangeSlider)
+    first_options = list(first_slider.options)
+    assert first_options[-1][1] == 3.0
+
+    cdf.loc[:, "FilterScore"] = [1.0, 2.0, 4.0]
+    second_slider = cdf._ensure_filter_range_slider(filter_col="FilterScore")
+
+    assert isinstance(second_slider, widgets.SelectionRangeSlider)
+    assert second_slider is first_slider
+    second_options = list(second_slider.options)
+    assert second_options[-1][1] == 4.0
+
+
 def test_filter_distribution_constant_values_stays_centered() -> None:
     html = CytoDataFrame._build_filter_distribution_html(
         values=pd.Series([0.47, 0.47, 0.47, 0.47]),

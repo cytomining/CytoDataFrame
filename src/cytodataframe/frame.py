@@ -646,7 +646,7 @@ class CytoDataFrame(pd.DataFrame):
             selected_columns.append(matched)
         return selected_columns
 
-    def _ensure_filter_range_slider(  # noqa: PLR0915
+    def _ensure_filter_range_slider(  # noqa: C901, PLR0915
         self: CytoDataFrame_type, filter_col: Optional[Any] = None
     ) -> Optional[Any]:
         """Build or refresh one range slider for row filtering."""
@@ -713,10 +713,48 @@ class CytoDataFrame(pd.DataFrame):
         upper = max(float(selected_range[0]), float(selected_range[1]))
         lower = max(default_lower, min(lower, default_upper))
         upper = max(lower, min(upper, default_upper))
+        slider_domain = np.asarray(slider_values, dtype=np.float64)
+
+        def _nearest_slider_index(target: float) -> int:
+            idx = int(np.searchsorted(slider_domain, target, side="left"))
+            if idx <= 0:
+                return 0
+            if idx >= slider_domain.size:
+                return int(slider_domain.size - 1)
+            left_idx = idx - 1
+            right_idx = idx
+            if abs(float(slider_domain[left_idx]) - target) <= abs(
+                float(slider_domain[right_idx]) - target
+            ):
+                return int(left_idx)
+            return int(right_idx)
+
+        lower_idx = _nearest_slider_index(lower)
+        upper_idx = _nearest_slider_index(upper)
+        upper_idx = max(upper_idx, lower_idx)
+        lower = float(slider_domain[lower_idx])
+        upper = float(slider_domain[upper_idx])
         normalized_range = (lower, upper)
         state["filter_ranges"][slider_key] = normalized_range
         if str(state.get("filter_column")) == slider_key:
             state["filter_range"] = normalized_range
+
+        cached_sliders = self._custom_attrs.setdefault("_filter_range_sliders", {})
+        existing_slider = cached_sliders.get(slider_key)
+        if isinstance(existing_slider, widgets.SelectionRangeSlider):
+            existing_slider.options = options
+            existing_slider.value = (lower, upper)
+            existing_slider.description = f"{filter_col}:"
+            existing_slider.continuous_update = False
+            existing_slider.style = {
+                "description_width": f"{FILTER_SLIDER_LABEL_WIDTH_PX}px"
+            }
+            existing_slider.layout = widgets.Layout(
+                width=f"{FILTER_SLIDER_TOTAL_WIDTH_PX}px"
+            )
+            existing_slider.add_class(FILTER_SLIDER_CSS_CLASS)
+            existing_slider._cyto_filter_column = filter_col  # type: ignore[attr-defined]
+            return existing_slider
 
         slider = widgets.SelectionRangeSlider(
             options=options,
@@ -728,7 +766,7 @@ class CytoDataFrame(pd.DataFrame):
         )
         slider.add_class(FILTER_SLIDER_CSS_CLASS)
         slider._cyto_filter_column = filter_col  # type: ignore[attr-defined]
-        self._custom_attrs.setdefault("_filter_range_sliders", {})[slider_key] = slider
+        cached_sliders[slider_key] = slider
         return slider
 
     @staticmethod
@@ -769,10 +807,11 @@ class CytoDataFrame(pd.DataFrame):
         return position
 
     @staticmethod
-    def _build_filter_distribution_html(  # noqa: C901, PLR0915
+    def _build_filter_distribution_html(  # noqa: C901, PLR0912, PLR0913, PLR0915
         values: pd.Series,
         selected_range: Tuple[float, float],
         threshold_x: Optional[float] = None,
+        slider_values: Optional[Sequence[float]] = None,
         size_px: Tuple[int, int] = (FILTER_SLIDER_TOTAL_WIDTH_PX, 96),
         track_padding_px: Tuple[int, int] = (
             FILTER_SLIDER_LABEL_WIDTH_PX,
@@ -786,21 +825,45 @@ class CytoDataFrame(pd.DataFrame):
             return ""
 
         values_array = numeric_values.to_numpy(dtype=np.float64, copy=False)
-        x_min = float(np.min(values_array))
-        original_x_max = float(np.max(values_array))
-        x_max = original_x_max
-        slider_domain = np.sort(np.unique(values_array))
+        if slider_values is None:
+            slider_domain = np.sort(np.unique(values_array))
+            if slider_domain.size > MAX_FILTER_SLIDER_STOPS:
+                sample_idx = np.linspace(
+                    0,
+                    int(slider_domain.size) - 1,
+                    num=MAX_FILTER_SLIDER_STOPS,
+                    dtype=int,
+                )
+                slider_domain = slider_domain[sample_idx]
+                slider_domain = np.unique(slider_domain)
+        else:
+            slider_domain = np.asarray(slider_values, dtype=np.float64)
+            slider_domain = np.sort(slider_domain[np.isfinite(slider_domain)])
+            slider_domain = np.unique(slider_domain)
+        if slider_domain.size == 0:
+            slider_domain = np.sort(np.unique(values_array))
+        x_min = float(slider_domain[0])
+        x_max = float(slider_domain[-1])
         if x_max == x_min:
             # Keep constant-value distributions centered in the track rather than
             # collapsing to the left edge.
             pad = max(abs(x_min) * 0.05, 1e-6)
             x_min = x_min - pad
             x_max = x_max + pad
-        # Build a smooth, KDE-like density in slider-option space so the curve
-        # aligns to scroll points without fixed value bins.
-        unique_vals, inverse_idx = np.unique(values_array, return_inverse=True)
-        option_counts = np.bincount(inverse_idx, minlength=unique_vals.size)
-        option_count = int(unique_vals.size)
+
+        # Build a smooth, KDE-like density in slider-option space (bounded by the
+        # slider domain) so runtime remains stable for near-unique columns.
+        option_count = int(slider_domain.size)
+        if option_count == 1:
+            option_counts = np.array([int(values_array.size)], dtype=np.int64)
+        else:
+            domain_midpoints = (slider_domain[:-1] + slider_domain[1:]) / 2.0
+            binned_indices = np.searchsorted(
+                domain_midpoints,
+                values_array,
+                side="right",
+            )
+            option_counts = np.bincount(binned_indices, minlength=option_count)
         option_positions = np.arange(option_count, dtype=np.float64)
         if option_count <= 1:
             kde_x = np.array([0.5], dtype=np.float64)
@@ -876,9 +939,9 @@ class CytoDataFrame(pd.DataFrame):
             return plot_bottom - (value / y_max * plot_h)
 
         def _sx_from_option_index(index: float) -> float:
-            if unique_vals.size <= 1:
+            if option_count <= 1:
                 return plot_left + (0.5 * plot_w)
-            return plot_left + ((float(index) / float(unique_vals.size - 1)) * plot_w)
+            return plot_left + ((float(index) / float(option_count - 1)) * plot_w)
 
         highlight_x = _sx(lower)
         highlight_w = max(1.0, _sx(upper) - highlight_x)
@@ -995,11 +1058,12 @@ class CytoDataFrame(pd.DataFrame):
         if threshold < data_min:
             logger.warning(
                 (
-                    "Ignoring filter plot threshold for column '%s': %s is outside "
-                    "data range [%s, %s]."
+                    "Clamping filter plot threshold for column '%s' from %s to %s "
+                    "because it is outside data range [%s, %s]."
                 ),
                 filter_col,
                 threshold,
+                data_min,
                 data_min,
                 data_max,
             )
@@ -1007,11 +1071,12 @@ class CytoDataFrame(pd.DataFrame):
         if threshold > data_max:
             logger.warning(
                 (
-                    "Ignoring filter plot threshold for column '%s': %s is outside "
-                    "data range [%s, %s]."
+                    "Clamping filter plot threshold for column '%s' from %s to %s "
+                    "because it is outside data range [%s, %s]."
                 ),
                 filter_col,
                 threshold,
+                data_max,
                 data_min,
                 data_max,
             )
@@ -1044,6 +1109,7 @@ class CytoDataFrame(pd.DataFrame):
             values=self[filter_col],
             selected_range=(float(selected_range[0]), float(selected_range[1])),
             threshold_x=threshold,
+            slider_values=[float(option[1]) for option in slider.options],
             size_px=(FILTER_SLIDER_TOTAL_WIDTH_PX, 52),
             track_padding_px=(
                 FILTER_SLIDER_LABEL_WIDTH_PX,
@@ -4777,10 +4843,13 @@ class CytoDataFrame(pd.DataFrame):
         if debug:
             return False
         configured_filter_columns = display_options.get("filter_columns")
+        configured_filter_column = display_options.get("filter_column")
         if isinstance(configured_filter_columns, (list, tuple)):
             if len(configured_filter_columns) > 0:
                 return False
         elif configured_filter_columns:
+            return False
+        if configured_filter_column:
             return False
         force_trame = display_options.get("view") == "trame"
         auto_trame_for_3d = display_options.get("auto_trame_for_3d", True)

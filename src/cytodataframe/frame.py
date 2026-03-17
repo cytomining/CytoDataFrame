@@ -73,7 +73,13 @@ FILTER_SLIDER_TRACK_LEFT_ADJUST_PX = 13
 FILTER_SLIDER_TRACK_RIGHT_INSET_PX = 13
 FILTER_PLOT_KDE_MIN_SAMPLES = 60
 FILTER_PLOT_KDE_MAX_SAMPLES = 180
-FILTER_PLOT_KDE_MIN_BANDWIDTH = 0.7
+FILTER_PLOT_KDE_MIN_BANDWIDTH = 0.25
+FILTER_PLOT_KDE_BANDWIDTH_SCALE = 0.4
+FILTER_PLOT_Y_SCALE_DEFAULT = "asinh"
+FILTER_PLOT_Y_MIN_PERCENTILE_DEFAULT = 10.0
+FILTER_PLOT_Y_MAX_PERCENTILE_DEFAULT = 80.0
+FILTER_PLOT_Y_MAX_PERCENTILE_UPPER = 100.0
+FILTER_PLOT_Y_GAMMA_DEFAULT = 0.6
 FILTER_SLIDER_CSS_CLASS = "cdf-filter-range-slider"
 
 # provide backwards compatibility for Self type in earlier Python versions.
@@ -812,6 +818,10 @@ class CytoDataFrame(pd.DataFrame):
         selected_range: Tuple[float, float],
         threshold_x: Optional[float] = None,
         slider_values: Optional[Sequence[float]] = None,
+        y_scale: str = FILTER_PLOT_Y_SCALE_DEFAULT,
+        y_min_percentile: float = FILTER_PLOT_Y_MIN_PERCENTILE_DEFAULT,
+        y_max_percentile: float = FILTER_PLOT_Y_MAX_PERCENTILE_DEFAULT,
+        y_gamma: float = FILTER_PLOT_Y_GAMMA_DEFAULT,
         size_px: Tuple[int, int] = (FILTER_SLIDER_TOTAL_WIDTH_PX, 96),
         track_padding_px: Tuple[int, int] = (
             FILTER_SLIDER_LABEL_WIDTH_PX,
@@ -890,7 +900,11 @@ class CytoDataFrame(pd.DataFrame):
             silverman_bw = 1.06 * weighted_std * (max(n_eff, 1.0) ** (-0.2))
             bandwidth = max(
                 FILTER_PLOT_KDE_MIN_BANDWIDTH,
-                silverman_bw if np.isfinite(silverman_bw) and silverman_bw > 0 else 0.0,
+                (
+                    silverman_bw * FILTER_PLOT_KDE_BANDWIDTH_SCALE
+                    if np.isfinite(silverman_bw) and silverman_bw > 0
+                    else 0.0
+                ),
             )
             # Numerically stable KDE-like smoothing in option-index space:
             # smooth discrete option counts with a Gaussian kernel, then sample
@@ -906,7 +920,39 @@ class CytoDataFrame(pd.DataFrame):
             smoothed_weights = smoothed_full[start : start + option_count]
             kde_y = np.interp(kde_x, option_positions, smoothed_weights)
             kde_y = np.nan_to_num(kde_y, nan=0.0, posinf=0.0, neginf=0.0)
-        y_max = float(max(1.0, float(np.max(kde_y, initial=1.0))))
+        y_scale_normalized = str(y_scale).strip().lower()
+        if y_scale_normalized == "asinh":
+            plot_y = np.arcsinh(np.maximum(kde_y, 0.0))
+        elif y_scale_normalized == "log":
+            plot_y = np.log1p(np.maximum(kde_y, 0.0))
+        elif y_scale_normalized == "sqrt":
+            plot_y = np.sqrt(np.maximum(kde_y, 0.0))
+        else:
+            plot_y = np.maximum(kde_y, 0.0)
+
+        min_pct = float(y_min_percentile)
+        max_pct = float(y_max_percentile)
+        if (
+            0.0 <= min_pct < FILTER_PLOT_Y_MAX_PERCENTILE_UPPER
+            and 0.0 < max_pct < FILTER_PLOT_Y_MAX_PERCENTILE_UPPER
+            and min_pct < max_pct
+        ):
+            y_floor = float(np.percentile(plot_y, min_pct))
+            y_cap = float(np.percentile(plot_y, max_pct))
+            if y_cap > y_floor:
+                plot_y = np.clip(plot_y, y_floor, y_cap) - y_floor
+            else:
+                plot_y = np.maximum(plot_y - y_floor, 0.0)
+
+        gamma = float(y_gamma)
+        if gamma > 0 and gamma != 1.0:
+            plot_y = np.power(np.maximum(plot_y, 0.0), gamma)
+
+        if 0.0 < max_pct < FILTER_PLOT_Y_MAX_PERCENTILE_UPPER:
+            y_max = float(np.percentile(plot_y, max_pct))
+        else:
+            y_max = float(np.max(plot_y, initial=1.0))
+        y_max = float(max(1e-9, y_max))
 
         lower, upper = selected_range
         lower = max(x_min, min(float(lower), x_max))
@@ -946,8 +992,9 @@ class CytoDataFrame(pd.DataFrame):
         highlight_x = _sx(lower)
         highlight_w = max(1.0, _sx(upper) - highlight_x)
         line_points = " ".join(
-            f"{_sx_from_option_index(float(option_index)):.2f},{_sy(float(count)):.2f}"
-            for option_index, count in zip(kde_x, kde_y, strict=False)
+            f"{_sx_from_option_index(float(option_index)):.2f},"
+            f"{_sy(float(count)):.2f}"
+            for option_index, count in zip(kde_x, plot_y, strict=False)
         )
         area_points = (
             f"{_sx_from_option_index(float(kde_x[0])):.2f},"
@@ -1110,6 +1157,29 @@ class CytoDataFrame(pd.DataFrame):
             selected_range=(float(selected_range[0]), float(selected_range[1])),
             threshold_x=threshold,
             slider_values=[float(option[1]) for option in slider.options],
+            y_scale=str(
+                (self._custom_attrs.get("display_options", {}) or {}).get(
+                    "filter_plot_y_scale", FILTER_PLOT_Y_SCALE_DEFAULT
+                )
+            ),
+            y_min_percentile=float(
+                (self._custom_attrs.get("display_options", {}) or {}).get(
+                    "filter_plot_y_min_percentile",
+                    FILTER_PLOT_Y_MIN_PERCENTILE_DEFAULT,
+                )
+            ),
+            y_max_percentile=float(
+                (self._custom_attrs.get("display_options", {}) or {}).get(
+                    "filter_plot_y_percentile",
+                    FILTER_PLOT_Y_MAX_PERCENTILE_DEFAULT,
+                )
+            ),
+            y_gamma=float(
+                (self._custom_attrs.get("display_options", {}) or {}).get(
+                    "filter_plot_y_gamma",
+                    FILTER_PLOT_Y_GAMMA_DEFAULT,
+                )
+            ),
             size_px=(FILTER_SLIDER_TOTAL_WIDTH_PX, 52),
             track_padding_px=(
                 FILTER_SLIDER_LABEL_WIDTH_PX,

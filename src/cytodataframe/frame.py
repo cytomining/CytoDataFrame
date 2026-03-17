@@ -624,8 +624,10 @@ class CytoDataFrame(pd.DataFrame):
         display_options = self._custom_attrs.get("display_options", {}) or {}
         configured_many = display_options.get("filter_columns")
         configured_single = display_options.get("filter_column")
+        if isinstance(configured_many, (list, tuple)) and len(configured_many) == 0:
+            configured_many = None
         configured: List[Any] = []
-        if isinstance(configured_many, (list, tuple)):
+        if isinstance(configured_many, (list, tuple)) and len(configured_many) > 0:
             configured.extend(configured_many)
         elif configured_many is not None:
             configured.append(configured_many)

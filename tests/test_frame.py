@@ -962,6 +962,17 @@ def test_filter_slider_rounds_labels_but_preserves_values() -> None:
     assert options == [("0.01", 0.0123), ("0.46", 0.456), ("9.87", 9.87)]
 
 
+def test_get_filter_slider_columns_falls_back_to_single_when_many_is_empty() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [1.0, 2.0]}),
+        display_options={"filter_columns": [], "filter_column": "FilterScore"},
+    )
+
+    columns = cdf._get_filter_slider_columns()
+
+    assert columns == ["FilterScore"]
+
+
 def test_filter_slider_caps_option_count_for_near_unique_values() -> None:
     values = np.arange(MAX_FILTER_SLIDER_STOPS + 200, dtype=np.float64)
     cdf = CytoDataFrame(

@@ -30,6 +30,12 @@ For 3D notebook display behavior:
 - Disable automatic trame switching with `display_options={"auto_trame_for_3d": False}`.
 - Force trame layout regardless of auto-detection with `display_options={"view": "trame"}`.
 
+For row display in notebook/widget tables:
+
+- CytoDataFrame respects pandas display settings (`display.max_rows`, `display.min_rows`).
+- When the table is larger than `display.max_rows`, the widget table inserts a midpoint ellipsis row (`…`) to indicate omitted rows.
+- You can control truncation behavior by changing pandas display options before rendering.
+
 📓 ___Want to see CytoDataFrame in action?___ Check out our [example notebook](docs/src/examples/cytodataframe_at_a_glance.ipynb) for a quick tour of its key features.
 
 > ✨ CytoDataFrame development began within **[coSMicQC](https://github.com/cytomining/coSMicQC)** - a single-cell profile quality control package.

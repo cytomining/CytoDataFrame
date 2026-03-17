@@ -985,6 +985,10 @@ def test_filter_slider_caps_option_count_for_near_unique_values() -> None:
     assert len(options) == MAX_FILTER_SLIDER_STOPS
     assert options[0][1] == float(values.min())
     assert options[-1][1] == float(values.max())
+    option_vals = np.array([float(option[1]) for option in options], dtype=np.float64)
+    deltas = np.diff(option_vals)
+    assert np.all(deltas > 0)
+    assert np.allclose(deltas, deltas[0], rtol=1e-6, atol=1e-12)
     assert slider.value == (float(values.min()), float(values.max()))
 
 

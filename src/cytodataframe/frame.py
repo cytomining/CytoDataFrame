@@ -73,13 +73,14 @@ FILTER_SLIDER_TRACK_LEFT_ADJUST_PX = 13
 FILTER_SLIDER_TRACK_RIGHT_INSET_PX = 13
 FILTER_PLOT_KDE_MIN_SAMPLES = 60
 FILTER_PLOT_KDE_MAX_SAMPLES = 180
-FILTER_PLOT_KDE_MIN_BANDWIDTH = 0.25
-FILTER_PLOT_KDE_BANDWIDTH_SCALE = 0.4
+FILTER_PLOT_KDE_MIN_BANDWIDTH = 0.1
+FILTER_PLOT_KDE_BANDWIDTH_SCALE = 0.3
 FILTER_PLOT_Y_SCALE_DEFAULT = "asinh"
 FILTER_PLOT_Y_MIN_PERCENTILE_DEFAULT = 10.0
 FILTER_PLOT_Y_MAX_PERCENTILE_DEFAULT = 80.0
 FILTER_PLOT_Y_MAX_PERCENTILE_UPPER = 100.0
 FILTER_PLOT_Y_GAMMA_DEFAULT = 0.6
+FILTER_PLOT_Y_TAIL_LOG_SCALE_DEFAULT = 0.35
 FILTER_SLIDER_CSS_CLASS = "cdf-filter-range-slider"
 
 # provide backwards compatibility for Self type in earlier Python versions.
@@ -700,12 +701,12 @@ class CytoDataFrame(pd.DataFrame):
 
         slider_values = unique_values
         if len(unique_values) > MAX_FILTER_SLIDER_STOPS:
-            sample_idx = np.linspace(
-                0, len(unique_values) - 1, num=MAX_FILTER_SLIDER_STOPS, dtype=int
-            )
-            slider_values = [unique_values[idx] for idx in sample_idx]
-            # Guard against accidental duplicate picks if index rounding occurs.
-            slider_values = list(dict.fromkeys(slider_values))
+            slider_values = np.linspace(
+                unique_values[0],
+                unique_values[-1],
+                num=MAX_FILTER_SLIDER_STOPS,
+                dtype=np.float64,
+            ).tolist()
         options = [
             (self._format_filter_slider_label(value), value) for value in slider_values
         ]
@@ -824,6 +825,7 @@ class CytoDataFrame(pd.DataFrame):
         y_min_percentile: float = FILTER_PLOT_Y_MIN_PERCENTILE_DEFAULT,
         y_max_percentile: float = FILTER_PLOT_Y_MAX_PERCENTILE_DEFAULT,
         y_gamma: float = FILTER_PLOT_Y_GAMMA_DEFAULT,
+        y_tail_log_scale: float = FILTER_PLOT_Y_TAIL_LOG_SCALE_DEFAULT,
         size_px: Tuple[int, int] = (FILTER_SLIDER_TOTAL_WIDTH_PX, 96),
         track_padding_px: Tuple[int, int] = (
             FILTER_SLIDER_LABEL_WIDTH_PX,
@@ -942,7 +944,19 @@ class CytoDataFrame(pd.DataFrame):
             y_floor = float(np.percentile(plot_y, min_pct))
             y_cap = float(np.percentile(plot_y, max_pct))
             if y_cap > y_floor:
-                plot_y = np.clip(plot_y, y_floor, y_cap) - y_floor
+                shifted = np.maximum(plot_y - y_floor, 0.0)
+                cap_shifted = y_cap - y_floor
+                above_cap = shifted > cap_shifted
+                if np.any(above_cap):
+                    tail_scale = max(
+                        cap_shifted * float(y_tail_log_scale),
+                        1e-9,
+                    )
+                    shifted[above_cap] = cap_shifted + (
+                        np.log1p((shifted[above_cap] - cap_shifted) / tail_scale)
+                        * tail_scale
+                    )
+                plot_y = shifted
             else:
                 plot_y = np.maximum(plot_y - y_floor, 0.0)
 
@@ -950,10 +964,7 @@ class CytoDataFrame(pd.DataFrame):
         if gamma > 0 and gamma != 1.0:
             plot_y = np.power(np.maximum(plot_y, 0.0), gamma)
 
-        if 0.0 < max_pct < FILTER_PLOT_Y_MAX_PERCENTILE_UPPER:
-            y_max = float(np.percentile(plot_y, max_pct))
-        else:
-            y_max = float(np.max(plot_y, initial=1.0))
+        y_max = float(np.max(plot_y, initial=1.0))
         y_max = float(max(1e-9, y_max))
 
         lower, upper = selected_range
@@ -989,7 +1000,14 @@ class CytoDataFrame(pd.DataFrame):
         def _sx_from_option_index(index: float) -> float:
             if option_count <= 1:
                 return plot_left + (0.5 * plot_w)
-            return plot_left + ((float(index) / float(option_count - 1)) * plot_w)
+            value = float(
+                np.interp(
+                    float(index),
+                    option_positions,
+                    slider_domain,
+                )
+            )
+            return _sx(value)
 
         highlight_x = _sx(lower)
         highlight_w = max(1.0, _sx(upper) - highlight_x)
@@ -1179,6 +1197,12 @@ class CytoDataFrame(pd.DataFrame):
                 (self._custom_attrs.get("display_options", {}) or {}).get(
                     "filter_plot_y_gamma",
                     FILTER_PLOT_Y_GAMMA_DEFAULT,
+                )
+            ),
+            y_tail_log_scale=float(
+                (self._custom_attrs.get("display_options", {}) or {}).get(
+                    "filter_plot_y_tail_log_scale",
+                    FILTER_PLOT_Y_TAIL_LOG_SCALE_DEFAULT,
                 )
             ),
             size_px=(FILTER_SLIDER_TOTAL_WIDTH_PX, 52),

@@ -934,6 +934,20 @@ def test_filter_display_indices_by_widget_range_multiple_columns() -> None:
     assert filtered == [1, 2]
 
 
+def test_filter_display_indices_by_widget_range_preserves_duplicate_labels() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [1.0, 2.0, 3.0]}, index=[0, 0, 1])
+    )
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_range"] = (0.5, 2.5)
+
+    filtered = cdf._filter_display_indices_by_widget_range(
+        data=cdf, display_indices=[0, 0, 0, 1]
+    )
+
+    assert filtered == [0, 0]
+
+
 def test_filter_slider_rounds_labels_but_preserves_values() -> None:
     cdf = CytoDataFrame(
         pd.DataFrame({"FilterScore": [0.0123, 0.456, 9.87]}),

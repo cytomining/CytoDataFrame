@@ -12,7 +12,7 @@ import sys
 import tempfile
 import uuid
 import warnings
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from io import BytesIO, StringIO
 from typing import (
     Any,
@@ -1272,10 +1272,13 @@ class CytoDataFrame(pd.DataFrame):
             in_range = numeric_values[
                 (numeric_values >= lower) & (numeric_values <= upper)
             ]
-            allowed = set(in_range.index.tolist())
-            active_indices = [
-                row_label for row_label in active_indices if row_label in allowed
-            ]
+            allowed_counts = Counter(in_range.index.tolist())
+            filtered_indices: List[Any] = []
+            for row_label in active_indices:
+                if allowed_counts[row_label] > 0:
+                    filtered_indices.append(row_label)
+                    allowed_counts[row_label] -= 1
+            active_indices = filtered_indices
 
         return active_indices
 

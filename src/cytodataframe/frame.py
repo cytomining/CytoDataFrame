@@ -992,8 +992,7 @@ class CytoDataFrame(pd.DataFrame):
         highlight_x = _sx(lower)
         highlight_w = max(1.0, _sx(upper) - highlight_x)
         line_points = " ".join(
-            f"{_sx_from_option_index(float(option_index)):.2f},"
-            f"{_sy(float(count)):.2f}"
+            f"{_sx_from_option_index(float(option_index)):.2f},{_sy(float(count)):.2f}"
             for option_index, count in zip(kde_x, plot_y, strict=False)
         )
         area_points = (

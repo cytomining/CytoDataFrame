@@ -399,6 +399,12 @@ With CytoDataFrame you can:</p>
 <li><p>Disable automatic trame switching with <code class="docutils literal notranslate"><span class="pre">display_options={&quot;auto_trame_for_3d&quot;:</span> <span class="pre">False}</span></code>.</p></li>
 <li><p>Force trame layout regardless of auto-detection with <code class="docutils literal notranslate"><span class="pre">display_options={&quot;view&quot;:</span> <span class="pre">&quot;trame&quot;}</span></code>.</p></li>
 </ul>
+<p>For row display in notebook/widget tables:</p>
+<ul class="simple">
+<li><p>CytoDataFrame respects pandas display settings (<code class="docutils literal notranslate"><span class="pre">display.max_rows</span></code>, <code class="docutils literal notranslate"><span class="pre">display.min_rows</span></code>).</p></li>
+<li><p>When the table is larger than <code class="docutils literal notranslate"><span class="pre">display.max_rows</span></code>, the widget table inserts a midpoint ellipsis row (<code class="docutils literal notranslate"><span class="pre">…</span></code>) to indicate omitted rows.</p></li>
+<li><p>You can control truncation behavior by changing pandas display options before rendering.</p></li>
+</ul>
 <p>📓 <em><strong>Want to see CytoDataFrame in action?</strong></em> Check out our <a class="reference internal" href="examples/cytodataframe_at_a_glance.html"><span class="std std-doc">example notebook</span></a> for a quick tour of its key features.</p>
 <blockquote>
 <div><p>✨ CytoDataFrame development began within <strong><a class="reference external" href="https://github.com/cytomining/coSMicQC">coSMicQC</a></strong> - a single-cell profile quality control package.

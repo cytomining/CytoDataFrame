@@ -410,7 +410,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">OrderedDict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">Counter</span><span class="p">,</span> <span class="n">OrderedDict</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">io</span><span class="w"> </span><span class="kn">import</span> <span class="n">BytesIO</span><span class="p">,</span> <span class="n">StringIO</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">Any</span><span class="p">,</span>
@@ -461,6 +461,25 @@
 <span class="n">MIN_RGB_SPATIAL_DIM</span> <span class="o">=</span> <span class="mi">8</span>
 <span class="n">MAX_RGB_ASPECT_RATIO</span> <span class="o">=</span> <span class="mf">4.0</span>
 <span class="n">MIN_POSITION_COMPONENTS</span> <span class="o">=</span> <span class="mi">2</span>
+<span class="n">FILTER_SLIDER_TOTAL_WIDTH_PX</span> <span class="o">=</span> <span class="mi">430</span>
+<span class="n">FILTER_SLIDER_LABEL_WIDTH_PX</span> <span class="o">=</span> <span class="mi">170</span>
+<span class="n">FILTER_SLIDER_READOUT_WIDTH_PX</span> <span class="o">=</span> <span class="mi">96</span>
+<span class="n">MAX_FILTER_SLIDER_STOPS</span> <span class="o">=</span> <span class="mi">500</span>
+<span class="c1"># Fine-grained track-bound alignment for the background distribution plot.</span>
+<span class="c1"># Positive values shift inward; negative values shift outward.</span>
+<span class="n">FILTER_SLIDER_TRACK_LEFT_ADJUST_PX</span> <span class="o">=</span> <span class="mi">13</span>
+<span class="n">FILTER_SLIDER_TRACK_RIGHT_INSET_PX</span> <span class="o">=</span> <span class="mi">13</span>
+<span class="n">FILTER_PLOT_KDE_MIN_SAMPLES</span> <span class="o">=</span> <span class="mi">60</span>
+<span class="n">FILTER_PLOT_KDE_MAX_SAMPLES</span> <span class="o">=</span> <span class="mi">180</span>
+<span class="n">FILTER_PLOT_KDE_MIN_BANDWIDTH</span> <span class="o">=</span> <span class="mf">0.1</span>
+<span class="n">FILTER_PLOT_KDE_BANDWIDTH_SCALE</span> <span class="o">=</span> <span class="mf">0.3</span>
+<span class="n">FILTER_PLOT_Y_SCALE_DEFAULT</span> <span class="o">=</span> <span class="s2">&quot;asinh&quot;</span>
+<span class="n">FILTER_PLOT_Y_MIN_PERCENTILE_DEFAULT</span> <span class="o">=</span> <span class="mf">10.0</span>
+<span class="n">FILTER_PLOT_Y_MAX_PERCENTILE_DEFAULT</span> <span class="o">=</span> <span class="mf">80.0</span>
+<span class="n">FILTER_PLOT_Y_MAX_PERCENTILE_UPPER</span> <span class="o">=</span> <span class="mf">100.0</span>
+<span class="n">FILTER_PLOT_Y_GAMMA_DEFAULT</span> <span class="o">=</span> <span class="mf">0.6</span>
+<span class="n">FILTER_PLOT_Y_TAIL_LOG_SCALE_DEFAULT</span> <span class="o">=</span> <span class="mf">0.35</span>
+<span class="n">FILTER_SLIDER_CSS_CLASS</span> <span class="o">=</span> <span class="s2">&quot;cdf-filter-range-slider&quot;</span>
 
 <span class="c1"># provide backwards compatibility for Self type in earlier Python versions.</span>
 <span class="c1"># see: https://peps.python.org/pep-0484/#annotating-instance-and-class-methods</span>
@@ -630,8 +649,14 @@
             <span class="c1"># add widget control meta</span>
             <span class="s2">&quot;_widget_state&quot;</span><span class="p">:</span> <span class="p">{</span>
                 <span class="s2">&quot;scale&quot;</span><span class="p">:</span> <span class="n">initial_brightness</span><span class="p">,</span>
+                <span class="s2">&quot;filter_column&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">&quot;filter_range&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">&quot;filter_columns&quot;</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">&quot;filter_ranges&quot;</span><span class="p">:</span> <span class="p">{},</span>
                 <span class="s2">&quot;shown&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>  <span class="c1"># whether VBox has been displayed</span>
                 <span class="s2">&quot;observing&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>  <span class="c1"># whether slider observer is attached</span>
+                <span class="s2">&quot;filter_observing&quot;</span><span class="p">:</span> <span class="p">{},</span>  <span class="c1"># per-column observer attachment flags</span>
+                <span class="s2">&quot;filter_readout_css_injected&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
             <span class="p">},</span>
             <span class="s2">&quot;_snapshot_cache&quot;</span><span class="p">:</span> <span class="p">{},</span>
             <span class="s2">&quot;_volume_cache&quot;</span><span class="p">:</span> <span class="p">{},</span>
@@ -651,6 +676,7 @@
                     <span class="n">overflow</span><span class="o">=</span><span class="s2">&quot;visible&quot;</span><span class="p">,</span>
                 <span class="p">)</span>
             <span class="p">),</span>
+            <span class="s2">&quot;_filter_range_sliders&quot;</span><span class="p">:</span> <span class="p">{},</span>
         <span class="p">}</span>
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_context_dir&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -761,6 +787,9 @@
             <span class="c1"># add widget control meta</span>
             <span class="n">cdf</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span>
             <span class="n">cdf</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_scale_slider&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_scale_slider&quot;</span><span class="p">]</span>
+            <span class="n">cdf</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_filter_range_sliders&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span>
+                <span class="s2">&quot;_filter_range_sliders&quot;</span>
+            <span class="p">]</span>
             <span class="n">cdf</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">]</span>
 
             <span class="k">return</span> <span class="n">cdf</span>
@@ -819,6 +848,9 @@
             <span class="c1"># add widget control meta</span>
             <span class="n">cdf</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span>
             <span class="n">cdf</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_scale_slider&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_scale_slider&quot;</span><span class="p">]</span>
+            <span class="n">cdf</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_filter_range_sliders&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span>
+                <span class="s2">&quot;_filter_range_sliders&quot;</span>
+            <span class="p">]</span>
             <span class="n">cdf</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">]</span>
 
         <span class="k">return</span> <span class="n">cdf</span></div>
@@ -927,10 +959,800 @@
 <span class="sd">        &quot;&quot;&quot;</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;scale&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">change</span><span class="p">[</span><span class="s2">&quot;new&quot;</span><span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">clear_output</span><span class="p">(</span><span class="n">wait</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_show_output_loading_indicator</span><span class="p">()</span>
 
         <span class="c1"># redraw output after adjustments to scale state</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_render_output</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._on_filter_slider_change">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._on_filter_slider_change">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_on_filter_slider_change</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span> <span class="n">change</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update widget filter state when the selection range changes.&quot;&quot;&quot;</span>
+        <span class="n">slider_owner</span> <span class="o">=</span> <span class="n">change</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;owner&quot;</span><span class="p">)</span>
+        <span class="n">filter_col</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="nb">getattr</span><span class="p">(</span><span class="n">slider_owner</span><span class="p">,</span> <span class="s2">&quot;_cyto_filter_column&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">slider_owner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
+        <span class="n">selection</span> <span class="o">=</span> <span class="n">change</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;new&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">selection</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">selection</span><span class="p">)</span> <span class="o">!=</span> <span class="n">MIN_POSITION_COMPONENTS</span>
+        <span class="p">):</span>
+            <span class="k">return</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">lower</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">selection</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="n">upper</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">selection</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="k">return</span>
+
+        <span class="n">normalized_range</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="nb">min</span><span class="p">(</span><span class="n">lower</span><span class="p">,</span> <span class="n">upper</span><span class="p">),</span>
+            <span class="nb">max</span><span class="p">(</span><span class="n">lower</span><span class="p">,</span> <span class="n">upper</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">filter_col</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">state</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;filter_ranges&quot;</span><span class="p">,</span> <span class="p">{})[</span><span class="nb">str</span><span class="p">(</span><span class="n">filter_col</span><span class="p">)]</span> <span class="o">=</span> <span class="n">normalized_range</span>
+            <span class="c1"># preserve legacy single-filter fields for backward compatibility</span>
+            <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_column&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_column&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">filter_col</span>
+            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_column&quot;</span><span class="p">))</span> <span class="o">==</span> <span class="nb">str</span><span class="p">(</span><span class="n">filter_col</span><span class="p">):</span>
+                <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_range&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">normalized_range</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_range&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">normalized_range</span>
+            <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_column&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">state</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;filter_ranges&quot;</span><span class="p">,</span> <span class="p">{})[</span><span class="nb">str</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_column&quot;</span><span class="p">])]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">normalized_range</span>
+                <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_show_output_loading_indicator</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_render_output</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._show_output_loading_indicator">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._show_output_loading_indicator">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_show_output_loading_indicator</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
+        <span class="n">message</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Updating table...&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Render a lightweight loading indicator in the output area.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">clear_output</span><span class="p">(</span><span class="n">wait</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">]:</span>
+            <span class="n">display</span><span class="p">(</span>
+                <span class="n">HTML</span><span class="p">(</span>
+                    <span class="s2">&quot;&lt;style&gt;&quot;</span>
+                    <span class="s2">&quot;@keyframes cdf-spin{to{transform:rotate(360deg)}}&quot;</span>
+                    <span class="s2">&quot;.cdf-loading{display:flex;align-items:center;gap:8px;&quot;</span>
+                    <span class="s2">&quot;padding:8px 6px;color:#1f2937;font-size:12px;}&quot;</span>
+                    <span class="s2">&quot;.cdf-loading-spinner{width:12px;height:12px;border-radius:50%;&quot;</span>
+                    <span class="s2">&quot;border:2px solid #93c5fd;border-top-color:#1d4ed8;&quot;</span>
+                    <span class="s2">&quot;animation:cdf-spin .7s linear infinite;}&quot;</span>
+                    <span class="s2">&quot;&lt;/style&gt;&quot;</span>
+                    <span class="s2">&quot;&lt;div class=&#39;cdf-loading&#39;&gt;&quot;</span>
+                    <span class="s2">&quot;&lt;span class=&#39;cdf-loading-spinner&#39; aria-hidden=&#39;true&#39;&gt;&lt;/span&gt;&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;&lt;span&gt;</span><span class="si">{</span><span class="n">message</span><span class="si">}</span><span class="s2">&lt;/span&gt;&quot;</span>
+                    <span class="s2">&quot;&lt;/div&gt;&quot;</span>
+                <span class="p">)</span>
+            <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._get_filter_slider_columns">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._get_filter_slider_columns">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_filter_slider_columns</span><span class="p">(</span><span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return configured filter columns, preserving user-specified order.&quot;&quot;&quot;</span>
+        <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">configured_many</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_columns&quot;</span><span class="p">)</span>
+        <span class="n">configured_single</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_column&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">configured_many</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">))</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">configured_many</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">configured_many</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">configured</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">configured_many</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">))</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">configured_many</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">configured</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">configured_many</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">configured_many</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">configured</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">configured_many</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">configured_single</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">configured</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">configured_single</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">configured</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="n">selected_columns</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">seen</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">requested</span> <span class="ow">in</span> <span class="n">configured</span><span class="p">:</span>
+            <span class="n">requested_str</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">requested</span><span class="p">)</span>
+            <span class="n">matched</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)</span> <span class="o">==</span> <span class="n">requested_str</span><span class="p">),</span>
+                <span class="kc">None</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">matched</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">matched</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+            <span class="n">selected_columns</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">matched</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">selected_columns</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._ensure_filter_range_slider">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._ensure_filter_range_slider">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_ensure_filter_range_slider</span><span class="p">(</span>  <span class="c1"># noqa: C901, PLR0915</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span> <span class="n">filter_col</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build or refresh one range slider for row filtering.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">filter_col</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">columns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_filter_slider_columns</span><span class="p">()</span>
+            <span class="n">filter_col</span> <span class="o">=</span> <span class="n">columns</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">columns</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">filter_col</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_filter_range_sliders&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_columns&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_column&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_range&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_ranges&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_observing&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="n">slider_key</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">filter_col</span><span class="p">)</span>
+        <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_column&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_column&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">filter_col</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;filter_ranges&quot;</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;filter_observing&quot;</span><span class="p">,</span> <span class="p">{})</span>
+
+        <span class="n">numeric_values</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_numeric</span><span class="p">(</span><span class="bp">self</span><span class="p">[</span><span class="n">filter_col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;coerce&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">numeric_values</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;_filter_range_sliders&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span>
+                <span class="n">slider_key</span><span class="p">,</span> <span class="kc">None</span>
+            <span class="p">)</span>
+            <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_ranges&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">slider_key</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_observing&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">slider_key</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_column&quot;</span><span class="p">))</span> <span class="o">==</span> <span class="n">slider_key</span><span class="p">:</span>
+                <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_range&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="n">unique_values</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">pd</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">numeric_values</span><span class="p">))</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">unique_values</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;_filter_range_sliders&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span>
+                <span class="n">slider_key</span><span class="p">,</span> <span class="kc">None</span>
+            <span class="p">)</span>
+            <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_ranges&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">slider_key</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_observing&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">slider_key</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_column&quot;</span><span class="p">))</span> <span class="o">==</span> <span class="n">slider_key</span><span class="p">:</span>
+                <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_range&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="n">slider_values</span> <span class="o">=</span> <span class="n">unique_values</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">unique_values</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">MAX_FILTER_SLIDER_STOPS</span><span class="p">:</span>
+            <span class="n">slider_values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span>
+                <span class="n">unique_values</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                <span class="n">unique_values</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+                <span class="n">num</span><span class="o">=</span><span class="n">MAX_FILTER_SLIDER_STOPS</span><span class="p">,</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="n">options</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_format_filter_slider_label</span><span class="p">(</span><span class="n">value</span><span class="p">),</span> <span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">slider_values</span>
+        <span class="p">]</span>
+        <span class="n">default_lower</span> <span class="o">=</span> <span class="n">slider_values</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">default_upper</span> <span class="o">=</span> <span class="n">slider_values</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">selected_range</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_ranges&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">slider_key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">selected_range</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">selected_range</span><span class="p">)</span> <span class="o">!=</span> <span class="n">MIN_POSITION_COMPONENTS</span>
+        <span class="p">):</span>
+            <span class="n">selected_range</span> <span class="o">=</span> <span class="p">(</span><span class="n">default_lower</span><span class="p">,</span> <span class="n">default_upper</span><span class="p">)</span>
+        <span class="n">lower</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">selected_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="n">selected_range</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+        <span class="n">upper</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">selected_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="n">selected_range</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+        <span class="n">lower</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">default_lower</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">lower</span><span class="p">,</span> <span class="n">default_upper</span><span class="p">))</span>
+        <span class="n">upper</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">lower</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">upper</span><span class="p">,</span> <span class="n">default_upper</span><span class="p">))</span>
+        <span class="n">slider_domain</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">slider_values</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_nearest_slider_index</span><span class="p">(</span><span class="n">target</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">searchsorted</span><span class="p">(</span><span class="n">slider_domain</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">side</span><span class="o">=</span><span class="s2">&quot;left&quot;</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">idx</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">return</span> <span class="mi">0</span>
+            <span class="k">if</span> <span class="n">idx</span> <span class="o">&gt;=</span> <span class="n">slider_domain</span><span class="o">.</span><span class="n">size</span><span class="p">:</span>
+                <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">slider_domain</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">left_idx</span> <span class="o">=</span> <span class="n">idx</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="n">right_idx</span> <span class="o">=</span> <span class="n">idx</span>
+            <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">slider_domain</span><span class="p">[</span><span class="n">left_idx</span><span class="p">])</span> <span class="o">-</span> <span class="n">target</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="nb">abs</span><span class="p">(</span>
+                <span class="nb">float</span><span class="p">(</span><span class="n">slider_domain</span><span class="p">[</span><span class="n">right_idx</span><span class="p">])</span> <span class="o">-</span> <span class="n">target</span>
+            <span class="p">):</span>
+                <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">left_idx</span><span class="p">)</span>
+            <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">right_idx</span><span class="p">)</span>
+
+        <span class="n">lower_idx</span> <span class="o">=</span> <span class="n">_nearest_slider_index</span><span class="p">(</span><span class="n">lower</span><span class="p">)</span>
+        <span class="n">upper_idx</span> <span class="o">=</span> <span class="n">_nearest_slider_index</span><span class="p">(</span><span class="n">upper</span><span class="p">)</span>
+        <span class="n">upper_idx</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">upper_idx</span><span class="p">,</span> <span class="n">lower_idx</span><span class="p">)</span>
+        <span class="n">lower</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">slider_domain</span><span class="p">[</span><span class="n">lower_idx</span><span class="p">])</span>
+        <span class="n">upper</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">slider_domain</span><span class="p">[</span><span class="n">upper_idx</span><span class="p">])</span>
+        <span class="n">normalized_range</span> <span class="o">=</span> <span class="p">(</span><span class="n">lower</span><span class="p">,</span> <span class="n">upper</span><span class="p">)</span>
+        <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_ranges&quot;</span><span class="p">][</span><span class="n">slider_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">normalized_range</span>
+        <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_column&quot;</span><span class="p">))</span> <span class="o">==</span> <span class="n">slider_key</span><span class="p">:</span>
+            <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_range&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">normalized_range</span>
+
+        <span class="n">cached_sliders</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;_filter_range_sliders&quot;</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="n">existing_slider</span> <span class="o">=</span> <span class="n">cached_sliders</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">slider_key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">existing_slider</span><span class="p">,</span> <span class="n">widgets</span><span class="o">.</span><span class="n">SelectionRangeSlider</span><span class="p">):</span>
+            <span class="n">existing_slider</span><span class="o">.</span><span class="n">options</span> <span class="o">=</span> <span class="n">options</span>
+            <span class="n">existing_slider</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="p">(</span><span class="n">lower</span><span class="p">,</span> <span class="n">upper</span><span class="p">)</span>
+            <span class="n">existing_slider</span><span class="o">.</span><span class="n">description</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">filter_col</span><span class="si">}</span><span class="s2">:&quot;</span>
+            <span class="n">existing_slider</span><span class="o">.</span><span class="n">continuous_update</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="n">existing_slider</span><span class="o">.</span><span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;description_width&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">FILTER_SLIDER_LABEL_WIDTH_PX</span><span class="si">}</span><span class="s2">px&quot;</span>
+            <span class="p">}</span>
+            <span class="n">existing_slider</span><span class="o">.</span><span class="n">layout</span> <span class="o">=</span> <span class="n">widgets</span><span class="o">.</span><span class="n">Layout</span><span class="p">(</span>
+                <span class="n">width</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">FILTER_SLIDER_TOTAL_WIDTH_PX</span><span class="si">}</span><span class="s2">px&quot;</span>
+            <span class="p">)</span>
+            <span class="n">existing_slider</span><span class="o">.</span><span class="n">add_class</span><span class="p">(</span><span class="n">FILTER_SLIDER_CSS_CLASS</span><span class="p">)</span>
+            <span class="n">existing_slider</span><span class="o">.</span><span class="n">_cyto_filter_column</span> <span class="o">=</span> <span class="n">filter_col</span>  <span class="c1"># type: ignore[attr-defined]</span>
+            <span class="k">return</span> <span class="n">existing_slider</span>
+
+        <span class="n">slider</span> <span class="o">=</span> <span class="n">widgets</span><span class="o">.</span><span class="n">SelectionRangeSlider</span><span class="p">(</span>
+            <span class="n">options</span><span class="o">=</span><span class="n">options</span><span class="p">,</span>
+            <span class="n">value</span><span class="o">=</span><span class="p">(</span><span class="n">lower</span><span class="p">,</span> <span class="n">upper</span><span class="p">),</span>
+            <span class="n">description</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">filter_col</span><span class="si">}</span><span class="s2">:&quot;</span><span class="p">,</span>
+            <span class="n">continuous_update</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">style</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;description_width&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">FILTER_SLIDER_LABEL_WIDTH_PX</span><span class="si">}</span><span class="s2">px&quot;</span><span class="p">},</span>
+            <span class="n">layout</span><span class="o">=</span><span class="n">widgets</span><span class="o">.</span><span class="n">Layout</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">FILTER_SLIDER_TOTAL_WIDTH_PX</span><span class="si">}</span><span class="s2">px&quot;</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">slider</span><span class="o">.</span><span class="n">add_class</span><span class="p">(</span><span class="n">FILTER_SLIDER_CSS_CLASS</span><span class="p">)</span>
+        <span class="n">slider</span><span class="o">.</span><span class="n">_cyto_filter_column</span> <span class="o">=</span> <span class="n">filter_col</span>  <span class="c1"># type: ignore[attr-defined]</span>
+        <span class="n">cached_sliders</span><span class="p">[</span><span class="n">slider_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">slider</span>
+        <span class="k">return</span> <span class="n">slider</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._format_filter_slider_label">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._format_filter_slider_label">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_format_filter_slider_label</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Format displayed slider labels with two decimals for float values.&quot;&quot;&quot;</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">is_integer</span><span class="p">():</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">value</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._slider_relative_position">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._slider_relative_position">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_slider_relative_position</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">slider_domain</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Map a numeric value to SelectionRangeSlider&#39;s normalized track position.&quot;&quot;&quot;</span>
+        <span class="n">domain_size</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">slider_domain</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">domain_size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.0</span>
+        <span class="k">if</span> <span class="n">domain_size</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.5</span>
+
+        <span class="n">position</span><span class="p">:</span> <span class="nb">float</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="o">&lt;=</span> <span class="n">slider_domain</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+            <span class="n">position</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">elif</span> <span class="n">value</span> <span class="o">&gt;=</span> <span class="n">slider_domain</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="n">position</span> <span class="o">=</span> <span class="mf">1.0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">right_idx</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">searchsorted</span><span class="p">(</span><span class="n">slider_domain</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">side</span><span class="o">=</span><span class="s2">&quot;right&quot;</span><span class="p">))</span>
+            <span class="n">left_idx</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">right_idx</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">right_idx</span> <span class="o">&gt;=</span> <span class="n">domain_size</span><span class="p">:</span>
+                <span class="n">position</span> <span class="o">=</span> <span class="mf">1.0</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">left_val</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">slider_domain</span><span class="p">[</span><span class="n">left_idx</span><span class="p">])</span>
+                <span class="n">right_val</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">slider_domain</span><span class="p">[</span><span class="n">right_idx</span><span class="p">])</span>
+                <span class="k">if</span> <span class="n">right_val</span> <span class="o">==</span> <span class="n">left_val</span><span class="p">:</span>
+                    <span class="n">position</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">left_idx</span><span class="p">)</span> <span class="o">/</span> <span class="nb">float</span><span class="p">(</span><span class="n">domain_size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">frac</span> <span class="o">=</span> <span class="p">(</span><span class="n">value</span> <span class="o">-</span> <span class="n">left_val</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">right_val</span> <span class="o">-</span> <span class="n">left_val</span><span class="p">)</span>
+                    <span class="n">position</span> <span class="o">=</span> <span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">left_idx</span><span class="p">)</span> <span class="o">+</span> <span class="nb">float</span><span class="p">(</span><span class="n">frac</span><span class="p">))</span> <span class="o">/</span> <span class="nb">float</span><span class="p">(</span><span class="n">domain_size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">position</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._build_filter_distribution_html">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._build_filter_distribution_html">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_filter_distribution_html</span><span class="p">(</span>  <span class="c1"># noqa: C901, PLR0912, PLR0913, PLR0915</span>
+        <span class="n">values</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">,</span>
+        <span class="n">selected_range</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span>
+        <span class="n">threshold_x</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">slider_values</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">y_scale</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">FILTER_PLOT_Y_SCALE_DEFAULT</span><span class="p">,</span>
+        <span class="n">y_min_percentile</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">FILTER_PLOT_Y_MIN_PERCENTILE_DEFAULT</span><span class="p">,</span>
+        <span class="n">y_max_percentile</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">FILTER_PLOT_Y_MAX_PERCENTILE_DEFAULT</span><span class="p">,</span>
+        <span class="n">y_gamma</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">FILTER_PLOT_Y_GAMMA_DEFAULT</span><span class="p">,</span>
+        <span class="n">y_tail_log_scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">FILTER_PLOT_Y_TAIL_LOG_SCALE_DEFAULT</span><span class="p">,</span>
+        <span class="n">size_px</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">FILTER_SLIDER_TOTAL_WIDTH_PX</span><span class="p">,</span> <span class="mi">96</span><span class="p">),</span>
+        <span class="n">track_padding_px</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">FILTER_SLIDER_LABEL_WIDTH_PX</span><span class="p">,</span>
+            <span class="n">FILTER_SLIDER_READOUT_WIDTH_PX</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build an inline SVG area/line plot for filter-value counts.&quot;&quot;&quot;</span>
+        <span class="n">width</span><span class="p">,</span> <span class="n">height</span> <span class="o">=</span> <span class="n">size_px</span>
+        <span class="n">numeric_values</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_numeric</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;coerce&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">numeric_values</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;&quot;</span>
+
+        <span class="n">values_array</span> <span class="o">=</span> <span class="n">numeric_values</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">slider_values</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">slider_domain</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">values_array</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">slider_domain</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="n">MAX_FILTER_SLIDER_STOPS</span><span class="p">:</span>
+                <span class="n">sample_idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span>
+                    <span class="mi">0</span><span class="p">,</span>
+                    <span class="nb">int</span><span class="p">(</span><span class="n">slider_domain</span><span class="o">.</span><span class="n">size</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span>
+                    <span class="n">num</span><span class="o">=</span><span class="n">MAX_FILTER_SLIDER_STOPS</span><span class="p">,</span>
+                    <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">slider_domain</span> <span class="o">=</span> <span class="n">slider_domain</span><span class="p">[</span><span class="n">sample_idx</span><span class="p">]</span>
+                <span class="n">slider_domain</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">slider_domain</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">slider_domain</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">slider_values</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+            <span class="n">slider_domain</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">slider_domain</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">slider_domain</span><span class="p">)])</span>
+            <span class="n">slider_domain</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">slider_domain</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">slider_domain</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">slider_domain</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">values_array</span><span class="p">))</span>
+        <span class="n">x_min</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">slider_domain</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">x_max</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">slider_domain</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">x_max</span> <span class="o">==</span> <span class="n">x_min</span><span class="p">:</span>
+            <span class="c1"># Keep constant-value distributions centered in the track rather than</span>
+            <span class="c1"># collapsing to the left edge.</span>
+            <span class="n">pad</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">x_min</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.05</span><span class="p">,</span> <span class="mf">1e-6</span><span class="p">)</span>
+            <span class="n">x_min</span> <span class="o">=</span> <span class="n">x_min</span> <span class="o">-</span> <span class="n">pad</span>
+            <span class="n">x_max</span> <span class="o">=</span> <span class="n">x_max</span> <span class="o">+</span> <span class="n">pad</span>
+
+        <span class="c1"># Build a smooth, KDE-like density in slider-option space (bounded by the</span>
+        <span class="c1"># slider domain) so runtime remains stable for near-unique columns.</span>
+        <span class="n">option_count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">slider_domain</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">option_count</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">option_counts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="nb">int</span><span class="p">(</span><span class="n">values_array</span><span class="o">.</span><span class="n">size</span><span class="p">)],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">domain_midpoints</span> <span class="o">=</span> <span class="p">(</span><span class="n">slider_domain</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">slider_domain</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span> <span class="o">/</span> <span class="mf">2.0</span>
+            <span class="n">binned_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">searchsorted</span><span class="p">(</span>
+                <span class="n">domain_midpoints</span><span class="p">,</span>
+                <span class="n">values_array</span><span class="p">,</span>
+                <span class="n">side</span><span class="o">=</span><span class="s2">&quot;right&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">option_counts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span><span class="n">binned_indices</span><span class="p">,</span> <span class="n">minlength</span><span class="o">=</span><span class="n">option_count</span><span class="p">)</span>
+        <span class="n">option_positions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">option_count</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">option_count</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">kde_x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.5</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+            <span class="n">kde_y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="nb">float</span><span class="p">(</span><span class="n">option_counts</span><span class="o">.</span><span class="n">sum</span><span class="p">())],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">kde_sample_count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span>
+                <span class="nb">min</span><span class="p">(</span>
+                    <span class="n">FILTER_PLOT_KDE_MAX_SAMPLES</span><span class="p">,</span>
+                    <span class="nb">max</span><span class="p">(</span><span class="n">FILTER_PLOT_KDE_MIN_SAMPLES</span><span class="p">,</span> <span class="n">option_count</span> <span class="o">*</span> <span class="mi">2</span><span class="p">),</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">kde_x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">option_count</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),</span> <span class="n">num</span><span class="o">=</span><span class="n">kde_sample_count</span><span class="p">)</span>
+            <span class="n">weights</span> <span class="o">=</span> <span class="n">option_counts</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="n">weight_sum</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">weights</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
+            <span class="n">weighted_mean</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">option_positions</span> <span class="o">*</span> <span class="n">weights</span><span class="p">)</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="n">weight_sum</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">weighted_var</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">weights</span> <span class="o">*</span> <span class="p">(</span><span class="n">option_positions</span> <span class="o">-</span> <span class="n">weighted_mean</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+                <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="n">weight_sum</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">weighted_std</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">weighted_var</span><span class="p">)))</span>
+            <span class="n">n_eff</span> <span class="o">=</span> <span class="nb">float</span><span class="p">((</span><span class="n">weight_sum</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">weights</span><span class="o">**</span><span class="mi">2</span><span class="p">)),</span> <span class="mf">1.0</span><span class="p">))</span>
+            <span class="n">silverman_bw</span> <span class="o">=</span> <span class="mf">1.06</span> <span class="o">*</span> <span class="n">weighted_std</span> <span class="o">*</span> <span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="n">n_eff</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.2</span><span class="p">))</span>
+            <span class="n">bandwidth</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+                <span class="n">FILTER_PLOT_KDE_MIN_BANDWIDTH</span><span class="p">,</span>
+                <span class="p">(</span>
+                    <span class="n">silverman_bw</span> <span class="o">*</span> <span class="n">FILTER_PLOT_KDE_BANDWIDTH_SCALE</span>
+                    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">silverman_bw</span><span class="p">)</span> <span class="ow">and</span> <span class="n">silverman_bw</span> <span class="o">&gt;</span> <span class="mi">0</span>
+                    <span class="k">else</span> <span class="mf">0.0</span>
+                <span class="p">),</span>
+            <span class="p">)</span>
+            <span class="c1"># Numerically stable KDE-like smoothing in option-index space:</span>
+            <span class="c1"># smooth discrete option counts with a Gaussian kernel, then sample</span>
+            <span class="c1"># onto the denser x-grid via interpolation.</span>
+            <span class="n">radius</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="mf">3.0</span> <span class="o">*</span> <span class="n">bandwidth</span><span class="p">)))</span>
+            <span class="n">kernel_x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="o">-</span><span class="n">radius</span><span class="p">,</span> <span class="n">radius</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+            <span class="n">kernel</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">((</span><span class="n">kernel_x</span> <span class="o">/</span> <span class="n">bandwidth</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">))</span>
+            <span class="n">kernel_sum</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">kernel</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">kernel_sum</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">kernel</span> <span class="o">=</span> <span class="n">kernel</span> <span class="o">/</span> <span class="n">kernel_sum</span>
+            <span class="n">smoothed_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">convolve</span><span class="p">(</span><span class="n">weights</span><span class="p">,</span> <span class="n">kernel</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;full&quot;</span><span class="p">)</span>
+            <span class="n">start</span> <span class="o">=</span> <span class="nb">int</span><span class="p">((</span><span class="n">kernel</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span>
+            <span class="n">smoothed_weights</span> <span class="o">=</span> <span class="n">smoothed_full</span><span class="p">[</span><span class="n">start</span> <span class="p">:</span> <span class="n">start</span> <span class="o">+</span> <span class="n">option_count</span><span class="p">]</span>
+            <span class="n">kde_y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">kde_x</span><span class="p">,</span> <span class="n">option_positions</span><span class="p">,</span> <span class="n">smoothed_weights</span><span class="p">)</span>
+            <span class="n">kde_y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan_to_num</span><span class="p">(</span><span class="n">kde_y</span><span class="p">,</span> <span class="n">nan</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">posinf</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">neginf</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">y_scale_normalized</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">y_scale</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">y_scale_normalized</span> <span class="o">==</span> <span class="s2">&quot;asinh&quot;</span><span class="p">:</span>
+            <span class="n">plot_y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arcsinh</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">kde_y</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="n">y_scale_normalized</span> <span class="o">==</span> <span class="s2">&quot;log&quot;</span><span class="p">:</span>
+            <span class="n">plot_y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log1p</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">kde_y</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="n">y_scale_normalized</span> <span class="o">==</span> <span class="s2">&quot;sqrt&quot;</span><span class="p">:</span>
+            <span class="n">plot_y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">kde_y</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">plot_y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">kde_y</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+
+        <span class="n">min_pct</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">y_min_percentile</span><span class="p">)</span>
+        <span class="n">max_pct</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">y_max_percentile</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="mf">0.0</span> <span class="o">&lt;=</span> <span class="n">min_pct</span> <span class="o">&lt;</span> <span class="n">FILTER_PLOT_Y_MAX_PERCENTILE_UPPER</span>
+            <span class="ow">and</span> <span class="mf">0.0</span> <span class="o">&lt;</span> <span class="n">max_pct</span> <span class="o">&lt;</span> <span class="n">FILTER_PLOT_Y_MAX_PERCENTILE_UPPER</span>
+            <span class="ow">and</span> <span class="n">min_pct</span> <span class="o">&lt;</span> <span class="n">max_pct</span>
+        <span class="p">):</span>
+            <span class="n">y_floor</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="n">plot_y</span><span class="p">,</span> <span class="n">min_pct</span><span class="p">))</span>
+            <span class="n">y_cap</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="n">plot_y</span><span class="p">,</span> <span class="n">max_pct</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">y_cap</span> <span class="o">&gt;</span> <span class="n">y_floor</span><span class="p">:</span>
+                <span class="n">shifted</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">plot_y</span> <span class="o">-</span> <span class="n">y_floor</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+                <span class="n">cap_shifted</span> <span class="o">=</span> <span class="n">y_cap</span> <span class="o">-</span> <span class="n">y_floor</span>
+                <span class="n">above_cap</span> <span class="o">=</span> <span class="n">shifted</span> <span class="o">&gt;</span> <span class="n">cap_shifted</span>
+                <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">above_cap</span><span class="p">):</span>
+                    <span class="n">tail_scale</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+                        <span class="n">cap_shifted</span> <span class="o">*</span> <span class="nb">float</span><span class="p">(</span><span class="n">y_tail_log_scale</span><span class="p">),</span>
+                        <span class="mf">1e-9</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="n">shifted</span><span class="p">[</span><span class="n">above_cap</span><span class="p">]</span> <span class="o">=</span> <span class="n">cap_shifted</span> <span class="o">+</span> <span class="p">(</span>
+                        <span class="n">np</span><span class="o">.</span><span class="n">log1p</span><span class="p">((</span><span class="n">shifted</span><span class="p">[</span><span class="n">above_cap</span><span class="p">]</span> <span class="o">-</span> <span class="n">cap_shifted</span><span class="p">)</span> <span class="o">/</span> <span class="n">tail_scale</span><span class="p">)</span>
+                        <span class="o">*</span> <span class="n">tail_scale</span>
+                    <span class="p">)</span>
+                <span class="n">plot_y</span> <span class="o">=</span> <span class="n">shifted</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">plot_y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">plot_y</span> <span class="o">-</span> <span class="n">y_floor</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+
+        <span class="n">gamma</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">y_gamma</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">gamma</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">gamma</span> <span class="o">!=</span> <span class="mf">1.0</span><span class="p">:</span>
+            <span class="n">plot_y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">power</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">plot_y</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">gamma</span><span class="p">)</span>
+
+        <span class="n">y_max</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">plot_y</span><span class="p">,</span> <span class="n">initial</span><span class="o">=</span><span class="mf">1.0</span><span class="p">))</span>
+        <span class="n">y_max</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mf">1e-9</span><span class="p">,</span> <span class="n">y_max</span><span class="p">))</span>
+
+        <span class="n">lower</span><span class="p">,</span> <span class="n">upper</span> <span class="o">=</span> <span class="n">selected_range</span>
+        <span class="n">lower</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">x_min</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">lower</span><span class="p">),</span> <span class="n">x_max</span><span class="p">))</span>
+        <span class="n">upper</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">lower</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">upper</span><span class="p">),</span> <span class="n">x_max</span><span class="p">))</span>
+
+        <span class="n">track_left_px</span><span class="p">,</span> <span class="n">track_right_px</span> <span class="o">=</span> <span class="n">track_padding_px</span>
+        <span class="n">plot_left</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="n">track_left_px</span> <span class="o">+</span> <span class="n">FILTER_SLIDER_TRACK_LEFT_ADJUST_PX</span><span class="p">))</span>
+        <span class="n">plot_right</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span>
+            <span class="nb">max</span><span class="p">(</span>
+                <span class="n">plot_left</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="n">width</span> <span class="o">-</span> <span class="n">track_right_px</span> <span class="o">-</span> <span class="n">FILTER_SLIDER_TRACK_RIGHT_INSET_PX</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">plot_top</span> <span class="o">=</span> <span class="mf">6.0</span>
+        <span class="c1"># Keep slider widget position fixed; shift only plotted data upward by</span>
+        <span class="c1"># using extra bottom padding inside the background SVG.</span>
+        <span class="n">plot_bottom</span> <span class="o">=</span> <span class="mf">22.0</span>
+        <span class="n">plot_w</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">plot_right</span> <span class="o">-</span> <span class="n">plot_left</span><span class="p">)</span>
+        <span class="n">plot_h</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">plot_bottom</span> <span class="o">-</span> <span class="n">plot_top</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_sx</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">plot_left</span> <span class="o">+</span> <span class="p">(</span>
+                <span class="n">CytoDataFrame</span><span class="o">.</span><span class="n">_slider_relative_position</span><span class="p">(</span>
+                    <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span> <span class="n">slider_domain</span><span class="o">=</span><span class="n">slider_domain</span>
+                <span class="p">)</span>
+                <span class="o">*</span> <span class="n">plot_w</span>
+            <span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_sy</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">plot_bottom</span> <span class="o">-</span> <span class="p">(</span><span class="n">value</span> <span class="o">/</span> <span class="n">y_max</span> <span class="o">*</span> <span class="n">plot_h</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_sx_from_option_index</span><span class="p">(</span><span class="n">index</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">option_count</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">plot_left</span> <span class="o">+</span> <span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">plot_w</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span>
+                    <span class="nb">float</span><span class="p">(</span><span class="n">index</span><span class="p">),</span>
+                    <span class="n">option_positions</span><span class="p">,</span>
+                    <span class="n">slider_domain</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">_sx</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+
+        <span class="n">highlight_x</span> <span class="o">=</span> <span class="n">_sx</span><span class="p">(</span><span class="n">lower</span><span class="p">)</span>
+        <span class="n">highlight_w</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">_sx</span><span class="p">(</span><span class="n">upper</span><span class="p">)</span> <span class="o">-</span> <span class="n">highlight_x</span><span class="p">)</span>
+        <span class="n">line_points</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_sx_from_option_index</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">option_index</span><span class="p">))</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">,</span><span class="si">{</span><span class="n">_sy</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">count</span><span class="p">))</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">for</span> <span class="n">option_index</span><span class="p">,</span> <span class="n">count</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">kde_x</span><span class="p">,</span> <span class="n">plot_y</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">area_points</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_sx_from_option_index</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">kde_x</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">,&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">plot_bottom</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">line_points</span><span class="si">}</span><span class="s2"> &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_sx_from_option_index</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">kde_x</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">,&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">plot_bottom</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+        <span class="n">threshold_line_html</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">threshold_x</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">threshold_val</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">threshold_x</span><span class="p">)</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+                <span class="n">threshold_val</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">threshold_val</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">x_min</span> <span class="o">&lt;=</span> <span class="n">threshold_val</span> <span class="o">&lt;=</span> <span class="n">x_max</span><span class="p">:</span>
+                <span class="n">threshold_px</span> <span class="o">=</span> <span class="n">_sx</span><span class="p">(</span><span class="n">threshold_val</span><span class="p">)</span>
+                <span class="n">threshold_line_html</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="s2">&quot;&lt;line &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;x1=&#39;</span><span class="si">{</span><span class="n">threshold_px</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&#39; y1=&#39;</span><span class="si">{</span><span class="n">plot_top</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&#39; &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;x2=&#39;</span><span class="si">{</span><span class="n">threshold_px</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&#39; y2=&#39;</span><span class="si">{</span><span class="n">plot_bottom</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&#39; &quot;</span>
+                    <span class="s2">&quot;stroke=&#39;#dc2626&#39; stroke-width=&#39;3&#39; opacity=&#39;0.95&#39;/&gt;&quot;</span>
+                <span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;&lt;div style=&#39;width:</span><span class="si">{</span><span class="n">width</span><span class="si">}</span><span class="s2">px;margin:0 0 2px 0;&#39;&gt;&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;&lt;svg width=&#39;</span><span class="si">{</span><span class="n">width</span><span class="si">}</span><span class="s2">&#39; height=&#39;</span><span class="si">{</span><span class="n">height</span><span class="si">}</span><span class="s2">&#39; viewBox=&#39;0 0 </span><span class="si">{</span><span class="n">width</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">height</span><span class="si">}</span><span class="s2">&#39; &quot;</span>
+            <span class="s2">&quot;preserveAspectRatio=&#39;none&#39; role=&#39;img&#39; aria-label=&#39;Filter distribution&#39;&gt;&quot;</span>
+            <span class="s2">&quot;&lt;rect x=&#39;0&#39; y=&#39;0&#39; width=&#39;100%&#39; height=&#39;100%&#39; fill=&#39;#ffffff&#39;/&gt;&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;&lt;rect x=&#39;</span><span class="si">{</span><span class="n">highlight_x</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&#39; y=&#39;0&#39; width=&#39;</span><span class="si">{</span><span class="n">highlight_w</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&#39; &quot;</span>
+            <span class="s2">&quot;height=&#39;100%&#39; fill=&#39;#ffffff&#39;/&gt;&quot;</span>
+            <span class="s2">&quot;&lt;polygon &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;points=&#39;</span><span class="si">{</span><span class="n">area_points</span><span class="si">}</span><span class="s2">&#39; fill=&#39;#93c5fd&#39; opacity=&#39;0.55&#39;/&gt;&quot;</span>
+            <span class="s2">&quot;&lt;polyline &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;points=&#39;</span><span class="si">{</span><span class="n">line_points</span><span class="si">}</span><span class="s2">&#39; fill=&#39;none&#39; stroke=&#39;#1d4ed8&#39; stroke-width=&#39;2&#39;/&gt;&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">threshold_line_html</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;&lt;/svg&gt;&lt;/div&gt;&quot;</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._get_raw_filter_plot_threshold">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._get_raw_filter_plot_threshold">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_raw_filter_plot_threshold</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
+        <span class="n">filter_col</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return whether threshold was configured and its raw value.&quot;&quot;&quot;</span>
+        <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">threshold_explicitly_configured</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">raw_threshold</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">threshold_map</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_plot_thresholds&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">threshold_map</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">filter_col_str</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">filter_col</span><span class="p">)</span>
+            <span class="n">normalized_filter_col</span> <span class="o">=</span> <span class="n">filter_col_str</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">casefold</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">threshold_key</span><span class="p">,</span> <span class="n">threshold_value</span> <span class="ow">in</span> <span class="n">threshold_map</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">threshold_key_str</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">threshold_key</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">threshold_key_str</span> <span class="o">==</span> <span class="n">filter_col_str</span><span class="p">:</span>
+                    <span class="n">raw_threshold</span> <span class="o">=</span> <span class="n">threshold_value</span>
+                    <span class="n">threshold_explicitly_configured</span> <span class="o">=</span> <span class="kc">True</span>
+                    <span class="k">break</span>
+                <span class="k">if</span> <span class="n">threshold_key_str</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">casefold</span><span class="p">()</span> <span class="o">==</span> <span class="n">normalized_filter_col</span><span class="p">:</span>
+                    <span class="n">raw_threshold</span> <span class="o">=</span> <span class="n">threshold_value</span>
+                    <span class="n">threshold_explicitly_configured</span> <span class="o">=</span> <span class="kc">True</span>
+                    <span class="k">break</span>
+        <span class="k">elif</span> <span class="n">threshold_map</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="s2">&quot;Ignoring display option &#39;filter_plot_thresholds&#39; because &quot;</span>
+                    <span class="s2">&quot;it is not a mapping.&quot;</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">threshold_explicitly_configured</span><span class="p">:</span>
+            <span class="n">single_threshold</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_plot_threshold&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">single_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">configured_columns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_filter_slider_columns</span><span class="p">()</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">configured_columns</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="n">raw_threshold</span> <span class="o">=</span> <span class="n">single_threshold</span>
+                    <span class="n">threshold_explicitly_configured</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="n">threshold_explicitly_configured</span><span class="p">,</span> <span class="n">raw_threshold</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._resolve_filter_plot_threshold">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._resolve_filter_plot_threshold">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_filter_plot_threshold</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
+        <span class="n">filter_col</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">values</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve an optional threshold marker for a filter-column distribution.&quot;&quot;&quot;</span>
+        <span class="n">threshold_explicitly_configured</span><span class="p">,</span> <span class="n">raw_threshold</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_get_raw_filter_plot_threshold</span><span class="p">(</span><span class="n">filter_col</span><span class="o">=</span><span class="n">filter_col</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">threshold_explicitly_configured</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">threshold</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">raw_threshold</span><span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="s2">&quot;Ignoring filter plot threshold for column &#39;</span><span class="si">%s</span><span class="s2">&#39;: &quot;</span>
+                    <span class="s2">&quot;value </span><span class="si">%r</span><span class="s2"> is not numeric.&quot;</span>
+                <span class="p">),</span>
+                <span class="n">filter_col</span><span class="p">,</span>
+                <span class="n">raw_threshold</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="n">numeric_values</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_numeric</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;coerce&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">numeric_values</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">data_min</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">numeric_values</span><span class="o">.</span><span class="n">min</span><span class="p">())</span>
+        <span class="n">data_max</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">numeric_values</span><span class="o">.</span><span class="n">max</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">threshold</span> <span class="o">&lt;</span> <span class="n">data_min</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="s2">&quot;Clamping filter plot threshold for column &#39;</span><span class="si">%s</span><span class="s2">&#39; from </span><span class="si">%s</span><span class="s2"> to </span><span class="si">%s</span><span class="s2"> &quot;</span>
+                    <span class="s2">&quot;because it is outside data range [</span><span class="si">%s</span><span class="s2">, </span><span class="si">%s</span><span class="s2">].&quot;</span>
+                <span class="p">),</span>
+                <span class="n">filter_col</span><span class="p">,</span>
+                <span class="n">threshold</span><span class="p">,</span>
+                <span class="n">data_min</span><span class="p">,</span>
+                <span class="n">data_min</span><span class="p">,</span>
+                <span class="n">data_max</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">data_min</span>
+        <span class="k">if</span> <span class="n">threshold</span> <span class="o">&gt;</span> <span class="n">data_max</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="s2">&quot;Clamping filter plot threshold for column &#39;</span><span class="si">%s</span><span class="s2">&#39; from </span><span class="si">%s</span><span class="s2"> to </span><span class="si">%s</span><span class="s2"> &quot;</span>
+                    <span class="s2">&quot;because it is outside data range [</span><span class="si">%s</span><span class="s2">, </span><span class="si">%s</span><span class="s2">].&quot;</span>
+                <span class="p">),</span>
+                <span class="n">filter_col</span><span class="p">,</span>
+                <span class="n">threshold</span><span class="p">,</span>
+                <span class="n">data_max</span><span class="p">,</span>
+                <span class="n">data_min</span><span class="p">,</span>
+                <span class="n">data_max</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">data_max</span>
+        <span class="k">return</span> <span class="n">threshold</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._build_filter_slider_control_for_column">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._build_filter_slider_control_for_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_filter_slider_control_for_column</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span> <span class="n">filter_col</span><span class="p">:</span> <span class="n">Any</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return one filter slider and its display control widget.&quot;&quot;&quot;</span>
+        <span class="n">slider</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_filter_range_slider</span><span class="p">(</span><span class="n">filter_col</span><span class="o">=</span><span class="n">filter_col</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">slider</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+        <span class="n">selected_range</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span>
+            <span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_ranges&quot;</span><span class="p">,</span> <span class="p">{})</span>
+            <span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">filter_col</span><span class="p">))</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">selected_range</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">selected_range</span><span class="p">)</span> <span class="o">!=</span> <span class="n">MIN_POSITION_COMPONENTS</span>
+            <span class="ow">or</span> <span class="n">filter_col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">columns</span>
+        <span class="p">):</span>
+            <span class="k">return</span> <span class="n">slider</span><span class="p">,</span> <span class="n">slider</span>
+        <span class="n">threshold</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_filter_plot_threshold</span><span class="p">(</span>
+            <span class="n">filter_col</span><span class="o">=</span><span class="n">filter_col</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="bp">self</span><span class="p">[</span><span class="n">filter_col</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">distribution_html</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_filter_distribution_html</span><span class="p">(</span>
+            <span class="n">values</span><span class="o">=</span><span class="bp">self</span><span class="p">[</span><span class="n">filter_col</span><span class="p">],</span>
+            <span class="n">selected_range</span><span class="o">=</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">selected_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="n">selected_range</span><span class="p">[</span><span class="mi">1</span><span class="p">])),</span>
+            <span class="n">threshold_x</span><span class="o">=</span><span class="n">threshold</span><span class="p">,</span>
+            <span class="n">slider_values</span><span class="o">=</span><span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">option</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="k">for</span> <span class="n">option</span> <span class="ow">in</span> <span class="n">slider</span><span class="o">.</span><span class="n">options</span><span class="p">],</span>
+            <span class="n">y_scale</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span>
+                <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                    <span class="s2">&quot;filter_plot_y_scale&quot;</span><span class="p">,</span> <span class="n">FILTER_PLOT_Y_SCALE_DEFAULT</span>
+                <span class="p">)</span>
+            <span class="p">),</span>
+            <span class="n">y_min_percentile</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span>
+                <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                    <span class="s2">&quot;filter_plot_y_min_percentile&quot;</span><span class="p">,</span>
+                    <span class="n">FILTER_PLOT_Y_MIN_PERCENTILE_DEFAULT</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">),</span>
+            <span class="n">y_max_percentile</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span>
+                <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                    <span class="s2">&quot;filter_plot_y_percentile&quot;</span><span class="p">,</span>
+                    <span class="n">FILTER_PLOT_Y_MAX_PERCENTILE_DEFAULT</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">),</span>
+            <span class="n">y_gamma</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span>
+                <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                    <span class="s2">&quot;filter_plot_y_gamma&quot;</span><span class="p">,</span>
+                    <span class="n">FILTER_PLOT_Y_GAMMA_DEFAULT</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">),</span>
+            <span class="n">y_tail_log_scale</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span>
+                <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                    <span class="s2">&quot;filter_plot_y_tail_log_scale&quot;</span><span class="p">,</span>
+                    <span class="n">FILTER_PLOT_Y_TAIL_LOG_SCALE_DEFAULT</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">),</span>
+            <span class="n">size_px</span><span class="o">=</span><span class="p">(</span><span class="n">FILTER_SLIDER_TOTAL_WIDTH_PX</span><span class="p">,</span> <span class="mi">52</span><span class="p">),</span>
+            <span class="n">track_padding_px</span><span class="o">=</span><span class="p">(</span>
+                <span class="n">FILTER_SLIDER_LABEL_WIDTH_PX</span><span class="p">,</span>
+                <span class="n">FILTER_SLIDER_READOUT_WIDTH_PX</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">distribution_html</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">slider</span><span class="p">,</span> <span class="n">slider</span>
+
+        <span class="n">plot_widget</span> <span class="o">=</span> <span class="n">widgets</span><span class="o">.</span><span class="n">HTML</span><span class="p">(</span>
+            <span class="n">value</span><span class="o">=</span><span class="n">distribution_html</span><span class="p">,</span>
+            <span class="n">layout</span><span class="o">=</span><span class="n">widgets</span><span class="o">.</span><span class="n">Layout</span><span class="p">(</span>
+                <span class="n">width</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">FILTER_SLIDER_TOTAL_WIDTH_PX</span><span class="si">}</span><span class="s2">px&quot;</span><span class="p">,</span>
+                <span class="n">height</span><span class="o">=</span><span class="s2">&quot;52px&quot;</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">slider</span><span class="o">.</span><span class="n">layout</span> <span class="o">=</span> <span class="n">widgets</span><span class="o">.</span><span class="n">Layout</span><span class="p">(</span>
+            <span class="n">width</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">FILTER_SLIDER_TOTAL_WIDTH_PX</span><span class="si">}</span><span class="s2">px&quot;</span><span class="p">,</span>
+            <span class="n">margin</span><span class="o">=</span><span class="s2">&quot;-44px 0 0 0&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">slider</span><span class="p">,</span> <span class="n">widgets</span><span class="o">.</span><span class="n">VBox</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">plot_widget</span><span class="p">,</span> <span class="n">slider</span><span class="p">],</span>
+            <span class="n">layout</span><span class="o">=</span><span class="n">widgets</span><span class="o">.</span><span class="n">Layout</span><span class="p">(</span>
+                <span class="n">width</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">FILTER_SLIDER_TOTAL_WIDTH_PX</span><span class="si">}</span><span class="s2">px&quot;</span><span class="p">,</span>
+                <span class="n">height</span><span class="o">=</span><span class="s2">&quot;52px&quot;</span><span class="p">,</span>
+                <span class="n">align_items</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span>
+                <span class="n">overflow</span><span class="o">=</span><span class="s2">&quot;hidden&quot;</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._build_filter_slider_controls">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._build_filter_slider_controls">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_filter_slider_controls</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return slider widgets and filter controls for all configured columns.&quot;&quot;&quot;</span>
+        <span class="n">columns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_filter_slider_columns</span><span class="p">()</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span>
+        <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_columns&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">columns</span>
+        <span class="k">if</span> <span class="n">columns</span> <span class="ow">and</span> <span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_column&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_column&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">columns</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">columns</span><span class="p">:</span>
+            <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_ranges&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="n">state</span><span class="p">[</span><span class="s2">&quot;filter_observing&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_filter_range_sliders&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">return</span> <span class="p">[],</span> <span class="p">[]</span>
+
+        <span class="n">sliders</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">controls</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">filter_col</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">:</span>
+            <span class="n">slider</span><span class="p">,</span> <span class="n">control</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_filter_slider_control_for_column</span><span class="p">(</span><span class="n">filter_col</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">slider</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">sliders</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">slider</span><span class="p">)</span>
+            <span class="n">controls</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">control</span> <span class="k">if</span> <span class="n">control</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">slider</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">sliders</span><span class="p">,</span> <span class="n">controls</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._filter_display_indices_by_widget_range">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._filter_display_indices_by_widget_range">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_filter_display_indices_by_widget_range</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
+        <span class="n">data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+        <span class="n">display_indices</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Filter row labels by all configured slider ranges.&quot;&quot;&quot;</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span>
+        <span class="n">filter_columns</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_columns&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">filter_ranges</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_ranges&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">filter_columns</span> <span class="ow">and</span> <span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_column&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">filter_columns</span> <span class="o">=</span> <span class="p">[</span><span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_column&quot;</span><span class="p">)]</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_range&quot;</span><span class="p">),</span> <span class="nb">tuple</span><span class="p">):</span>
+                <span class="n">filter_ranges</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="nb">str</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_column&quot;</span><span class="p">)):</span> <span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_range&quot;</span><span class="p">)</span>
+                <span class="p">}</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">filter_columns</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">display_indices</span>
+
+        <span class="n">active_indices</span> <span class="o">=</span> <span class="n">display_indices</span>
+        <span class="k">for</span> <span class="n">filter_col</span> <span class="ow">in</span> <span class="n">filter_columns</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">filter_col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">filter_range</span> <span class="o">=</span> <span class="n">filter_ranges</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">filter_col</span><span class="p">))</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">filter_range</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span>
+                <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">filter_range</span><span class="p">)</span> <span class="o">!=</span> <span class="n">MIN_POSITION_COMPONENTS</span>
+            <span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">lower</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">filter_range</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="n">upper</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">filter_range</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">numeric_values</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_numeric</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="n">filter_col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;coerce&quot;</span><span class="p">)</span>
+            <span class="n">in_range</span> <span class="o">=</span> <span class="n">numeric_values</span><span class="p">[</span>
+                <span class="p">(</span><span class="n">numeric_values</span> <span class="o">&gt;=</span> <span class="n">lower</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">numeric_values</span> <span class="o">&lt;=</span> <span class="n">upper</span><span class="p">)</span>
+            <span class="p">]</span>
+            <span class="n">allowed_counts</span> <span class="o">=</span> <span class="n">Counter</span><span class="p">(</span><span class="n">in_range</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+            <span class="n">filtered_indices</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">row_label</span> <span class="ow">in</span> <span class="n">active_indices</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">allowed_counts</span><span class="p">[</span><span class="n">row_label</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">filtered_indices</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row_label</span><span class="p">)</span>
+                    <span class="n">allowed_counts</span><span class="p">[</span><span class="n">row_label</span><span class="p">]</span> <span class="o">-=</span> <span class="mi">1</span>
+            <span class="n">active_indices</span> <span class="o">=</span> <span class="n">filtered_indices</span>
+
+        <span class="k">return</span> <span class="n">active_indices</span></div>
 
 
 <div class="viewcode-block" id="CytoDataFrame.get_bounding_box_from_data">
@@ -3798,6 +4620,10 @@
 
 <span class="sd">        Use ``table_height`` (or ``table_max_height``) to override the default</span>
 <span class="sd">        notebook table height.</span>
+
+<span class="sd">        Row rendering follows pandas display limits. If the DataFrame is larger</span>
+<span class="sd">        than ``display.max_rows``, the widget table inserts a midpoint ellipsis</span>
+<span class="sd">        marker row (``…``) to indicate omitted rows.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
         <span class="k">if</span> <span class="n">backend</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -4201,6 +5027,42 @@
 
             <span class="c1"># gather indices which will be displayed based on pandas configuration</span>
             <span class="n">display_indices</span> <span class="o">=</span> <span class="n">CytoDataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">get_displayed_rows</span><span class="p">()</span>
+            <span class="n">active_filter_columns</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_columns&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="p">)</span>
+            <span class="n">active_filter_ranges</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="s2">&quot;filter_ranges&quot;</span><span class="p">,</span> <span class="p">{}</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="ow">not</span> <span class="n">active_filter_columns</span>
+                <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_column&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="p">):</span>
+                <span class="n">active_filter_columns</span> <span class="o">=</span> <span class="p">[</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_column&quot;</span><span class="p">)</span>
+                <span class="p">]</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_range&quot;</span><span class="p">),</span> <span class="nb">tuple</span>
+                <span class="p">):</span>
+                    <span class="n">active_filter_ranges</span> <span class="o">=</span> <span class="p">{</span>
+                        <span class="nb">str</span><span class="p">(</span><span class="n">active_filter_columns</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span>
+                            <span class="s2">&quot;_widget_state&quot;</span>
+                        <span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_range&quot;</span><span class="p">)</span>
+                    <span class="p">}</span>
+            <span class="k">if</span> <span class="n">active_filter_columns</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span>
+                <span class="nb">isinstance</span><span class="p">(</span><span class="n">active_filter_ranges</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)),</span> <span class="nb">tuple</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">active_filter_columns</span>
+            <span class="p">):</span>
+                <span class="n">full_filtered_indices</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filter_display_indices_by_widget_range</span><span class="p">(</span>
+                    <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span>
+                    <span class="n">display_indices</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span>
+                <span class="p">)</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">full_filtered_indices</span><span class="p">]</span>
+                <span class="n">display_indices</span> <span class="o">=</span> <span class="n">CytoDataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">get_displayed_rows</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">display_indices</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filter_display_indices_by_widget_range</span><span class="p">(</span>
+                    <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span>
+                    <span class="n">display_indices</span><span class="o">=</span><span class="n">display_indices</span><span class="p">,</span>
+                <span class="p">)</span>
 
             <span class="c1"># gather bounding box columns for use below</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_bounding_box&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -4371,8 +5233,10 @@
             <span class="sa">f</span><span class="s2">&quot;max-height:</span><span class="si">{</span><span class="n">table_height</span><span class="si">}</span><span class="s2">;&#39;&gt;&quot;</span>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">html_content</span><span class="si">}</span><span class="s2">&lt;/div&gt;&quot;</span>
         <span class="p">)</span>
-
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">]:</span>
+        <span class="n">output_widget</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">output_widget</span><span class="p">,</span> <span class="s2">&quot;clear_output&quot;</span><span class="p">):</span>
+            <span class="n">output_widget</span><span class="o">.</span><span class="n">clear_output</span><span class="p">(</span><span class="n">wait</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">output_widget</span><span class="p">:</span>
             <span class="n">display</span><span class="p">(</span><span class="n">HTML</span><span class="p">(</span><span class="n">scroll_wrapped_html</span><span class="p">))</span>
             <span class="k">if</span> <span class="s2">&quot;cyto-3d-image&quot;</span> <span class="ow">in</span> <span class="n">html_content</span> <span class="ow">and</span> <span class="s2">&quot;data-volume&quot;</span> <span class="ow">in</span> <span class="n">html_content</span><span class="p">:</span>
                 <span class="n">display</span><span class="p">(</span>
@@ -4662,6 +5526,160 @@
             <span class="k">return</span> <span class="n">html_content</span></div>
 
 
+<div class="viewcode-block" id="CytoDataFrame._try_render_trame_widget_table">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._try_render_trame_widget_table">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_try_render_trame_widget_table</span><span class="p">(</span>  <span class="c1"># noqa: PLR0911</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span> <span class="n">debug</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span> <span class="n">display_options</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Try rendering the trame widget table and return ``True`` on success.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">debug</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="n">configured_filter_columns</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_columns&quot;</span><span class="p">)</span>
+        <span class="n">configured_filter_column</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_column&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">configured_filter_columns</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">configured_filter_columns</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">elif</span> <span class="n">configured_filter_columns</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="n">configured_filter_column</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="n">force_trame</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;view&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;trame&quot;</span>
+        <span class="n">auto_trame_for_3d</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;auto_trame_for_3d&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+        <span class="n">columns_3d</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_3d_columns_for_display</span><span class="p">()</span> <span class="k">if</span> <span class="n">auto_trame_for_3d</span> <span class="k">else</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">force_trame</span> <span class="ow">or</span> <span class="n">columns_3d</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="n">force_trame</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">columns_3d</span><span class="p">:</span>
+            <span class="n">columns_3d</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
+                <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
+                    <span class="p">[</span>
+                        <span class="o">*</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">find_image_columns</span><span class="p">()</span> <span class="ow">or</span> <span class="p">[]),</span>
+                        <span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">find_ome_arrow_columns</span><span class="p">(</span><span class="bp">self</span><span class="p">),</span>
+                    <span class="p">]</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">columns_3d</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">widget_table</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">show_widget_table</span><span class="p">(</span>
+                <span class="n">column</span><span class="o">=</span><span class="n">columns_3d</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                <span class="n">columns_3d</span><span class="o">=</span><span class="n">columns_3d</span><span class="p">,</span>
+                <span class="n">backend</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">display</span><span class="p">(</span><span class="n">widget_table</span><span class="p">)</span>
+            <span class="n">html_content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_trame_snapshot_html</span><span class="p">()</span>
+            <span class="n">details_html</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="s1">&#39;&lt;details class=&quot;cyto-static-snapshot&quot;&gt;&#39;</span>
+                <span class="s2">&quot;&lt;summary&gt;Static snapshot (for non-interactive view)&lt;/summary&gt;&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">html_content</span><span class="si">}</span><span class="s2">&lt;/details&gt;&quot;</span>
+            <span class="p">)</span>
+            <span class="n">display</span><span class="p">(</span><span class="n">HTML</span><span class="p">(</span><span class="n">details_html</span><span class="p">))</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">&quot;Trame widget table render failed, falling back to HTML: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="n">exc</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._render_notebook_widget_output">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._render_notebook_widget_output">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_render_notebook_widget_output</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span> <span class="n">display_options</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Render ipywidgets controls and the notebook HTML table output.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="s2">&quot;filter_readout_css_injected&quot;</span><span class="p">,</span> <span class="kc">False</span>
+        <span class="p">):</span>
+            <span class="n">display</span><span class="p">(</span>
+                <span class="n">HTML</span><span class="p">(</span>
+                    <span class="s2">&quot;&lt;style&gt;&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;.</span><span class="si">{</span><span class="n">FILTER_SLIDER_CSS_CLASS</span><span class="si">}</span><span class="s2"> .widget-readout,&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;.</span><span class="si">{</span><span class="n">FILTER_SLIDER_CSS_CLASS</span><span class="si">}</span><span class="s2"> input.widget-readout </span><span class="se">{{</span><span class="s2">&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;min-width:</span><span class="si">{</span><span class="n">FILTER_SLIDER_READOUT_WIDTH_PX</span><span class="si">}</span><span class="s2">px !important;&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;max-width:</span><span class="si">{</span><span class="n">FILTER_SLIDER_READOUT_WIDTH_PX</span><span class="si">}</span><span class="s2">px !important;&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;width:</span><span class="si">{</span><span class="n">FILTER_SLIDER_READOUT_WIDTH_PX</span><span class="si">}</span><span class="s2">px !important;&quot;</span>
+                    <span class="s2">&quot;font-size:11px !important;&quot;</span>
+                    <span class="s2">&quot;text-align:right;&quot;</span>
+                    <span class="s2">&quot;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;&quot;</span>
+                    <span class="s2">&quot;}&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;.</span><span class="si">{</span><span class="n">FILTER_SLIDER_CSS_CLASS</span><span class="si">}</span><span class="s2"> .widget-label </span><span class="se">{{</span><span class="s2">&quot;</span>
+                    <span class="s2">&quot;font-size:11px !important;&quot;</span>
+                    <span class="s2">&quot;line-height:1.2 !important;&quot;</span>
+                    <span class="s2">&quot;margin-top:8px !important;&quot;</span>
+                    <span class="s2">&quot;}&quot;</span>
+                    <span class="s2">&quot;&lt;/style&gt;&quot;</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;filter_readout_css_injected&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="n">filter_sliders</span><span class="p">,</span> <span class="n">filter_controls</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_filter_slider_controls</span><span class="p">()</span>
+        <span class="n">filter_control</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">filter_controls</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">filter_control</span> <span class="o">=</span> <span class="n">widgets</span><span class="o">.</span><span class="n">VBox</span><span class="p">(</span>
+                <span class="n">filter_controls</span><span class="p">,</span>
+                <span class="n">layout</span><span class="o">=</span><span class="n">widgets</span><span class="o">.</span><span class="n">Layout</span><span class="p">(</span>
+                    <span class="n">width</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">FILTER_SLIDER_TOTAL_WIDTH_PX</span><span class="si">}</span><span class="s2">px&quot;</span><span class="p">,</span>
+                    <span class="n">align_items</span><span class="o">=</span><span class="s2">&quot;stretch&quot;</span><span class="p">,</span>
+                <span class="p">),</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">filter_controls</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">MIN_POSITION_COMPONENTS</span><span class="p">:</span>
+            <span class="n">accordion_content</span> <span class="o">=</span> <span class="n">widgets</span><span class="o">.</span><span class="n">VBox</span><span class="p">(</span>
+                <span class="n">filter_controls</span><span class="p">,</span>
+                <span class="n">layout</span><span class="o">=</span><span class="n">widgets</span><span class="o">.</span><span class="n">Layout</span><span class="p">(</span>
+                    <span class="n">width</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">FILTER_SLIDER_TOTAL_WIDTH_PX</span><span class="si">}</span><span class="s2">px&quot;</span><span class="p">,</span>
+                    <span class="n">align_items</span><span class="o">=</span><span class="s2">&quot;stretch&quot;</span><span class="p">,</span>
+                <span class="p">),</span>
+            <span class="p">)</span>
+            <span class="n">accordion</span> <span class="o">=</span> <span class="n">widgets</span><span class="o">.</span><span class="n">Accordion</span><span class="p">(</span><span class="n">children</span><span class="o">=</span><span class="p">[</span><span class="n">accordion_content</span><span class="p">])</span>
+            <span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">suppress</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+                <span class="n">accordion</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;Filters&quot;</span><span class="p">)</span>
+            <span class="n">accordion</span><span class="o">.</span><span class="n">selected_index</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">filter_control</span> <span class="o">=</span> <span class="n">accordion</span>
+        <span class="n">controls</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_scale_slider&quot;</span><span class="p">]]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_scale_slider&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">layout</span> <span class="o">=</span> <span class="n">widgets</span><span class="o">.</span><span class="n">Layout</span><span class="p">(</span><span class="n">margin</span><span class="o">=</span><span class="s2">&quot;10px 0 0 0&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">filter_control</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">controls</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">filter_control</span><span class="p">)</span>
+        <span class="n">controls_row</span> <span class="o">=</span> <span class="n">widgets</span><span class="o">.</span><span class="n">HBox</span><span class="p">(</span><span class="n">controls</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;shown&quot;</span><span class="p">]:</span>
+            <span class="n">display</span><span class="p">(</span>
+                <span class="n">widgets</span><span class="o">.</span><span class="n">VBox</span><span class="p">(</span>
+                    <span class="p">[</span>
+                        <span class="n">controls_row</span><span class="p">,</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">],</span>
+                    <span class="p">]</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_show_output_loading_indicator</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="s2">&quot;Loading table...&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;show_static_snapshot_details&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)):</span>
+                <span class="n">snapshot_html</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_jupyter_dataframe_html</span><span class="p">()</span>
+                <span class="n">details_html</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="s1">&#39;&lt;details class=&quot;cyto-static-snapshot&quot;&gt;&#39;</span>
+                    <span class="s2">&quot;&lt;summary&gt;Static snapshot (for non-interactive view)&lt;/summary&gt;&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">snapshot_html</span><span class="si">}</span><span class="s2">&lt;/details&gt;&quot;</span>
+                <span class="p">)</span>
+                <span class="n">display</span><span class="p">(</span><span class="n">HTML</span><span class="p">(</span><span class="n">details_html</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;shown&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;observing&quot;</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_scale_slider&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">observe</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_on_slider_change</span><span class="p">,</span> <span class="n">names</span><span class="o">=</span><span class="s2">&quot;value&quot;</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;observing&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">filter_observing</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span>
+            <span class="s2">&quot;filter_observing&quot;</span><span class="p">,</span> <span class="p">{}</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="n">filter_slider</span> <span class="ow">in</span> <span class="n">filter_sliders</span><span class="p">:</span>
+            <span class="n">filter_col</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">filter_slider</span><span class="p">,</span> <span class="s2">&quot;_cyto_filter_column&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">filter_col</span><span class="p">)</span> <span class="k">if</span> <span class="n">filter_col</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+            <span class="k">if</span> <span class="n">key</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">filter_observing</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
+                <span class="n">filter_slider</span><span class="o">.</span><span class="n">observe</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_on_filter_slider_change</span><span class="p">,</span> <span class="n">names</span><span class="o">=</span><span class="s2">&quot;value&quot;</span><span class="p">)</span>
+                <span class="n">filter_observing</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_render_output</span><span class="p">()</span></div>
+
+
 <div class="viewcode-block" id="CytoDataFrame._repr_html_">
 <a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._repr_html_">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">_repr_html_</span><span class="p">(</span><span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span> <span class="n">debug</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
@@ -4678,82 +5696,17 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            str: The data in a pandas DataFrame.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-
         <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
-        <span class="n">force_trame</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;view&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;trame&quot;</span>
-        <span class="n">auto_trame_for_3d</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;auto_trame_for_3d&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
-        <span class="n">columns_3d</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_3d_columns_for_display</span><span class="p">()</span> <span class="k">if</span> <span class="n">auto_trame_for_3d</span> <span class="k">else</span> <span class="p">[]</span>
-        <span class="k">if</span> <span class="p">(</span><span class="n">force_trame</span> <span class="ow">or</span> <span class="n">columns_3d</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">debug</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">force_trame</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">columns_3d</span><span class="p">:</span>
-                <span class="n">columns_3d</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
-                    <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
-                        <span class="p">[</span>
-                            <span class="o">*</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">find_image_columns</span><span class="p">()</span> <span class="ow">or</span> <span class="p">[]),</span>
-                            <span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">find_ome_arrow_columns</span><span class="p">(</span><span class="bp">self</span><span class="p">),</span>
-                        <span class="p">]</span>
-                    <span class="p">)</span>
-                <span class="p">)</span>
-            <span class="k">if</span> <span class="n">columns_3d</span><span class="p">:</span>
-                <span class="k">try</span><span class="p">:</span>
-                    <span class="n">widget_table</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">show_widget_table</span><span class="p">(</span>
-                        <span class="n">column</span><span class="o">=</span><span class="n">columns_3d</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
-                        <span class="n">columns_3d</span><span class="o">=</span><span class="n">columns_3d</span><span class="p">,</span>
-                        <span class="n">backend</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                    <span class="p">)</span>
-                    <span class="n">display</span><span class="p">(</span><span class="n">widget_table</span><span class="p">)</span>
-                    <span class="n">html_content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_trame_snapshot_html</span><span class="p">()</span>
-                    <span class="n">details_html</span> <span class="o">=</span> <span class="p">(</span>
-                        <span class="s1">&#39;&lt;details class=&quot;cyto-static-snapshot&quot;&gt;&#39;</span>
-                        <span class="s2">&quot;&lt;summary&gt;Static snapshot (for non-interactive view)&lt;/summary&gt;&quot;</span>
-                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">html_content</span><span class="si">}</span><span class="s2">&lt;/details&gt;&quot;</span>
-                    <span class="p">)</span>
-                    <span class="n">display</span><span class="p">(</span><span class="n">HTML</span><span class="p">(</span><span class="n">details_html</span><span class="p">))</span>
-                    <span class="k">return</span> <span class="kc">None</span>
-                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-                    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
-                        <span class="s2">&quot;Trame widget table render failed, falling back to HTML: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
-                        <span class="n">exc</span><span class="p">,</span>
-                    <span class="p">)</span>
-
-        <span class="c1"># if we&#39;re in a notebook process as though in a jupyter environment</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_try_render_trame_widget_table</span><span class="p">(</span>
+            <span class="n">debug</span><span class="o">=</span><span class="n">debug</span><span class="p">,</span> <span class="n">display_options</span><span class="o">=</span><span class="n">display_options</span>
+        <span class="p">):</span>
+            <span class="k">return</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="n">get_option</span><span class="p">(</span><span class="s2">&quot;display.notebook_repr_html&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">debug</span><span class="p">:</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;shown&quot;</span><span class="p">]:</span>
-                <span class="n">display</span><span class="p">(</span>
-                    <span class="n">widgets</span><span class="o">.</span><span class="n">VBox</span><span class="p">(</span>
-                        <span class="p">[</span>
-                            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_scale_slider&quot;</span><span class="p">],</span>
-                            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_output&quot;</span><span class="p">],</span>
-                        <span class="p">]</span>
-                    <span class="p">)</span>
-                <span class="p">)</span>
-                <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;show_static_snapshot_details&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)):</span>
-                    <span class="n">snapshot_html</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_jupyter_dataframe_html</span><span class="p">()</span>
-                    <span class="n">details_html</span> <span class="o">=</span> <span class="p">(</span>
-                        <span class="s1">&#39;&lt;details class=&quot;cyto-static-snapshot&quot;&gt;&#39;</span>
-                        <span class="s2">&quot;&lt;summary&gt;Static snapshot (for non-interactive view)&lt;/summary&gt;&quot;</span>
-                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">snapshot_html</span><span class="si">}</span><span class="s2">&lt;/details&gt;&quot;</span>
-                    <span class="p">)</span>
-                    <span class="n">display</span><span class="p">(</span><span class="n">HTML</span><span class="p">(</span><span class="n">details_html</span><span class="p">))</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;shown&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
-
-            <span class="c1"># Attach the slider observer exactly once</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;observing&quot;</span><span class="p">]:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_scale_slider&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">observe</span><span class="p">(</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">_on_slider_change</span><span class="p">,</span> <span class="n">names</span><span class="o">=</span><span class="s2">&quot;value&quot;</span>
-                <span class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;observing&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
-
-            <span class="c1"># render fresh HTML for this cell</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_render_output</span><span class="p">()</span>
-
-        <span class="c1"># allow for debug mode to be set which returns the HTML</span>
-        <span class="c1"># without widgets.</span>
-
-        <span class="k">elif</span> <span class="n">debug</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_render_notebook_widget_output</span><span class="p">(</span><span class="n">display_options</span><span class="o">=</span><span class="n">display_options</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">debug</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_jupyter_dataframe_html</span><span class="p">()</span>
-
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">return</span> <span class="kc">None</span></div>
+        <span class="k">return</span> <span class="kc">None</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span> <span class="n">debug</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>

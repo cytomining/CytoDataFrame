@@ -796,6 +796,30 @@ def test_return_cytodataframe(cytotable_NF1_data_parquet_shrunken: str):
     assert isinstance(cdf.tail(), CytoDataFrame)
     assert isinstance(cdf.sort_values(by="Metadata_ImageNumber"), CytoDataFrame)
     assert isinstance(cdf.sample(n=5), CytoDataFrame)
+    assert isinstance(cdf.iloc[0:2], CytoDataFrame)
+    assert isinstance(cdf.iloc[1:1], CytoDataFrame)
+    assert isinstance(cdf.iloc[0:5:2], CytoDataFrame)
+
+
+def test_iloc_slice_preserves_cytodataframe_html_formatting():
+    """Ensure ``iloc`` slices keep the CytoDataFrame notebook HTML renderer."""
+
+    cdf = CytoDataFrame(pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}))
+
+    sliced = cdf.iloc[0:3:2]
+    empty_sliced = cdf.iloc[1:1]
+
+    assert isinstance(sliced, CytoDataFrame)
+    assert isinstance(empty_sliced, CytoDataFrame)
+    assert sliced._custom_attrs["_output"] is cdf._custom_attrs["_output"]
+    assert sliced._custom_attrs["_widget_state"] is cdf._custom_attrs["_widget_state"]
+    assert empty_sliced._custom_attrs["_output"] is cdf._custom_attrs["_output"]
+    assert (
+        empty_sliced._custom_attrs["_widget_state"]
+        is cdf._custom_attrs["_widget_state"]
+    )
+    assert "background:#EBEBEB" in sliced._repr_html_(debug=True)
+    assert "background:#EBEBEB" in empty_sliced._repr_html_(debug=True)
 
 
 def test_cytodataframe_dynamic_width_and_height(

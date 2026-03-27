@@ -116,6 +116,10 @@ lint.per-file-ignores."src/cytodataframe/image.py" = [ "PLR2004" ]
 # ignore typing rules for tests
 lint.per-file-ignores."tests/*" = [ "ANN201", "PLR0913", "PLR2004", "SIM105" ]
 
+# specify where version replacement is performed
+[tool.bandit]
+exclude_dirs = [ "tests" ]
+
 [tool.pytest]
 ini_options.addopts = "--cov=src/cytodataframe --cov-report=term-missing:skip-covered --no-cov-on-fail"
 
@@ -129,10 +133,6 @@ run.omit = [
 
 [tool.jupytext]
 formats = "ipynb,py:light"
-
-# specify where version replacement is performed
-[tool.bandit]
-exclude_dirs = [ "tests" ]
 
 [tool.poe]
 # note: quarto commands below expect quarto installed on the local system.

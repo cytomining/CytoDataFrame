@@ -801,6 +801,16 @@ def test_return_cytodataframe(cytotable_NF1_data_parquet_shrunken: str):
     assert isinstance(cdf.iloc[0:5:2], CytoDataFrame)
 
 
+def test_return_cytodataframe_passthroughs_non_dataframe_results() -> None:
+    """Ensure helper methods return scalar-like results without wrapping."""
+
+    cdf = CytoDataFrame(pd.DataFrame({"a": [1, 2, 3]}))
+
+    result = cdf._return_cytodataframe(lambda: 3, "dummy_method")
+
+    assert result == 3
+
+
 def test_iloc_slice_preserves_cytodataframe_html_formatting():
     """Ensure ``iloc`` slices keep the CytoDataFrame notebook HTML renderer."""
 

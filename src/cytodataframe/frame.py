@@ -124,7 +124,7 @@ class CytoDataFrame(pd.DataFrame):
         segmentation_file_regex: Optional[Dict[str, str]] = None,
         image_adjustment: Optional[Callable] = None,
         display_options: Optional[Dict[str, Any]] = None,
-        *args: Tuple[Any, ...],
+        *args: Any,
         **kwargs: Dict[str, Any],
     ) -> None:
         """
@@ -385,7 +385,7 @@ class CytoDataFrame(pd.DataFrame):
     def _build_result_cdf(
         self: CytoDataFrame_type,
         data: Union["CytoDataFrame", pd.DataFrame, pd.Series, Any],
-        *args: Tuple[Any, ...],
+        *args: Any,
         **kwargs: Dict[str, Any],
     ) -> CytoDataFrame_type:
         """Construct a result frame while preserving CytoDataFrame metadata."""
@@ -393,7 +393,8 @@ class CytoDataFrame(pd.DataFrame):
             data = kwargs.pop("data")
 
         cdf = CytoDataFrame(
-            data=data,
+            data,
+            *args,
             data_context_dir=self._custom_attrs["data_context_dir"],
             data_image_paths=self._custom_attrs["data_image_paths"],
             data_bounding_box=self._custom_attrs["data_bounding_box"],
@@ -403,7 +404,6 @@ class CytoDataFrame(pd.DataFrame):
             segmentation_file_regex=self._custom_attrs["segmentation_file_regex"],
             image_adjustment=self._custom_attrs["image_adjustment"],
             display_options=self._custom_attrs["display_options"],
-            *args,
             **kwargs,
         )
 
@@ -422,7 +422,7 @@ class CytoDataFrame(pd.DataFrame):
         self: CytoDataFrame_type,
         method: Callable,
         method_name: str,
-        *args: Tuple[Any, ...],
+        *args: Any,
         **kwargs: Dict[str, Any],
     ) -> Any:
         """
@@ -434,7 +434,7 @@ class CytoDataFrame(pd.DataFrame):
                 The method to be called and wrapped.
             method_name (str):
                 The name of the method to be wrapped.
-            *args (Tuple[Any, ...]):
+            *args (Any):
                 Positional arguments to be passed to the method.
             **kwargs (Dict[str, Any]):
                 Keyword arguments to be passed to the method.
@@ -453,12 +453,14 @@ class CytoDataFrame(pd.DataFrame):
             else method(*args, **kwargs)
         )
 
-        if isinstance(result, pd.DataFrame):
-            cdf = self._build_result_cdf(result)
-            # If the method name is transpose we know that
-            # the dataframe has been transposed.
-            if method_name == "transpose" and not self._custom_attrs["is_transposed"]:
-                cdf._custom_attrs["is_transposed"] = True
+        if not isinstance(result, pd.DataFrame):
+            return result
+
+        cdf = self._build_result_cdf(result)
+        # If the method name is transpose we know that
+        # the dataframe has been transposed.
+        if method_name == "transpose" and not self._custom_attrs["is_transposed"]:
+            cdf._custom_attrs["is_transposed"] = True
 
         return cdf
 
@@ -482,7 +484,7 @@ class CytoDataFrame(pd.DataFrame):
                 the result is a CytoDataFrame.
         """
 
-        def wrapper(*args: Tuple[Any, ...], **kwargs: Dict[str, Any]) -> Any:
+        def wrapper(*args: Any, **kwargs: Dict[str, Any]) -> Any:
             """
             Wraps the specified method to ensure
             it returns a CytoDataFrame.
@@ -494,7 +496,7 @@ class CytoDataFrame(pd.DataFrame):
             custom attributes.
 
             Args:
-                *args (Tuple[Any, ...]):
+                *args (Any):
                     Positional arguments to be passed to the method.
                 **kwargs (Dict[str, Any]):
                     Keyword arguments to be passed to the method.

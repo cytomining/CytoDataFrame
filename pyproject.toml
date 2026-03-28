@@ -116,7 +116,7 @@ lint.per-file-ignores."src/cytodataframe/image.py" = [ "PLR2004" ]
 # ignore typing rules for tests
 lint.per-file-ignores."tests/*" = [ "ANN201", "PLR0913", "PLR2004", "SIM105" ]
 
-# specify where version replacement is performed
+# configure Bandit security checks (exclude tests directory from scanning)
 [tool.bandit]
 exclude_dirs = [ "tests" ]
 

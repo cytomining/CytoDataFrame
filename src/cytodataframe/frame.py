@@ -460,9 +460,7 @@ class CytoDataFrame(pd.DataFrame):
         # If the method name is transpose we know that
         # the dataframe has been transposed.
         if method_name == "transpose":
-            cdf._custom_attrs["is_transposed"] = not self._custom_attrs[
-                "is_transposed"
-            ]
+            cdf._custom_attrs["is_transposed"] = not self._custom_attrs["is_transposed"]
 
         return cdf
 

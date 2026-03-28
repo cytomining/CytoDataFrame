@@ -831,9 +831,7 @@ def test_iloc_slice_preserves_cytodataframe_html_formatting():
         bracket_sliced._custom_attrs["_widget_state"]
         is cdf._custom_attrs["_widget_state"]
     )
-    assert (
-        bracket_empty_sliced._custom_attrs["_output"] is cdf._custom_attrs["_output"]
-    )
+    assert bracket_empty_sliced._custom_attrs["_output"] is cdf._custom_attrs["_output"]
     assert (
         bracket_empty_sliced._custom_attrs["_widget_state"]
         is cdf._custom_attrs["_widget_state"]

@@ -15,10 +15,10 @@ See the following examples for more information:
 
 ```bash
 # preview the poster during development
-poetry run poe poster-preview
+uv run poe poster-preview
 
 # build the poster PDF from source
-poetry run poe poster-render
+uv run poe poster-render
 ```
 
 ## References

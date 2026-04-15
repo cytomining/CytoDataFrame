@@ -15,7 +15,7 @@ Please open a [new security advisory notice](https://github.com/cytomining/CytoD
 
 ## Development
 
-This project leverages development environments managed by Python [Poetry](https://python-poetry.org/).
+This project leverages development environments managed by [uv](https://docs.astral.sh/uv/).
 We leverage interactions with the Docker through Python to achieve reproducible results through containers.
 We use [pytest](https://docs.pytest.org/) for testing and [GitHub actions](https://docs.github.com/en/actions) for automated tests.
 
@@ -24,8 +24,8 @@ We use [pytest](https://docs.pytest.org/) for testing and [GitHub actions](https
 Perform the following steps to setup a Python development environment.
 
 1. [Install Python](https://www.python.org/downloads/) (we recommend using [`pyenv`](https://github.com/pyenv/pyenv) or similar)
-1. [Install Poetry](https://python-poetry.org/docs/#installation)
-1. [Install Poetry Environment](https://python-poetry.org/docs/basic-usage/#installing-dependencies): `poetry install`
+1. [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
+1. Install project dependencies: `uv sync --all-groups`
 
 ### Linting
 
@@ -44,13 +44,13 @@ These automated tests generally must pass in order to merge work into this repos
 ### Testing
 
 Work added to this project is automatically tested using [pytest](https://docs.pytest.org/) via [GitHub Actions](https://docs.github.com/en/actions).
-Pytest is installed through the Poetry environment for this project.
+Pytest is installed through the uv-managed environment for this project.
 We recommend testing your work before opening pull requests with proposed changes.
 
 You can run pytest on your work using the following example:
 
 ```sh
-% poetry run pytest
+% uv run pytest
 ```
 
 Pytest output includes a terminal coverage summary to help track current
@@ -89,13 +89,12 @@ We will check for accuracy, style, code coverage, and scope.
 
 ## Versioning
 
-We use [`poetry-dynamic-versioning`](https://github.com/mtkennerly/poetry-dynamic-versioning) to help version this software through [`PEP 440`](https://peps.python.org/pep-0440/) standards.
+We use [`setuptools-scm`](https://setuptools-scm.readthedocs.io/) to help version this software through [`PEP 440`](https://peps.python.org/pep-0440/) standards.
 Configuration for versioning is found within the `pyproject.toml` file.
 All builds for packages include dynamic version data to help label distinct versions of the software.
-`poetry-dynamic-versioning` uses `git` tags to help distinguish version data.
-We also use the `__init__.py` file as a place to persist the version data for occaissions where the `git` history is unavailable or unwanted.
+`setuptools-scm` uses `git` tags to help distinguish version data.
+We also use `src/cytodataframe/_version.py` as a place to persist version data for occasions where the `git` history is unavailable or unwanted.
 
-The following command is used to add `poetry-dynamic-versioning` to Poetry for use with this project: `poetry self add "poetry-dynamic-versioning[plugin]"`.
 Versioning for the project is intended to align with GitHub Releases which provide `git` tag capabilities.
 
 ### Releases
@@ -109,7 +108,7 @@ Several manual and automated steps are involved with publishing CytoDataFrame re
 See below for an overview of how this works.
 
 Notes about [semantic version](https://en.wikipedia.org/wiki/Software_versioning#Semantic_versioning) (semver) specifications:
-CytoDataFrame version specifications are controlled through [`poetry-dynamic-versioning`](https://github.com/mtkennerly/poetry-dynamic-versioning) which leverages [`dunamai`](https://github.com/mtkennerly/dunamai) to create version data based on [git tags](https://git-scm.com/book/en/v2/Git-Basics-Tagging) and commits.
+CytoDataFrame version specifications are controlled through [`setuptools-scm`](https://setuptools-scm.readthedocs.io/) to create version data based on [git tags](https://git-scm.com/book/en/v2/Git-Basics-Tagging) and commits.
 CytoDataFrame release git tags are automatically applied through [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases) and related inferred changes from [`release-drafter`](https://github.com/release-drafter/release-drafter).
 
 1. Open a pull request and use a repository label for `release-<semver release type>` to label the pull request for visibility with [`release-drafter`](https://github.com/release-drafter/release-drafter) (for example, see [CytoDataFrame#24](https://github.com/cytomining/CytoDataFrame/pull/24) as a reference of a semver patch update).
@@ -130,9 +129,9 @@ See below for some examples of how to build documentation locally.
 ```shell
 # build single-version sphinx documentation
 # (useful for troubleshooting potential issues)
-poetry run sphinx-build docs/src docs/build
+uv run sphinx-build docs/src docs/build
 
 # build multi-version sphinx documentation
 # (used in production)
-poetry run sphinx-multiversion docs/src docs/build
+uv run sphinx-multiversion docs/src docs/build
 ```

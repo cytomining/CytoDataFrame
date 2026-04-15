@@ -12,7 +12,7 @@ import sys
 import tempfile
 import uuid
 import warnings
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from io import BytesIO, StringIO
 from typing import (
     Any,
@@ -21,6 +21,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Sequence,
     Tuple,
     TypeVar,
     Union,
@@ -61,6 +62,26 @@ MIN_VOLUME_NDIM = 3
 RGB_LIKE_CHANNEL_COUNTS = (MIN_VOLUME_NDIM, 4)
 MIN_RGB_SPATIAL_DIM = 8
 MAX_RGB_ASPECT_RATIO = 4.0
+MIN_POSITION_COMPONENTS = 2
+FILTER_SLIDER_TOTAL_WIDTH_PX = 430
+FILTER_SLIDER_LABEL_WIDTH_PX = 170
+FILTER_SLIDER_READOUT_WIDTH_PX = 96
+MAX_FILTER_SLIDER_STOPS = 500
+# Fine-grained track-bound alignment for the background distribution plot.
+# Positive values shift inward; negative values shift outward.
+FILTER_SLIDER_TRACK_LEFT_ADJUST_PX = 13
+FILTER_SLIDER_TRACK_RIGHT_INSET_PX = 13
+FILTER_PLOT_KDE_MIN_SAMPLES = 60
+FILTER_PLOT_KDE_MAX_SAMPLES = 180
+FILTER_PLOT_KDE_MIN_BANDWIDTH = 0.1
+FILTER_PLOT_KDE_BANDWIDTH_SCALE = 0.3
+FILTER_PLOT_Y_SCALE_DEFAULT = "asinh"
+FILTER_PLOT_Y_MIN_PERCENTILE_DEFAULT = 10.0
+FILTER_PLOT_Y_MAX_PERCENTILE_DEFAULT = 80.0
+FILTER_PLOT_Y_MAX_PERCENTILE_UPPER = 100.0
+FILTER_PLOT_Y_GAMMA_DEFAULT = 0.6
+FILTER_PLOT_Y_TAIL_LOG_SCALE_DEFAULT = 0.35
+FILTER_SLIDER_CSS_CLASS = "cdf-filter-range-slider"
 
 # provide backwards compatibility for Self type in earlier Python versions.
 # see: https://peps.python.org/pep-0484/#annotating-instance-and-class-methods
@@ -87,6 +108,9 @@ class CytoDataFrame(pd.DataFrame):
 
     _metadata: ClassVar = ["_custom_attrs"]
     _HTML_3D_STUB_KEY: ClassVar[str] = "_cyto_3d_html_stub"
+    # Default notebook table/view height keeps ~2 rows visible with 300px cells
+    # while avoiding oversized outputs in typical Jupyter viewports.
+    _DEFAULT_TABLE_MAX_HEIGHT: ClassVar[str] = "700px"
 
     def __init__(  # noqa: PLR0913
         self: CytoDataFrame_type,
@@ -225,8 +249,14 @@ class CytoDataFrame(pd.DataFrame):
             # add widget control meta
             "_widget_state": {
                 "scale": initial_brightness,
+                "filter_column": None,
+                "filter_range": None,
+                "filter_columns": [],
+                "filter_ranges": {},
                 "shown": False,  # whether VBox has been displayed
                 "observing": False,  # whether slider observer is attached
+                "filter_observing": {},  # per-column observer attachment flags
+                "filter_readout_css_injected": False,
             },
             "_snapshot_cache": {},
             "_volume_cache": {},
@@ -239,7 +269,14 @@ class CytoDataFrame(pd.DataFrame):
                 continuous_update=False,
                 style={"description_width": "auto"},
             ),
-            "_output": widgets.Output(),
+            "_output": widgets.Output(
+                layout=widgets.Layout(
+                    width="100%",
+                    max_height=self._DEFAULT_TABLE_MAX_HEIGHT,
+                    overflow="visible",
+                )
+            ),
+            "_filter_range_sliders": {},
         }
 
         if self._custom_attrs["data_context_dir"] is not None:
@@ -350,6 +387,9 @@ class CytoDataFrame(pd.DataFrame):
             # add widget control meta
             cdf._custom_attrs["_widget_state"] = self._custom_attrs["_widget_state"]
             cdf._custom_attrs["_scale_slider"] = self._custom_attrs["_scale_slider"]
+            cdf._custom_attrs["_filter_range_sliders"] = self._custom_attrs[
+                "_filter_range_sliders"
+            ]
             cdf._custom_attrs["_output"] = self._custom_attrs["_output"]
 
             return cdf
@@ -406,6 +446,9 @@ class CytoDataFrame(pd.DataFrame):
             # add widget control meta
             cdf._custom_attrs["_widget_state"] = self._custom_attrs["_widget_state"]
             cdf._custom_attrs["_scale_slider"] = self._custom_attrs["_scale_slider"]
+            cdf._custom_attrs["_filter_range_sliders"] = self._custom_attrs[
+                "_filter_range_sliders"
+            ]
             cdf._custom_attrs["_output"] = self._custom_attrs["_output"]
 
         return cdf
@@ -505,10 +548,764 @@ class CytoDataFrame(pd.DataFrame):
         """
 
         self._custom_attrs["_widget_state"]["scale"] = change["new"]
-        self._custom_attrs["_output"].clear_output(wait=True)
+        self._show_output_loading_indicator()
 
         # redraw output after adjustments to scale state
         self._render_output()
+
+    def _on_filter_slider_change(
+        self: CytoDataFrame_type, change: Dict[str, Any]
+    ) -> None:
+        """Update widget filter state when the selection range changes."""
+        slider_owner = change.get("owner")
+        filter_col = (
+            getattr(slider_owner, "_cyto_filter_column", None)
+            if slider_owner is not None
+            else None
+        )
+        selection = change.get("new")
+        if (
+            not isinstance(selection, tuple)
+            or len(selection) != MIN_POSITION_COMPONENTS
+        ):
+            return
+        try:
+            lower = float(selection[0])
+            upper = float(selection[1])
+        except (TypeError, ValueError):
+            return
+
+        normalized_range = (
+            min(lower, upper),
+            max(lower, upper),
+        )
+        state = self._custom_attrs["_widget_state"]
+        if filter_col is not None:
+            state.setdefault("filter_ranges", {})[str(filter_col)] = normalized_range
+            # preserve legacy single-filter fields for backward compatibility
+            if state.get("filter_column") is None:
+                state["filter_column"] = filter_col
+            if str(state.get("filter_column")) == str(filter_col):
+                state["filter_range"] = normalized_range
+        else:
+            state["filter_range"] = normalized_range
+            if state.get("filter_column") is not None:
+                state.setdefault("filter_ranges", {})[str(state["filter_column"])] = (
+                    normalized_range
+                )
+        self._show_output_loading_indicator()
+        self._render_output()
+
+    def _show_output_loading_indicator(
+        self: CytoDataFrame_type,
+        message: str = "Updating table...",
+    ) -> None:
+        """Render a lightweight loading indicator in the output area."""
+        self._custom_attrs["_output"].clear_output(wait=True)
+        with self._custom_attrs["_output"]:
+            display(
+                HTML(
+                    "<style>"
+                    "@keyframes cdf-spin{to{transform:rotate(360deg)}}"
+                    ".cdf-loading{display:flex;align-items:center;gap:8px;"
+                    "padding:8px 6px;color:#1f2937;font-size:12px;}"
+                    ".cdf-loading-spinner{width:12px;height:12px;border-radius:50%;"
+                    "border:2px solid #93c5fd;border-top-color:#1d4ed8;"
+                    "animation:cdf-spin .7s linear infinite;}"
+                    "</style>"
+                    "<div class='cdf-loading'>"
+                    "<span class='cdf-loading-spinner' aria-hidden='true'></span>"
+                    f"<span>{message}</span>"
+                    "</div>"
+                )
+            )
+
+    def _get_filter_slider_columns(self: CytoDataFrame_type) -> List[Any]:
+        """Return configured filter columns, preserving user-specified order."""
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        configured_many = display_options.get("filter_columns")
+        configured_single = display_options.get("filter_column")
+        if isinstance(configured_many, (list, tuple)) and len(configured_many) == 0:
+            configured_many = None
+        configured: List[Any] = []
+        if isinstance(configured_many, (list, tuple)) and len(configured_many) > 0:
+            configured.extend(configured_many)
+        elif configured_many is not None:
+            configured.append(configured_many)
+        elif configured_single is not None:
+            configured.append(configured_single)
+
+        if not configured:
+            return []
+
+        selected_columns: List[Any] = []
+        seen: set[str] = set()
+        for requested in configured:
+            requested_str = str(requested)
+            matched = next(
+                (col for col in self.columns if str(col) == requested_str),
+                None,
+            )
+            if matched is None:
+                continue
+            key = str(matched)
+            if key in seen:
+                continue
+            seen.add(key)
+            selected_columns.append(matched)
+        return selected_columns
+
+    def _ensure_filter_range_slider(  # noqa: C901, PLR0915
+        self: CytoDataFrame_type, filter_col: Optional[Any] = None
+    ) -> Optional[Any]:
+        """Build or refresh one range slider for row filtering."""
+        if filter_col is None:
+            columns = self._get_filter_slider_columns()
+            filter_col = columns[0] if columns else None
+        state = self._custom_attrs["_widget_state"]
+        if filter_col is None:
+            self._custom_attrs["_filter_range_sliders"] = {}
+            state["filter_columns"] = []
+            state["filter_column"] = None
+            state["filter_range"] = None
+            state["filter_ranges"] = {}
+            state["filter_observing"] = {}
+            return None
+
+        slider_key = str(filter_col)
+        state["filter_column"] = state.get("filter_column") or filter_col
+        state.setdefault("filter_ranges", {})
+        state.setdefault("filter_observing", {})
+
+        numeric_values = pd.to_numeric(self[filter_col], errors="coerce").dropna()
+        if numeric_values.empty:
+            self._custom_attrs.setdefault("_filter_range_sliders", {}).pop(
+                slider_key, None
+            )
+            state["filter_ranges"].pop(slider_key, None)
+            state["filter_observing"].pop(slider_key, None)
+            if str(state.get("filter_column")) == slider_key:
+                state["filter_range"] = None
+            return None
+
+        unique_values = sorted(float(value) for value in pd.unique(numeric_values))
+        if not unique_values:
+            self._custom_attrs.setdefault("_filter_range_sliders", {}).pop(
+                slider_key, None
+            )
+            state["filter_ranges"].pop(slider_key, None)
+            state["filter_observing"].pop(slider_key, None)
+            if str(state.get("filter_column")) == slider_key:
+                state["filter_range"] = None
+            return None
+
+        slider_values = unique_values
+        if len(unique_values) > MAX_FILTER_SLIDER_STOPS:
+            slider_values = np.linspace(
+                unique_values[0],
+                unique_values[-1],
+                num=MAX_FILTER_SLIDER_STOPS,
+                dtype=np.float64,
+            ).tolist()
+        options = [
+            (self._format_filter_slider_label(value), value) for value in slider_values
+        ]
+        default_lower = slider_values[0]
+        default_upper = slider_values[-1]
+        selected_range = state["filter_ranges"].get(slider_key)
+        if (
+            not isinstance(selected_range, tuple)
+            or len(selected_range) != MIN_POSITION_COMPONENTS
+        ):
+            selected_range = (default_lower, default_upper)
+        lower = min(float(selected_range[0]), float(selected_range[1]))
+        upper = max(float(selected_range[0]), float(selected_range[1]))
+        lower = max(default_lower, min(lower, default_upper))
+        upper = max(lower, min(upper, default_upper))
+        slider_domain = np.asarray(slider_values, dtype=np.float64)
+
+        def _nearest_slider_index(target: float) -> int:
+            idx = int(np.searchsorted(slider_domain, target, side="left"))
+            if idx <= 0:
+                return 0
+            if idx >= slider_domain.size:
+                return int(slider_domain.size - 1)
+            left_idx = idx - 1
+            right_idx = idx
+            if abs(float(slider_domain[left_idx]) - target) <= abs(
+                float(slider_domain[right_idx]) - target
+            ):
+                return int(left_idx)
+            return int(right_idx)
+
+        lower_idx = _nearest_slider_index(lower)
+        upper_idx = _nearest_slider_index(upper)
+        upper_idx = max(upper_idx, lower_idx)
+        lower = float(slider_domain[lower_idx])
+        upper = float(slider_domain[upper_idx])
+        normalized_range = (lower, upper)
+        state["filter_ranges"][slider_key] = normalized_range
+        if str(state.get("filter_column")) == slider_key:
+            state["filter_range"] = normalized_range
+
+        cached_sliders = self._custom_attrs.setdefault("_filter_range_sliders", {})
+        existing_slider = cached_sliders.get(slider_key)
+        if isinstance(existing_slider, widgets.SelectionRangeSlider):
+            existing_slider.options = options
+            existing_slider.value = (lower, upper)
+            existing_slider.description = f"{filter_col}:"
+            existing_slider.continuous_update = False
+            existing_slider.style = {
+                "description_width": f"{FILTER_SLIDER_LABEL_WIDTH_PX}px"
+            }
+            existing_slider.layout = widgets.Layout(
+                width=f"{FILTER_SLIDER_TOTAL_WIDTH_PX}px"
+            )
+            existing_slider.add_class(FILTER_SLIDER_CSS_CLASS)
+            existing_slider._cyto_filter_column = filter_col  # type: ignore[attr-defined]
+            return existing_slider
+
+        slider = widgets.SelectionRangeSlider(
+            options=options,
+            value=(lower, upper),
+            description=f"{filter_col}:",
+            continuous_update=False,
+            style={"description_width": f"{FILTER_SLIDER_LABEL_WIDTH_PX}px"},
+            layout=widgets.Layout(width=f"{FILTER_SLIDER_TOTAL_WIDTH_PX}px"),
+        )
+        slider.add_class(FILTER_SLIDER_CSS_CLASS)
+        slider._cyto_filter_column = filter_col  # type: ignore[attr-defined]
+        cached_sliders[slider_key] = slider
+        return slider
+
+    @staticmethod
+    def _format_filter_slider_label(value: float) -> str:
+        """Format displayed slider labels with two decimals for float values."""
+        value = float(value)
+        if value.is_integer():
+            return f"{int(value)}"
+        return f"{value:.2f}"
+
+    @staticmethod
+    def _slider_relative_position(value: float, slider_domain: np.ndarray) -> float:
+        """Map a numeric value to SelectionRangeSlider's normalized track position."""
+        domain_size = int(slider_domain.size)
+        if domain_size == 0:
+            return 0.0
+        if domain_size == 1:
+            return 0.5
+
+        position: float
+        if value <= slider_domain[0]:
+            position = 0.0
+        elif value >= slider_domain[-1]:
+            position = 1.0
+        else:
+            right_idx = int(np.searchsorted(slider_domain, value, side="right"))
+            left_idx = max(0, right_idx - 1)
+            if right_idx >= domain_size:
+                position = 1.0
+            else:
+                left_val = float(slider_domain[left_idx])
+                right_val = float(slider_domain[right_idx])
+                if right_val == left_val:
+                    position = float(left_idx) / float(domain_size - 1)
+                else:
+                    frac = (value - left_val) / (right_val - left_val)
+                    position = (float(left_idx) + float(frac)) / float(domain_size - 1)
+        return position
+
+    @staticmethod
+    def _build_filter_distribution_html(  # noqa: C901, PLR0912, PLR0913, PLR0915
+        values: pd.Series,
+        selected_range: Tuple[float, float],
+        threshold_x: Optional[float] = None,
+        slider_values: Optional[Sequence[float]] = None,
+        y_scale: str = FILTER_PLOT_Y_SCALE_DEFAULT,
+        y_min_percentile: float = FILTER_PLOT_Y_MIN_PERCENTILE_DEFAULT,
+        y_max_percentile: float = FILTER_PLOT_Y_MAX_PERCENTILE_DEFAULT,
+        y_gamma: float = FILTER_PLOT_Y_GAMMA_DEFAULT,
+        y_tail_log_scale: float = FILTER_PLOT_Y_TAIL_LOG_SCALE_DEFAULT,
+        size_px: Tuple[int, int] = (FILTER_SLIDER_TOTAL_WIDTH_PX, 96),
+        track_padding_px: Tuple[int, int] = (
+            FILTER_SLIDER_LABEL_WIDTH_PX,
+            FILTER_SLIDER_READOUT_WIDTH_PX,
+        ),
+    ) -> str:
+        """Build an inline SVG area/line plot for filter-value counts."""
+        width, height = size_px
+        numeric_values = pd.to_numeric(values, errors="coerce").dropna()
+        if numeric_values.empty:
+            return ""
+
+        values_array = numeric_values.to_numpy(dtype=np.float64, copy=False)
+        if slider_values is None:
+            slider_domain = np.sort(np.unique(values_array))
+            if slider_domain.size > MAX_FILTER_SLIDER_STOPS:
+                sample_idx = np.linspace(
+                    0,
+                    int(slider_domain.size) - 1,
+                    num=MAX_FILTER_SLIDER_STOPS,
+                    dtype=int,
+                )
+                slider_domain = slider_domain[sample_idx]
+                slider_domain = np.unique(slider_domain)
+        else:
+            slider_domain = np.asarray(slider_values, dtype=np.float64)
+            slider_domain = np.sort(slider_domain[np.isfinite(slider_domain)])
+            slider_domain = np.unique(slider_domain)
+        if slider_domain.size == 0:
+            slider_domain = np.sort(np.unique(values_array))
+        x_min = float(slider_domain[0])
+        x_max = float(slider_domain[-1])
+        if x_max == x_min:
+            # Keep constant-value distributions centered in the track rather than
+            # collapsing to the left edge.
+            pad = max(abs(x_min) * 0.05, 1e-6)
+            x_min = x_min - pad
+            x_max = x_max + pad
+
+        # Build a smooth, KDE-like density in slider-option space (bounded by the
+        # slider domain) so runtime remains stable for near-unique columns.
+        option_count = int(slider_domain.size)
+        if option_count == 1:
+            option_counts = np.array([int(values_array.size)], dtype=np.int64)
+        else:
+            domain_midpoints = (slider_domain[:-1] + slider_domain[1:]) / 2.0
+            binned_indices = np.searchsorted(
+                domain_midpoints,
+                values_array,
+                side="right",
+            )
+            option_counts = np.bincount(binned_indices, minlength=option_count)
+        option_positions = np.arange(option_count, dtype=np.float64)
+        if option_count <= 1:
+            kde_x = np.array([0.5], dtype=np.float64)
+            kde_y = np.array([float(option_counts.sum())], dtype=np.float64)
+        else:
+            kde_sample_count = int(
+                min(
+                    FILTER_PLOT_KDE_MAX_SAMPLES,
+                    max(FILTER_PLOT_KDE_MIN_SAMPLES, option_count * 2),
+                )
+            )
+            kde_x = np.linspace(0.0, float(option_count - 1), num=kde_sample_count)
+            weights = option_counts.astype(np.float64, copy=False)
+            weight_sum = float(weights.sum())
+            weighted_mean = float(
+                np.sum(option_positions * weights) / max(weight_sum, 1)
+            )
+            weighted_var = float(
+                np.sum(weights * (option_positions - weighted_mean) ** 2)
+                / max(weight_sum, 1)
+            )
+            weighted_std = float(max(0.0, np.sqrt(weighted_var)))
+            n_eff = float((weight_sum**2) / max(float(np.sum(weights**2)), 1.0))
+            silverman_bw = 1.06 * weighted_std * (max(n_eff, 1.0) ** (-0.2))
+            bandwidth = max(
+                FILTER_PLOT_KDE_MIN_BANDWIDTH,
+                (
+                    silverman_bw * FILTER_PLOT_KDE_BANDWIDTH_SCALE
+                    if np.isfinite(silverman_bw) and silverman_bw > 0
+                    else 0.0
+                ),
+            )
+            # Numerically stable KDE-like smoothing in option-index space:
+            # smooth discrete option counts with a Gaussian kernel, then sample
+            # onto the denser x-grid via interpolation.
+            radius = int(max(1, np.ceil(3.0 * bandwidth)))
+            kernel_x = np.arange(-radius, radius + 1, dtype=np.float64)
+            kernel = np.exp(-0.5 * ((kernel_x / bandwidth) ** 2))
+            kernel_sum = float(np.sum(kernel))
+            if kernel_sum > 0:
+                kernel = kernel / kernel_sum
+            smoothed_full = np.convolve(weights, kernel, mode="full")
+            start = int((kernel.size - 1) // 2)
+            smoothed_weights = smoothed_full[start : start + option_count]
+            kde_y = np.interp(kde_x, option_positions, smoothed_weights)
+            kde_y = np.nan_to_num(kde_y, nan=0.0, posinf=0.0, neginf=0.0)
+        y_scale_normalized = str(y_scale).strip().lower()
+        if y_scale_normalized == "asinh":
+            plot_y = np.arcsinh(np.maximum(kde_y, 0.0))
+        elif y_scale_normalized == "log":
+            plot_y = np.log1p(np.maximum(kde_y, 0.0))
+        elif y_scale_normalized == "sqrt":
+            plot_y = np.sqrt(np.maximum(kde_y, 0.0))
+        else:
+            plot_y = np.maximum(kde_y, 0.0)
+
+        min_pct = float(y_min_percentile)
+        max_pct = float(y_max_percentile)
+        if (
+            0.0 <= min_pct < FILTER_PLOT_Y_MAX_PERCENTILE_UPPER
+            and 0.0 < max_pct < FILTER_PLOT_Y_MAX_PERCENTILE_UPPER
+            and min_pct < max_pct
+        ):
+            y_floor = float(np.percentile(plot_y, min_pct))
+            y_cap = float(np.percentile(plot_y, max_pct))
+            if y_cap > y_floor:
+                shifted = np.maximum(plot_y - y_floor, 0.0)
+                cap_shifted = y_cap - y_floor
+                above_cap = shifted > cap_shifted
+                if np.any(above_cap):
+                    tail_scale = max(
+                        cap_shifted * float(y_tail_log_scale),
+                        1e-9,
+                    )
+                    shifted[above_cap] = cap_shifted + (
+                        np.log1p((shifted[above_cap] - cap_shifted) / tail_scale)
+                        * tail_scale
+                    )
+                plot_y = shifted
+            else:
+                plot_y = np.maximum(plot_y - y_floor, 0.0)
+
+        gamma = float(y_gamma)
+        if gamma > 0 and gamma != 1.0:
+            plot_y = np.power(np.maximum(plot_y, 0.0), gamma)
+
+        y_max = float(np.max(plot_y, initial=1.0))
+        y_max = float(max(1e-9, y_max))
+
+        lower, upper = selected_range
+        lower = max(x_min, min(float(lower), x_max))
+        upper = max(lower, min(float(upper), x_max))
+
+        track_left_px, track_right_px = track_padding_px
+        plot_left = float(max(8, track_left_px + FILTER_SLIDER_TRACK_LEFT_ADJUST_PX))
+        plot_right = float(
+            max(
+                plot_left + 1,
+                width - track_right_px - FILTER_SLIDER_TRACK_RIGHT_INSET_PX,
+            )
+        )
+        plot_top = 6.0
+        # Keep slider widget position fixed; shift only plotted data upward by
+        # using extra bottom padding inside the background SVG.
+        plot_bottom = 22.0
+        plot_w = max(1.0, plot_right - plot_left)
+        plot_h = max(1.0, plot_bottom - plot_top)
+
+        def _sx(value: float) -> float:
+            return plot_left + (
+                CytoDataFrame._slider_relative_position(
+                    value=value, slider_domain=slider_domain
+                )
+                * plot_w
+            )
+
+        def _sy(value: float) -> float:
+            return plot_bottom - (value / y_max * plot_h)
+
+        def _sx_from_option_index(index: float) -> float:
+            if option_count <= 1:
+                return plot_left + (0.5 * plot_w)
+            value = float(
+                np.interp(
+                    float(index),
+                    option_positions,
+                    slider_domain,
+                )
+            )
+            return _sx(value)
+
+        highlight_x = _sx(lower)
+        highlight_w = max(1.0, _sx(upper) - highlight_x)
+        line_points = " ".join(
+            f"{_sx_from_option_index(float(option_index)):.2f},{_sy(float(count)):.2f}"
+            for option_index, count in zip(kde_x, plot_y, strict=False)
+        )
+        area_points = (
+            f"{_sx_from_option_index(float(kde_x[0])):.2f},"
+            f"{plot_bottom:.2f} "
+            f"{line_points} "
+            f"{_sx_from_option_index(float(kde_x[-1])):.2f},"
+            f"{plot_bottom:.2f}"
+        )
+        threshold_line_html = ""
+        if threshold_x is not None:
+            try:
+                threshold_val = float(threshold_x)
+            except (TypeError, ValueError):
+                threshold_val = None
+            if threshold_val is not None and x_min <= threshold_val <= x_max:
+                threshold_px = _sx(threshold_val)
+                threshold_line_html = (
+                    "<line "
+                    f"x1='{threshold_px:.2f}' y1='{plot_top:.2f}' "
+                    f"x2='{threshold_px:.2f}' y2='{plot_bottom:.2f}' "
+                    "stroke='#dc2626' stroke-width='3' opacity='0.95'/>"
+                )
+
+        return (
+            f"<div style='width:{width}px;margin:0 0 2px 0;'>"
+            f"<svg width='{width}' height='{height}' viewBox='0 0 {width} {height}' "
+            "preserveAspectRatio='none' role='img' aria-label='Filter distribution'>"
+            "<rect x='0' y='0' width='100%' height='100%' fill='#ffffff'/>"
+            f"<rect x='{highlight_x:.2f}' y='0' width='{highlight_w:.2f}' "
+            "height='100%' fill='#ffffff'/>"
+            "<polygon "
+            f"points='{area_points}' fill='#93c5fd' opacity='0.55'/>"
+            "<polyline "
+            f"points='{line_points}' fill='none' stroke='#1d4ed8' stroke-width='2'/>"
+            f"{threshold_line_html}"
+            "</svg></div>"
+        )
+
+    def _get_raw_filter_plot_threshold(
+        self: CytoDataFrame_type,
+        filter_col: Any,
+    ) -> Tuple[bool, Optional[Any]]:
+        """Return whether threshold was configured and its raw value."""
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        threshold_explicitly_configured = False
+        raw_threshold: Optional[Any] = None
+        threshold_map = display_options.get("filter_plot_thresholds")
+        if isinstance(threshold_map, dict):
+            filter_col_str = str(filter_col)
+            normalized_filter_col = filter_col_str.strip().casefold()
+            for threshold_key, threshold_value in threshold_map.items():
+                threshold_key_str = str(threshold_key)
+                if threshold_key_str == filter_col_str:
+                    raw_threshold = threshold_value
+                    threshold_explicitly_configured = True
+                    break
+                if threshold_key_str.strip().casefold() == normalized_filter_col:
+                    raw_threshold = threshold_value
+                    threshold_explicitly_configured = True
+                    break
+        elif threshold_map is not None:
+            logger.warning(
+                (
+                    "Ignoring display option 'filter_plot_thresholds' because "
+                    "it is not a mapping."
+                )
+            )
+
+        if not threshold_explicitly_configured:
+            single_threshold = display_options.get("filter_plot_threshold")
+            if single_threshold is not None:
+                configured_columns = self._get_filter_slider_columns()
+                if len(configured_columns) <= 1:
+                    raw_threshold = single_threshold
+                    threshold_explicitly_configured = True
+        return threshold_explicitly_configured, raw_threshold
+
+    def _resolve_filter_plot_threshold(
+        self: CytoDataFrame_type,
+        filter_col: Any,
+        values: pd.Series,
+    ) -> Optional[float]:
+        """Resolve an optional threshold marker for a filter-column distribution."""
+        threshold_explicitly_configured, raw_threshold = (
+            self._get_raw_filter_plot_threshold(filter_col=filter_col)
+        )
+        if not threshold_explicitly_configured:
+            return None
+
+        try:
+            threshold = float(raw_threshold)
+        except (TypeError, ValueError):
+            logger.warning(
+                (
+                    "Ignoring filter plot threshold for column '%s': "
+                    "value %r is not numeric."
+                ),
+                filter_col,
+                raw_threshold,
+            )
+            return None
+
+        numeric_values = pd.to_numeric(values, errors="coerce").dropna()
+        if numeric_values.empty:
+            return None
+        data_min = float(numeric_values.min())
+        data_max = float(numeric_values.max())
+        if threshold < data_min:
+            logger.warning(
+                (
+                    "Clamping filter plot threshold for column '%s' from %s to %s "
+                    "because it is outside data range [%s, %s]."
+                ),
+                filter_col,
+                threshold,
+                data_min,
+                data_min,
+                data_max,
+            )
+            return data_min
+        if threshold > data_max:
+            logger.warning(
+                (
+                    "Clamping filter plot threshold for column '%s' from %s to %s "
+                    "because it is outside data range [%s, %s]."
+                ),
+                filter_col,
+                threshold,
+                data_max,
+                data_min,
+                data_max,
+            )
+            return data_max
+        return threshold
+
+    def _build_filter_slider_control_for_column(
+        self: CytoDataFrame_type, filter_col: Any
+    ) -> Tuple[Optional[Any], Optional[Any]]:
+        """Return one filter slider and its display control widget."""
+        slider = self._ensure_filter_range_slider(filter_col=filter_col)
+        if slider is None:
+            return None, None
+        selected_range = (
+            self._custom_attrs["_widget_state"]
+            .get("filter_ranges", {})
+            .get(str(filter_col))
+        )
+        if (
+            not isinstance(selected_range, tuple)
+            or len(selected_range) != MIN_POSITION_COMPONENTS
+            or filter_col not in self.columns
+        ):
+            return slider, slider
+        threshold = self._resolve_filter_plot_threshold(
+            filter_col=filter_col, values=self[filter_col]
+        )
+
+        distribution_html = self._build_filter_distribution_html(
+            values=self[filter_col],
+            selected_range=(float(selected_range[0]), float(selected_range[1])),
+            threshold_x=threshold,
+            slider_values=[float(option[1]) for option in slider.options],
+            y_scale=str(
+                (self._custom_attrs.get("display_options", {}) or {}).get(
+                    "filter_plot_y_scale", FILTER_PLOT_Y_SCALE_DEFAULT
+                )
+            ),
+            y_min_percentile=float(
+                (self._custom_attrs.get("display_options", {}) or {}).get(
+                    "filter_plot_y_min_percentile",
+                    FILTER_PLOT_Y_MIN_PERCENTILE_DEFAULT,
+                )
+            ),
+            y_max_percentile=float(
+                (self._custom_attrs.get("display_options", {}) or {}).get(
+                    "filter_plot_y_percentile",
+                    FILTER_PLOT_Y_MAX_PERCENTILE_DEFAULT,
+                )
+            ),
+            y_gamma=float(
+                (self._custom_attrs.get("display_options", {}) or {}).get(
+                    "filter_plot_y_gamma",
+                    FILTER_PLOT_Y_GAMMA_DEFAULT,
+                )
+            ),
+            y_tail_log_scale=float(
+                (self._custom_attrs.get("display_options", {}) or {}).get(
+                    "filter_plot_y_tail_log_scale",
+                    FILTER_PLOT_Y_TAIL_LOG_SCALE_DEFAULT,
+                )
+            ),
+            size_px=(FILTER_SLIDER_TOTAL_WIDTH_PX, 52),
+            track_padding_px=(
+                FILTER_SLIDER_LABEL_WIDTH_PX,
+                FILTER_SLIDER_READOUT_WIDTH_PX,
+            ),
+        )
+        if not distribution_html:
+            return slider, slider
+
+        plot_widget = widgets.HTML(
+            value=distribution_html,
+            layout=widgets.Layout(
+                width=f"{FILTER_SLIDER_TOTAL_WIDTH_PX}px",
+                height="52px",
+            ),
+        )
+        slider.layout = widgets.Layout(
+            width=f"{FILTER_SLIDER_TOTAL_WIDTH_PX}px",
+            margin="-44px 0 0 0",
+        )
+        return slider, widgets.VBox(
+            [plot_widget, slider],
+            layout=widgets.Layout(
+                width=f"{FILTER_SLIDER_TOTAL_WIDTH_PX}px",
+                height="52px",
+                align_items="center",
+                overflow="hidden",
+            ),
+        )
+
+    def _build_filter_slider_controls(
+        self: CytoDataFrame_type,
+    ) -> Tuple[List[Any], List[Any]]:
+        """Return slider widgets and filter controls for all configured columns."""
+        columns = self._get_filter_slider_columns()
+        state = self._custom_attrs["_widget_state"]
+        state["filter_columns"] = columns
+        if columns and state.get("filter_column") is None:
+            state["filter_column"] = columns[0]
+        if not columns:
+            state["filter_ranges"] = {}
+            state["filter_observing"] = {}
+            self._custom_attrs["_filter_range_sliders"] = {}
+            return [], []
+
+        sliders: List[Any] = []
+        controls: List[Any] = []
+        for filter_col in columns:
+            slider, control = self._build_filter_slider_control_for_column(filter_col)
+            if slider is None:
+                continue
+            sliders.append(slider)
+            controls.append(control if control is not None else slider)
+        return sliders, controls
+
+    def _filter_display_indices_by_widget_range(
+        self: CytoDataFrame_type,
+        data: pd.DataFrame,
+        display_indices: List[Any],
+    ) -> List[Any]:
+        """Filter row labels by all configured slider ranges."""
+        state = self._custom_attrs["_widget_state"]
+        filter_columns = state.get("filter_columns") or []
+        filter_ranges = state.get("filter_ranges") or {}
+        if not filter_columns and state.get("filter_column") is not None:
+            filter_columns = [state.get("filter_column")]
+            if isinstance(state.get("filter_range"), tuple):
+                filter_ranges = {
+                    str(state.get("filter_column")): state.get("filter_range")
+                }
+        if not filter_columns:
+            return display_indices
+
+        active_indices = display_indices
+        for filter_col in filter_columns:
+            if filter_col not in data.columns:
+                continue
+            filter_range = filter_ranges.get(str(filter_col))
+            if (
+                not isinstance(filter_range, tuple)
+                or len(filter_range) != MIN_POSITION_COMPONENTS
+            ):
+                continue
+            try:
+                lower = float(filter_range[0])
+                upper = float(filter_range[1])
+            except (TypeError, ValueError):
+                continue
+            numeric_values = pd.to_numeric(data[filter_col], errors="coerce")
+            in_range = numeric_values[
+                (numeric_values >= lower) & (numeric_values <= upper)
+            ]
+            allowed_counts = Counter(in_range.index.tolist())
+            filtered_indices: List[Any] = []
+            for row_label in active_indices:
+                if allowed_counts[row_label] > 0:
+                    filtered_indices.append(row_label)
+                    allowed_counts[row_label] -= 1
+            active_indices = filtered_indices
+
+        return active_indices
 
     def get_bounding_box_from_data(
         self: CytoDataFrame_type,
@@ -1299,6 +2096,209 @@ class CytoDataFrame(pd.DataFrame):
 
         return None, None
 
+    @staticmethod
+    def _find_matching_segmentation_path(
+        data_value: str,
+        pattern_map: Optional[dict],
+        file_dir: Optional[str],
+        candidate_path: pathlib.Path,
+    ) -> Optional[pathlib.Path]:
+        """Resolve a mask/outline file path for an image value.
+
+        Args:
+            data_value: Raw image value from the table row.
+            pattern_map: Optional regex mapping from segmentation filename
+                patterns to source image patterns. When provided, this method
+                extracts identifiers from ``data_value`` with each
+                ``original_pattern`` and finds files whose names match the
+                corresponding ``file_pattern`` and include one of those
+                identifiers.
+            file_dir: Root directory containing mask/outline files.
+            candidate_path: Best-effort resolved source image path returned by
+                ``_resolve_volume_candidate``. Used as a fallback identifier in
+                regex mode and as the primary stem in non-regex mode.
+
+                Example (no ``pattern_map``):
+                If ``candidate_path`` is
+                ``.../images/plateA/well_B03/site_1.tif``, the function looks
+                for files under ``file_dir`` that start with ``site_1``.
+
+                Example (with ``pattern_map``):
+                If ``data_value`` is
+                ``plateA/well_B03/site_1.tif`` and ``candidate_path`` is the
+                resolved on-disk path to the same image, regex captures from
+                ``data_value`` are tried first, then stems from both
+                ``data_value`` and ``candidate_path`` are used as fallback
+                identifiers.
+
+        Returns:
+            The first matching segmentation file path, or ``None`` when no match is
+            found.
+        """
+        if file_dir is None:
+            return None
+
+        root = pathlib.Path(file_dir)
+        if not root.exists():
+            return None
+
+        if pattern_map is None:
+            matching_files = sorted(root.rglob(f"{pathlib.Path(candidate_path).stem}*"))
+            return matching_files[0] if matching_files else None
+
+        for file_pattern, original_pattern in pattern_map.items():
+            matched = re.search(original_pattern, data_value)
+            if not matched:
+                continue
+            identifiers: list[str] = []
+            identifiers.extend(
+                str(group)
+                for group in matched.groups()
+                if isinstance(group, str) and group.strip()
+            )
+            identifiers.extend(
+                [
+                    pathlib.Path(data_value).stem,
+                    pathlib.Path(candidate_path).stem,
+                ]
+            )
+            identifiers = list(dict.fromkeys(idf for idf in identifiers if idf))
+
+            candidate_roots: list[pathlib.Path] = []
+            parent_name = pathlib.Path(candidate_path).parent.name
+            if parent_name:
+                parent_scoped_root = root / parent_name
+                if parent_scoped_root.exists():
+                    candidate_roots.append(parent_scoped_root)
+            candidate_roots.append(root)
+
+            for search_root in candidate_roots:
+                normalized_identifiers = [
+                    re.escape(idf.lower()) for idf in identifiers if idf
+                ]
+                matching_files = [
+                    file
+                    for file in sorted(search_root.rglob("*"))
+                    if file.is_file()
+                    and re.search(file_pattern, file.name)
+                    and (
+                        not normalized_identifiers
+                        or any(
+                            re.search(
+                                rf"(?<![0-9A-Za-z]){idf}(?![0-9A-Za-z])",
+                                file.stem.lower(),
+                            )
+                            for idf in normalized_identifiers
+                        )
+                    )
+                ]
+                if matching_files:
+                    return matching_files[0]
+        return None
+
+    @staticmethod
+    def _find_matching_segmentation_in_dirs(
+        data_value: str,
+        pattern_map: Optional[dict],
+        candidate_path: pathlib.Path,
+        file_dirs: Sequence[Optional[str]],
+    ) -> Optional[pathlib.Path]:
+        """Find the first matching segmentation path across ordered directories.
+
+        Args:
+            data_value: Raw image value from the table row.
+            pattern_map: Optional regex mapping from segmentation filename
+                patterns to source image patterns.
+            candidate_path: Best-effort resolved source image path.
+            file_dirs: Ordered directories to search for segmentation files.
+
+        Returns:
+            The first matching segmentation file path, or ``None`` when no match is
+            found in any directory.
+        """
+        for file_dir in file_dirs:
+            segmentation_path = CytoDataFrame._find_matching_segmentation_path(
+                data_value=data_value,
+                pattern_map=pattern_map,
+                file_dir=file_dir,
+                candidate_path=candidate_path,
+            )
+            if segmentation_path is not None:
+                return segmentation_path
+        return None
+
+    def _prepare_3d_label_overlay(
+        self: CytoDataFrame_type,
+        segmentation_path: pathlib.Path,
+        expected_shape: Tuple[int, ...],
+        row: Optional[Any] = None,
+    ) -> Optional[np.ndarray]:
+        """Load and normalize a 3D segmentation image for volume overlays.
+
+        Args:
+            segmentation_path: Path to the mask/outline image file.
+            expected_shape: Expected ``(z, y, x)`` array shape.
+            row: Optional row label/index used to apply 3D bounding-box cropping.
+
+        Returns:
+            A uint8 binary array (0/255) matching ``expected_shape``, or ``None``
+            when loading or shape validation fails.
+        """
+        try:
+            mask_array = np.asarray(imageio.imread(segmentation_path))
+        except (FileNotFoundError, ValueError):
+            return None
+
+        if mask_array.ndim > MIN_VOLUME_NDIM and mask_array.shape[-1] in (1, 3, 4):
+            mask_array = mask_array[..., 0]
+
+        if row is not None:
+            bounds = self._get_3d_bbox_crop_bounds(
+                row=row,
+                volume_shape=tuple(int(v) for v in mask_array.shape),
+            )
+            if bounds is not None:
+                x_min, x_max, y_min, y_max, z_min, z_max = bounds
+                mask_array = mask_array[z_min:z_max, y_min:y_max, x_min:x_max]
+
+        if mask_array.shape != expected_shape:
+            return None
+
+        return np.where(mask_array > 0, 255, 0).astype(np.uint8, copy=False)
+
+    def _resolve_volume_candidate(
+        self: CytoDataFrame_type,
+        raw_value: Union[str, pathlib.Path],
+    ) -> Tuple[str, pathlib.Path]:
+        """Resolve normalized 3D image value and best-effort candidate path.
+
+        Args:
+            raw_value: Raw path-like cell value for a 3D image.
+
+        Returns:
+            A tuple of ``(data_value, candidate_path)`` where ``data_value`` is
+            normalized for context-dir lookups and ``candidate_path`` points to a
+            best-effort on-disk match when available.
+        """
+        data_value = str(raw_value)
+        context_dir = self._custom_attrs.get("data_context_dir")
+        if context_dir:
+            normalized = data_value
+            if normalized.startswith("file:"):
+                normalized = normalized[len("file:") :]
+            if "/" in normalized or "\\" in normalized:
+                normalized = pathlib.Path(normalized).name
+            data_value = normalized
+
+        candidate_path = pathlib.Path(data_value)
+        if not candidate_path.is_file() and context_dir:
+            matches = sorted(
+                pathlib.Path(context_dir).rglob(pathlib.Path(data_value).name)
+            )
+            if matches:
+                candidate_path = matches[0]
+        return data_value, candidate_path
+
     def _extract_array_from_ome_arrow(  # noqa: C901, PLR0911, PLR0912
         self: CytoDataFrame_type,
         data_value: Any,
@@ -1509,6 +2509,21 @@ class CytoDataFrame(pd.DataFrame):
                 volume_array = volume_array[..., 0]
 
             if volume_array.ndim == MIN_VOLUME_NDIM:
+                label_overlay = None
+                segmentation_path = self._find_matching_segmentation_in_dirs(
+                    data_value=data_value,
+                    pattern_map=pattern_map,
+                    candidate_path=candidate_path,
+                    file_dirs=(
+                        self._custom_attrs.get("data_mask_context_dir"),
+                        self._custom_attrs.get("data_outline_context_dir"),
+                    ),
+                )
+                if segmentation_path is not None:
+                    label_overlay = self._prepare_3d_label_overlay(
+                        segmentation_path=segmentation_path,
+                        expected_shape=volume_array.shape,
+                    )
                 with contextlib.suppress(Exception):
                     volume = self._ensure_uint8(volume_array)
                     dims = (volume.shape[2], volume.shape[1], volume.shape[0])
@@ -1518,6 +2533,7 @@ class CytoDataFrame(pd.DataFrame):
                         data_value=data_value,
                         candidate_path=candidate_path,
                         display_options=self._custom_attrs.get("display_options"),
+                        label_volume=label_overlay,
                     )
 
             if html_view is None:
@@ -1950,17 +2966,8 @@ class CytoDataFrame(pd.DataFrame):
         elif isinstance(value, (str, pathlib.Path)):
             volume_ndim = 3
             color_channel_counts = (1, volume_ndim, 4)
-            data_value = str(value)
             context_dir = self._custom_attrs.get("data_context_dir")
-            if context_dir:
-                normalized = data_value
-                if normalized.startswith("file:"):
-                    normalized = normalized[len("file:") :]
-                if "/" in normalized or "\\" in normalized:
-                    normalized = pathlib.Path(normalized).name
-                data_value = normalized
-
-            data_path = pathlib.Path(data_value)
+            data_value, data_path = self._resolve_volume_candidate(raw_value=value)
             candidate_paths: List[pathlib.Path] = []
             seen_candidates: set[str] = set()
 
@@ -2087,58 +3094,12 @@ class CytoDataFrame(pd.DataFrame):
 
         # Apply per-row bounding box cropping when available (XYZ).
         try:
-            display_options = self._custom_attrs.get("display_options", {}) or {}
-            if display_options.get("volume_disable_bbox_crop"):
-                return volume, dims
-
-            bbox_source = self._custom_attrs.get("data_bounding_box")
-            bbox_cols = (
-                bbox_source.columns.tolist()
-                if bbox_source is not None
-                else self.columns.tolist()
+            bounds = self._get_3d_bbox_crop_bounds(
+                row=row,
+                volume_shape=tuple(int(v) for v in volume.shape),
             )
-
-            def _find_col(tag: str) -> Optional[str]:
-                return next((col for col in bbox_cols if tag in str(col)), None)
-
-            x_min_col = _find_col("Minimum_X")
-            x_max_col = _find_col("Maximum_X")
-            y_min_col = _find_col("Minimum_Y")
-            y_max_col = _find_col("Maximum_Y")
-            z_min_col = _find_col("Minimum_Z")
-            z_max_col = _find_col("Maximum_Z")
-
-            if all(
-                col is not None for col in (x_min_col, x_max_col, y_min_col, y_max_col)
-            ):
-                try:
-                    row_data = (
-                        bbox_source.loc[row]
-                        if bbox_source is not None and row in bbox_source.index
-                        else self.loc[row]
-                    )
-                except Exception:
-                    row_data = self.iloc[row]
-
-                x_min = int(row_data[x_min_col])
-                x_max = int(row_data[x_max_col])
-                y_min = int(row_data[y_min_col])
-                y_max = int(row_data[y_max_col])
-
-                z_min = 0
-                z_max = volume.shape[0]
-                if z_min_col is not None and z_max_col is not None:
-                    z_min = int(row_data[z_min_col])
-                    z_max = int(row_data[z_max_col])
-
-                # Clamp to volume bounds
-                z_min = max(0, min(z_min, volume.shape[0]))
-                z_max = max(z_min + 1, min(z_max, volume.shape[0]))
-                y_min = max(0, min(y_min, volume.shape[1]))
-                y_max = max(y_min + 1, min(y_max, volume.shape[1]))
-                x_min = max(0, min(x_min, volume.shape[2]))
-                x_max = max(x_min + 1, min(x_max, volume.shape[2]))
-
+            if bounds is not None:
+                x_min, x_max, y_min, y_max, z_min, z_max = bounds
                 volume = volume[z_min:z_max, y_min:y_max, x_min:x_max]
                 dims = (volume.shape[2], volume.shape[1], volume.shape[0])
                 logger.debug(
@@ -2158,6 +3119,250 @@ class CytoDataFrame(pd.DataFrame):
             while len(cache) > cache_max_entries:
                 cache.popitem(last=False)
         return volume, dims
+
+    def _get_3d_label_overlay_from_cell(
+        self: CytoDataFrame_type,
+        row: Any,
+        column: Any,
+        expected_shape: Tuple[int, ...],
+    ) -> Optional[np.ndarray]:
+        """Build a 3D label overlay for a specific table cell.
+
+        Args:
+            row: Row label or index containing the 3D image value.
+            column: Column label containing the 3D image value.
+            expected_shape: Target ``(z, y, x)`` shape for the overlay.
+
+        Returns:
+            A uint8 binary label volume aligned to ``expected_shape`` when a
+            compatible mask/outline can be found; otherwise ``None``.
+        """
+        try:
+            value = self.loc[row, column]
+        except Exception:
+            value = self.iloc[row][column]
+
+        if not isinstance(value, (str, pathlib.Path)):
+            return None
+
+        data_value, candidate_path = self._resolve_volume_candidate(raw_value=value)
+
+        pattern_map = self._custom_attrs.get("segmentation_file_regex")
+        segmentation_path = self._find_matching_segmentation_in_dirs(
+            data_value=data_value,
+            pattern_map=pattern_map,
+            candidate_path=candidate_path,
+            file_dirs=(
+                self._custom_attrs.get("data_mask_context_dir"),
+                self._custom_attrs.get("data_outline_context_dir"),
+            ),
+        )
+        if segmentation_path is None:
+            logger.debug("No 3D mask/outline found for image %s", data_value)
+            return None
+
+        logger.debug(
+            "Found 3D mask/outline for image %s at %s",
+            data_value,
+            segmentation_path,
+        )
+        overlay = self._prepare_3d_label_overlay(
+            segmentation_path=segmentation_path,
+            expected_shape=expected_shape,
+            row=row,
+        )
+        if overlay is not None:
+            logger.debug(
+                "Prepared 3D mask/outline overlay for image %s with shape %s",
+                data_value,
+                overlay.shape,
+            )
+        else:
+            logger.warning(
+                (
+                    "Found 3D mask/outline for image %s at %s but could not align "
+                    "it with expected volume shape %s"
+                ),
+                data_value,
+                segmentation_path,
+                expected_shape,
+            )
+        return overlay
+
+    def _get_3d_bbox_crop_bounds(
+        self: CytoDataFrame_type,
+        row: Any,
+        volume_shape: Tuple[int, ...],
+    ) -> Optional[Tuple[int, int, int, int, int, int]]:
+        """Return clamped 3D bbox crop bounds.
+
+        Args:
+            row: Row label or index used to read bounding-box metadata.
+            volume_shape: ``(z, y, x)`` shape of the source volume.
+
+        Returns:
+            A tuple of ``(x_min, x_max, y_min, y_max, z_min, z_max)`` bounds, or
+            ``None`` when bounding-box columns are unavailable or cropping is
+            disabled.
+
+            CellProfiler ``AreaShape_BoundingBox...`` columns are preferred when
+            available. Non-CellProfiler schemas can be mapped explicitly through
+            ``display_options["volume_bbox_column_map"]`` with keys:
+            ``x_min``, ``x_max``, ``y_min``, ``y_max``, and optionally
+            ``z_min``/``z_max``.
+        """
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        if display_options.get("volume_disable_bbox_crop"):
+            return None
+
+        if len(volume_shape) < MIN_VOLUME_NDIM:
+            return None
+
+        bbox_source = self._custom_attrs.get("data_bounding_box")
+        bbox_cols = (
+            bbox_source.columns.tolist()
+            if bbox_source is not None
+            else self.columns.tolist()
+        )
+        (
+            x_min_col,
+            x_max_col,
+            y_min_col,
+            y_max_col,
+            z_min_col,
+            z_max_col,
+        ) = self._resolve_3d_bbox_columns(
+            bbox_cols=bbox_cols,
+            display_options=display_options,
+        )
+
+        if not all(
+            col is not None for col in (x_min_col, x_max_col, y_min_col, y_max_col)
+        ):
+            return None
+
+        try:
+            row_data = (
+                bbox_source.loc[row]
+                if bbox_source is not None and row in bbox_source.index
+                else self.loc[row]
+            )
+        except Exception:
+            row_data = self.iloc[row]
+
+        x_min = int(row_data[x_min_col])
+        x_max = int(row_data[x_max_col])
+        y_min = int(row_data[y_min_col])
+        y_max = int(row_data[y_max_col])
+
+        z_min = 0
+        z_max = volume_shape[0]
+        if z_min_col is not None and z_max_col is not None:
+            z_min = int(row_data[z_min_col])
+            z_max = int(row_data[z_max_col])
+
+        z_min = max(0, min(z_min, volume_shape[0]))
+        z_max = max(z_min + 1, min(z_max, volume_shape[0]))
+        y_min = max(0, min(y_min, volume_shape[1]))
+        y_max = max(y_min + 1, min(y_max, volume_shape[1]))
+        x_min = max(0, min(x_min, volume_shape[2]))
+        x_max = max(x_min + 1, min(x_max, volume_shape[2]))
+        return x_min, x_max, y_min, y_max, z_min, z_max
+
+    @staticmethod
+    def _resolve_3d_bbox_columns(
+        bbox_cols: Sequence[Any],
+        display_options: dict[str, Any],
+    ) -> Tuple[
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+    ]:
+        """Resolve bbox columns with custom, CP, then substring matching."""
+        custom_map = (
+            display_options.get("volume_bbox_column_map")
+            if isinstance(display_options.get("volume_bbox_column_map"), dict)
+            else {}
+        )
+
+        custom_cols = CytoDataFrame._resolve_bbox_columns_from_custom_map(
+            bbox_cols=bbox_cols,
+            custom_map=custom_map if isinstance(custom_map, dict) else {},
+        )
+        if all(col is not None for col in custom_cols[:4]):
+            return custom_cols
+
+        cp_cols = CytoDataFrame._resolve_bbox_columns_from_cp_convention(bbox_cols)
+        if all(col is not None for col in cp_cols[:4]):
+            return cp_cols
+
+        return (
+            CytoDataFrame._find_bbox_col_by_substring(bbox_cols, "Minimum_X"),
+            CytoDataFrame._find_bbox_col_by_substring(bbox_cols, "Maximum_X"),
+            CytoDataFrame._find_bbox_col_by_substring(bbox_cols, "Minimum_Y"),
+            CytoDataFrame._find_bbox_col_by_substring(bbox_cols, "Maximum_Y"),
+            CytoDataFrame._find_bbox_col_by_substring(bbox_cols, "Minimum_Z"),
+            CytoDataFrame._find_bbox_col_by_substring(bbox_cols, "Maximum_Z"),
+        )
+
+    @staticmethod
+    def _resolve_bbox_columns_from_custom_map(
+        bbox_cols: Sequence[Any],
+        custom_map: dict[str, Any],
+    ) -> Tuple[
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+    ]:
+        """Resolve bbox columns from display_options custom mapping."""
+        col_by_name = {str(col): col for col in bbox_cols}
+        return (
+            col_by_name.get(str(custom_map.get("x_min"))),
+            col_by_name.get(str(custom_map.get("x_max"))),
+            col_by_name.get(str(custom_map.get("y_min"))),
+            col_by_name.get(str(custom_map.get("y_max"))),
+            col_by_name.get(str(custom_map.get("z_min"))),
+            col_by_name.get(str(custom_map.get("z_max"))),
+        )
+
+    @staticmethod
+    def _resolve_bbox_columns_from_cp_convention(
+        bbox_cols: Sequence[Any],
+    ) -> Tuple[
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+        Optional[Any],
+    ]:
+        """Resolve bbox columns using preferred CellProfiler AreaShape names."""
+        col_by_name = {str(col): col for col in bbox_cols}
+        cp_prefixes = ("Cytoplasm_", "Nuclei_", "Cells_", "")
+        for prefix in cp_prefixes:
+            x_min = col_by_name.get(f"{prefix}AreaShape_BoundingBoxMinimum_X")
+            x_max = col_by_name.get(f"{prefix}AreaShape_BoundingBoxMaximum_X")
+            y_min = col_by_name.get(f"{prefix}AreaShape_BoundingBoxMinimum_Y")
+            y_max = col_by_name.get(f"{prefix}AreaShape_BoundingBoxMaximum_Y")
+            if not all(col is not None for col in (x_min, x_max, y_min, y_max)):
+                continue
+            z_min = col_by_name.get(f"{prefix}AreaShape_BoundingBoxMinimum_Z")
+            z_max = col_by_name.get(f"{prefix}AreaShape_BoundingBoxMaximum_Z")
+            return x_min, x_max, y_min, y_max, z_min, z_max
+        return None, None, None, None, None, None
+
+    @staticmethod
+    def _find_bbox_col_by_substring(
+        bbox_cols: Sequence[Any], tag: str
+    ) -> Optional[Any]:
+        """Find the first bbox column containing ``tag`` as a substring."""
+        return next((col for col in bbox_cols if tag in str(col)), None)
 
     def _find_3d_columns_for_display(
         self: CytoDataFrame_type,
@@ -2189,6 +3394,345 @@ class CytoDataFrame(pd.DataFrame):
 
         return columns_3d
 
+    def _add_label_overlay_to_plotter(  # noqa: PLR0913
+        self: CytoDataFrame_type,
+        plotter: Any,
+        volume: np.ndarray,
+        label_volume: Optional[np.ndarray],
+        spacing: Tuple[float, float, float],
+        base_sample: float,
+        display_options: dict[str, Any],
+    ) -> List[Any]:
+        """Add a 3D label overlay to an existing PyVista plotter.
+
+        Args:
+            plotter: Target PyVista plotter receiving overlay actors.
+            volume: Source image volume in ``(z, y, x)`` order.
+            label_volume: Optional label/mask volume aligned to ``volume``.
+            spacing: Voxel spacing tuple used when building label image data.
+            base_sample: Base sampling distance used for volume overlays.
+            display_options: Display options controlling overlay mode/style.
+        Returns:
+            A list of added overlay actor objects.
+        """
+        overlay_actors: List[Any] = []
+        if label_volume is None:
+            return overlay_actors
+
+        try:
+            import pyvista as pv  # type: ignore
+        except Exception:
+            return overlay_actors
+
+        try:
+            label_arr = np.asarray(label_volume)
+            if label_arr.shape != volume.shape:
+                logger.warning(
+                    (
+                        "Skipping 3D label overlay due to shape mismatch: "
+                        "label=%s volume=%s"
+                    ),
+                    label_arr.shape,
+                    volume.shape,
+                )
+                return overlay_actors
+
+            label_xyz = np.transpose((label_arr > 0).astype(np.uint8), (2, 1, 0))
+            label_grid = pv.ImageData()
+            label_grid.dimensions = tuple(int(v) for v in label_xyz.shape)
+            label_grid.spacing = spacing
+            label_grid.origin = (0.0, 0.0, 0.0)
+            label_grid.point_data.clear()
+            label_grid.point_data["label_scalars"] = np.asfortranarray(label_xyz).ravel(
+                order="F"
+            )
+
+            overlay_mode = str(display_options.get("label_overlay_mode", "surface"))
+            overlay_mode = overlay_mode.lower()
+            overlay_color = display_options.get("label_overlay_color", (0, 255, 0))
+            if (
+                isinstance(overlay_color, (tuple, list))
+                and len(overlay_color) >= MIN_VOLUME_NDIM
+            ):
+                overlay_color = tuple(
+                    (float(v) / 255.0 if float(v) > 1.0 else float(v))
+                    for v in overlay_color[:3]
+                )
+            overlay_opacity = float(display_options.get("label_overlay_opacity", 0.95))
+
+            if overlay_mode == "surface":
+                contour = label_grid.contour(isosurfaces=[0.5], scalars="label_scalars")
+                edge_opacity = min(1.0, overlay_opacity + 0.15)
+                overlay_actors.append(
+                    plotter.add_mesh(
+                        contour,
+                        color=overlay_color,
+                        opacity=overlay_opacity,
+                        smooth_shading=False,
+                        ambient=1.0,
+                        diffuse=0.0,
+                        specular=0.0,
+                    )
+                )
+                overlay_actors.append(
+                    plotter.add_mesh(
+                        contour,
+                        color=overlay_color,
+                        style="wireframe",
+                        opacity=edge_opacity,
+                        line_width=2.5,
+                    )
+                )
+            else:
+                label_xyz_u8 = np.where(label_xyz > 0, 255, 0).astype(
+                    np.uint8, copy=False
+                )
+                label_grid.point_data["label_scalars"] = np.asfortranarray(
+                    label_xyz_u8
+                ).ravel(order="F")
+                filled_opacity = np.zeros(256, dtype=np.float32)
+                filled_opacity[255] = overlay_opacity
+                label_actor = plotter.add_volume(
+                    label_grid,
+                    scalars="label_scalars",
+                    clim=(0, 255),
+                    cmap=[(0.0, 0.0, 0.0), overlay_color],
+                    opacity=filled_opacity,
+                    shade=False,
+                    show_scalar_bar=False,
+                    opacity_unit_distance=base_sample,
+                    blending="maximum",
+                )
+                overlay_actors.append(label_actor)
+                with contextlib.suppress(Exception):
+                    label_prop = (
+                        getattr(label_actor, "prop", None) or label_actor.GetProperty()
+                    )
+                    label_prop.SetInterpolationTypeToNearest()
+                with contextlib.suppress(Exception):
+                    contour = label_grid.contour(
+                        isosurfaces=[0.5], scalars="label_scalars"
+                    )
+                    overlay_actors.append(
+                        plotter.add_mesh(
+                            contour,
+                            color=overlay_color,
+                            style="wireframe",
+                            opacity=min(1.0, overlay_opacity + 0.05),
+                            line_width=2.0,
+                        )
+                    )
+
+            logger.info(
+                "Added 3D label overlay (shape=%s, opacity=%s, mode=%s)",
+                label_arr.shape,
+                overlay_opacity,
+                overlay_mode,
+            )
+        except Exception as exc:
+            logger.debug("Unable to add 3D label overlay: %s", exc)
+            return overlay_actors
+        return overlay_actors
+
+    @staticmethod
+    def _set_overlay_actor_visibility(actor: Any, visible: bool) -> None:
+        """Set visibility for supported actor object variants."""
+        visible_flag = 1 if visible else 0
+        if hasattr(actor, "SetVisibility"):
+            actor.SetVisibility(visible_flag)
+            return
+        if hasattr(actor, "visibility"):
+            actor.visibility = bool(visible)
+            return
+        prop = getattr(actor, "prop", None)
+        if hasattr(prop, "SetOpacity"):
+            prop.SetOpacity(float(visible_flag))
+            return
+        getter = getattr(actor, "GetProperty", None)
+        if callable(getter):
+            with contextlib.suppress(Exception):
+                getter().SetOpacity(float(visible_flag))
+
+    @staticmethod
+    def _resolve_overlay_toggle_position(
+        plotter: Any,
+        display_options: dict[str, Any],
+        size: int,
+    ) -> Tuple[int, int]:
+        """Resolve checkbox position in display pixels (default lower-right)."""
+        configured = display_options.get("label_overlay_toggle_position")
+        if (
+            isinstance(configured, (tuple, list))
+            and len(configured) >= MIN_POSITION_COMPONENTS
+            and all(
+                isinstance(v, (int, float))
+                for v in configured[:MIN_POSITION_COMPONENTS]
+            )
+        ):
+            return int(configured[0]), int(configured[1])
+
+        width_px = 300
+        window_size = getattr(plotter, "window_size", None)
+        if (
+            isinstance(window_size, (tuple, list))
+            and len(window_size) >= MIN_POSITION_COMPONENTS
+            and isinstance(window_size[0], (int, float))
+        ):
+            width_px = int(window_size[0])
+        else:
+            configured_width = display_options.get("width", "300px")
+            width_digits = re.search(r"\d+", str(configured_width))
+            if width_digits:
+                width_px = int(width_digits.group(0))
+
+        margin = 10
+        x_pos = max(margin, width_px - int(size) - margin)
+        y_pos = int(display_options.get("label_overlay_toggle_vertical_offset", 10))
+        return x_pos, y_pos
+
+    @staticmethod
+    def _resolve_plotter_window_height(
+        plotter: Any,
+        display_options: dict[str, Any],
+    ) -> int:
+        """Resolve plotter pixel height for viewport text placement."""
+        window_size = getattr(plotter, "window_size", None)
+        if (
+            isinstance(window_size, (tuple, list))
+            and len(window_size) >= MIN_POSITION_COMPONENTS
+            and isinstance(window_size[1], (int, float))
+        ):
+            return int(window_size[1])
+        configured_height = display_options.get("height", "300px")
+        height_digits = re.search(r"\d+", str(configured_height))
+        if height_digits:
+            return int(height_digits.group(0))
+        return 300
+
+    def _add_label_overlay_toggle_control(  # noqa: C901
+        self: CytoDataFrame_type,
+        plotter: Any,
+        overlay_actors: List[Any],
+        display_options: dict[str, Any],
+    ) -> None:
+        """Add a PyVista checkbox widget to toggle label overlay visibility."""
+        if not overlay_actors:
+            return
+        if not bool(display_options.get("label_overlay_toggle", True)):
+            return
+        if not hasattr(plotter, "add_checkbox_button_widget"):
+            return
+
+        def _toggle_overlay(state: Any) -> None:
+            visible = bool(state)
+            for actor in overlay_actors:
+                with contextlib.suppress(Exception):
+                    self._set_overlay_actor_visibility(actor=actor, visible=visible)
+            with contextlib.suppress(Exception):
+                plotter.render()
+
+        size = int(display_options.get("label_overlay_toggle_size", 24))
+        position = self._resolve_overlay_toggle_position(
+            plotter=plotter,
+            display_options=display_options,
+            size=size,
+        )
+        with contextlib.suppress(Exception):
+            plotter.add_checkbox_button_widget(
+                callback=_toggle_overlay,
+                value=True,
+                size=size,
+                position=position,
+            )
+            label_text = str(display_options.get("label_overlay_toggle_label", "Mask"))
+            label_font_size = int(
+                display_options.get("label_overlay_toggle_font_size", 9)
+            )
+            label_gap = int(display_options.get("label_overlay_toggle_label_gap", 24))
+            label_shift_left = int(
+                display_options.get("label_overlay_toggle_label_shift_left", 212)
+            )
+            estimated_text_px = int(max(32, len(label_text) * label_font_size * 0.95))
+            label_pos = (
+                max(
+                    0,
+                    int(position[0]) - estimated_text_px - label_gap - label_shift_left,
+                ),
+                max(0, int(position[1]) + 10),
+            )
+            window_size = getattr(plotter, "window_size", None)
+            window_width = 300
+            if (
+                isinstance(window_size, (tuple, list))
+                and len(window_size) >= MIN_POSITION_COMPONENTS
+                and isinstance(window_size[0], (int, float))
+            ):
+                window_width = int(window_size[0])
+            window_width = max(1, window_width)
+            window_height = max(
+                1,
+                self._resolve_plotter_window_height(
+                    plotter=plotter,
+                    display_options=display_options,
+                ),
+            )
+            label_pos_norm = (
+                max(0.01, min(0.95, float(label_pos[0]) / float(window_width))),
+                max(0.01, min(0.95, float(label_pos[1]) / float(window_height))),
+            )
+            label_name = f"cdf-label-toggle-{uuid.uuid4().hex}"
+            text_added = False
+            try:
+                plotter.add_text(
+                    label_text,
+                    position=label_pos_norm,
+                    font_size=label_font_size,
+                    color="white",
+                    name=label_name,
+                    viewport=True,
+                    shadow=True,
+                )
+                text_added = True
+            except Exception:
+                pass
+            if not text_added:
+                try:
+                    plotter.add_text(
+                        label_text,
+                        position=label_pos,
+                        font_size=label_font_size,
+                        color="white",
+                        name=label_name,
+                        shadow=True,
+                    )
+                    text_added = True
+                except Exception:
+                    pass
+            if not text_added:
+                with contextlib.suppress(Exception):
+                    plotter.add_text(
+                        label_text,
+                        position="lower_right",
+                        font_size=label_font_size,
+                        color="white",
+                        name=label_name,
+                        shadow=True,
+                    )
+            logger.debug("Added 3D label overlay toggle checkbox to plotter view.")
+
+    def _toggle_overlay_actors_visibility(
+        self: CytoDataFrame_type,
+        plotter: Any,
+        overlay_actors: List[Any],
+        visible: bool,
+    ) -> None:
+        """Toggle all overlay actors and trigger a render."""
+        for actor in overlay_actors:
+            with contextlib.suppress(Exception):
+                self._set_overlay_actor_visibility(actor=actor, visible=visible)
+        with contextlib.suppress(Exception):
+            plotter.render()
+
     def _build_pyvista_viewer(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self: CytoDataFrame_type,
         volume: np.ndarray,
@@ -2197,6 +3741,8 @@ class CytoDataFrame(pd.DataFrame):
         spacing: Tuple[float, float, float] = (1.0, 1.0, 1.0),
         opacity: Any = "sigmoid",
         shade: bool = False,
+        label_volume: Optional[np.ndarray] = None,
+        include_plotter_overlay_toggle: bool = True,
         **kwargs: Any,
     ) -> Any:
         try:
@@ -2284,6 +3830,21 @@ class CytoDataFrame(pd.DataFrame):
         except Exception as exc:
             logger.debug("Unable to configure volume mapper sampling: %s", exc)
 
+        overlay_actors = self._add_label_overlay_to_plotter(
+            plotter=plotter,
+            volume=volume,
+            label_volume=label_volume,
+            spacing=spacing,
+            base_sample=base_sample,
+            display_options=display_options,
+        )
+        if include_plotter_overlay_toggle and overlay_actors:
+            self._add_label_overlay_toggle_control(
+                plotter=plotter,
+                overlay_actors=overlay_actors,
+                display_options=display_options,
+            )
+
         if show_axes:
             with contextlib.suppress(Exception):
                 plotter.add_axes()
@@ -2300,6 +3861,8 @@ class CytoDataFrame(pd.DataFrame):
         )
         with contextlib.suppress(Exception):
             setattr(viewer, "_cdf_plotter", plotter)
+        with contextlib.suppress(Exception):
+            setattr(viewer, "_cdf_overlay_actors", overlay_actors)
         if hasattr(viewer, "layout"):
             try:
                 import ipywidgets as widgets  # type: ignore
@@ -2347,6 +3910,11 @@ class CytoDataFrame(pd.DataFrame):
         """
 
         volume, _dims = self._get_3d_volume_from_cell(row=row, column=column)
+        label_overlay = self._get_3d_label_overlay_from_cell(
+            row=row,
+            column=column,
+            expected_shape=volume.shape,
+        )
         html_content = self._generate_jupyter_dataframe_html()
 
         if backend is None:
@@ -2368,13 +3936,13 @@ class CytoDataFrame(pd.DataFrame):
         spacing = kwargs.pop("spacing", (1.0, 1.0, 1.0))
         opacity = kwargs.pop("opacity", "sigmoid")
         shade = kwargs.pop("shade", False)
-        widget_height = kwargs.pop("widget_height", "700px")
+        widget_height = kwargs.pop("widget_height", self._DEFAULT_TABLE_MAX_HEIGHT)
         table_width = kwargs.pop("table_width", "60%")
         view_width = kwargs.pop("view_width", "40%")
         table_max_height = kwargs.pop(
             "table_max_height",
             (self._custom_attrs.get("display_options") or {}).get(
-                "table_max_height", "700px"
+                "table_max_height", self._DEFAULT_TABLE_MAX_HEIGHT
             ),
         )
 
@@ -2385,6 +3953,7 @@ class CytoDataFrame(pd.DataFrame):
             spacing=spacing,
             opacity=opacity,
             shade=shade,
+            label_volume=label_overlay,
         )
 
         try:
@@ -2480,7 +4049,15 @@ class CytoDataFrame(pd.DataFrame):
         backend: Optional[str] = "trame",
         **kwargs: Any,
     ) -> Any:
-        """Render a widget-based table with 3D views embedded in columns."""
+        """Render a widget-based table with 3D views embedded in columns.
+
+        Use ``table_height`` (or ``table_max_height``) to override the default
+        notebook table height.
+
+        Row rendering follows pandas display limits. If the DataFrame is larger
+        than ``display.max_rows``, the widget table inserts a midpoint ellipsis
+        marker row (``…``) to indicate omitted rows.
+        """
 
         if backend is None:
             display_options = self._custom_attrs.get("display_options", {}) or {}
@@ -2547,13 +4124,27 @@ class CytoDataFrame(pd.DataFrame):
         )
         debug = kwargs.pop("debug", False)
 
+        table_height = _css_size(
+            kwargs.pop(
+                "table_height",
+                kwargs.pop(
+                    "table_max_height",
+                    display_options.get(
+                        "table_max_height", self._DEFAULT_TABLE_MAX_HEIGHT
+                    ),
+                ),
+            ),
+            self._DEFAULT_TABLE_MAX_HEIGHT,
+        )
+
         grid = widgets.GridspecLayout(
             len(display_rows) + 1,
             len(columns) + 1,
             layout=widgets.Layout(
-                width="auto",
+                width="100%",
                 max_width="100%",
-                max_height=_css_size(kwargs.pop("table_max_height", "700px"), "700px"),
+                height=table_height,
+                max_height=table_height,
                 overflow="auto",
             ),
         )
@@ -2627,6 +4218,11 @@ class CytoDataFrame(pd.DataFrame):
                         volume, _dims = self._get_3d_volume_from_cell(
                             row=row_label, column=col
                         )
+                        label_overlay = self._get_3d_label_overlay_from_cell(
+                            row=row_label,
+                            column=col,
+                            expected_shape=volume.shape,
+                        )
                         effective_height = (
                             row_height if widget_height == "100%" else widget_height
                         )
@@ -2634,6 +4230,7 @@ class CytoDataFrame(pd.DataFrame):
                             volume=volume,
                             backend=backend,
                             widget_height=effective_height,
+                            label_volume=label_overlay,
                         )
                         grid[row_idx, col_idx] = widgets.Box(
                             [viewer],
@@ -2854,6 +4451,42 @@ class CytoDataFrame(pd.DataFrame):
 
             # gather indices which will be displayed based on pandas configuration
             display_indices = CytoDataFrame(data).get_displayed_rows()
+            active_filter_columns = (
+                self._custom_attrs["_widget_state"].get("filter_columns") or []
+            )
+            active_filter_ranges = self._custom_attrs["_widget_state"].get(
+                "filter_ranges", {}
+            )
+            if (
+                not active_filter_columns
+                and self._custom_attrs["_widget_state"].get("filter_column") is not None
+            ):
+                active_filter_columns = [
+                    self._custom_attrs["_widget_state"].get("filter_column")
+                ]
+                if isinstance(
+                    self._custom_attrs["_widget_state"].get("filter_range"), tuple
+                ):
+                    active_filter_ranges = {
+                        str(active_filter_columns[0]): self._custom_attrs[
+                            "_widget_state"
+                        ].get("filter_range")
+                    }
+            if active_filter_columns and any(
+                isinstance(active_filter_ranges.get(str(col)), tuple)
+                for col in active_filter_columns
+            ):
+                full_filtered_indices = self._filter_display_indices_by_widget_range(
+                    data=data,
+                    display_indices=data.index.tolist(),
+                )
+                data = data.loc[full_filtered_indices]
+                display_indices = CytoDataFrame(data).get_displayed_rows()
+            else:
+                display_indices = self._filter_display_indices_by_widget_range(
+                    data=data,
+                    display_indices=display_indices,
+                )
 
             # gather bounding box columns for use below
             if self._custom_attrs["data_bounding_box"] is not None:
@@ -3009,9 +4642,23 @@ class CytoDataFrame(pd.DataFrame):
     def _render_output(self: CytoDataFrame_type) -> None:
         # Return a hidden div that nbconvert will keep but Jupyter will ignore
         html_content = self._generate_jupyter_dataframe_html()
-
-        with self._custom_attrs["_output"]:
-            display(HTML(html_content))
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        table_height = str(
+            display_options.get(
+                "table_height",
+                display_options.get("table_max_height", self._DEFAULT_TABLE_MAX_HEIGHT),
+            )
+        )
+        scroll_wrapped_html = (
+            "<div style='width:100%;max-width:100%;overflow:auto;"
+            f"max-height:{table_height};'>"
+            f"{html_content}</div>"
+        )
+        output_widget = self._custom_attrs["_output"]
+        if hasattr(output_widget, "clear_output"):
+            output_widget.clear_output(wait=True)
+        with output_widget:
+            display(HTML(scroll_wrapped_html))
             if "cyto-3d-image" in html_content and "data-volume" in html_content:
                 display(
                     Javascript(
@@ -3048,8 +4695,19 @@ class CytoDataFrame(pd.DataFrame):
         self: CytoDataFrame_type,
         volume: np.ndarray,
         dims: Tuple[int, int, int],
+        label_volume: Optional[np.ndarray] = None,
     ) -> Optional[str]:
-        """Render a static PyVista snapshot for a 3D volume."""
+        """Render a static PyVista snapshot for a 3D volume.
+
+        Args:
+            volume: Source volume in ``(z, y, x)`` order.
+            dims: Declared vtk dimensions for the volume.
+            label_volume: Optional binary label volume aligned to ``volume``.
+
+        Returns:
+            A PNG-backed ``<img>`` HTML string, or ``None`` if snapshot rendering
+            cannot be completed.
+        """
         try:
             import pyvista as pv  # type: ignore
         except Exception:
@@ -3139,6 +4797,15 @@ class CytoDataFrame(pd.DataFrame):
         except Exception as exc:
             logger.debug("Unable to configure snapshot mapper sampling: %s", exc)
 
+        self._add_label_overlay_to_plotter(
+            plotter=plotter,
+            volume=volume,
+            label_volume=label_volume,
+            spacing=spacing,
+            base_sample=base_sample,
+            display_options=display_options,
+        )
+
         try:
             img = plotter.screenshot(return_img=True)
             if img is None:
@@ -3206,7 +4873,15 @@ class CytoDataFrame(pd.DataFrame):
                         volume, dims = self._get_3d_volume_from_cell(
                             row=row.name, column=bound_image_col
                         )
-                        snapshot = self._pyvista_volume_snapshot_html(volume, dims)
+                        snapshot = self._pyvista_volume_snapshot_html(
+                            volume,
+                            dims,
+                            label_volume=self._get_3d_label_overlay_from_cell(
+                                row=row.name,
+                                column=bound_image_col,
+                                expected_shape=volume.shape,
+                            ),
+                        )
                         if cache_lock is not None:
                             with cache_lock:
                                 cache[key] = snapshot
@@ -3259,6 +4934,154 @@ class CytoDataFrame(pd.DataFrame):
             logger.debug("Failed to build trame snapshot HTML: %s", exc)
             return html_content
 
+    def _try_render_trame_widget_table(  # noqa: PLR0911
+        self: CytoDataFrame_type, debug: bool, display_options: dict[str, Any]
+    ) -> bool:
+        """Try rendering the trame widget table and return ``True`` on success."""
+        if debug:
+            return False
+        configured_filter_columns = display_options.get("filter_columns")
+        configured_filter_column = display_options.get("filter_column")
+        if isinstance(configured_filter_columns, (list, tuple)):
+            if len(configured_filter_columns) > 0:
+                return False
+        elif configured_filter_columns:
+            return False
+        if configured_filter_column:
+            return False
+        force_trame = display_options.get("view") == "trame"
+        auto_trame_for_3d = display_options.get("auto_trame_for_3d", True)
+        columns_3d = self._find_3d_columns_for_display() if auto_trame_for_3d else []
+        if not (force_trame or columns_3d):
+            return False
+        if force_trame and not columns_3d:
+            columns_3d = list(
+                dict.fromkeys(
+                    [
+                        *(self.find_image_columns() or []),
+                        *self.find_ome_arrow_columns(self),
+                    ]
+                )
+            )
+        if not columns_3d:
+            return False
+        try:
+            widget_table = self.show_widget_table(
+                column=columns_3d[0],
+                columns_3d=columns_3d,
+                backend=None,
+            )
+            display(widget_table)
+            html_content = self._generate_trame_snapshot_html()
+            details_html = (
+                '<details class="cyto-static-snapshot">'
+                "<summary>Static snapshot (for non-interactive view)</summary>"
+                f"{html_content}</details>"
+            )
+            display(HTML(details_html))
+            return True
+        except Exception as exc:
+            logger.debug(
+                "Trame widget table render failed, falling back to HTML: %s",
+                exc,
+            )
+            return False
+
+    def _render_notebook_widget_output(
+        self: CytoDataFrame_type, display_options: dict[str, Any]
+    ) -> None:
+        """Render ipywidgets controls and the notebook HTML table output."""
+        if not self._custom_attrs["_widget_state"].get(
+            "filter_readout_css_injected", False
+        ):
+            display(
+                HTML(
+                    "<style>"
+                    f".{FILTER_SLIDER_CSS_CLASS} .widget-readout,"
+                    f".{FILTER_SLIDER_CSS_CLASS} input.widget-readout {{"
+                    f"min-width:{FILTER_SLIDER_READOUT_WIDTH_PX}px !important;"
+                    f"max-width:{FILTER_SLIDER_READOUT_WIDTH_PX}px !important;"
+                    f"width:{FILTER_SLIDER_READOUT_WIDTH_PX}px !important;"
+                    "font-size:11px !important;"
+                    "text-align:right;"
+                    "font-family:ui-monospace, SFMono-Regular, Menlo, monospace;"
+                    "}"
+                    f".{FILTER_SLIDER_CSS_CLASS} .widget-label {{"
+                    "font-size:11px !important;"
+                    "line-height:1.2 !important;"
+                    "margin-top:8px !important;"
+                    "}"
+                    "</style>"
+                )
+            )
+            self._custom_attrs["_widget_state"]["filter_readout_css_injected"] = True
+
+        filter_sliders, filter_controls = self._build_filter_slider_controls()
+        filter_control: Optional[Any] = None
+        if len(filter_controls) == 1:
+            filter_control = widgets.VBox(
+                filter_controls,
+                layout=widgets.Layout(
+                    width=f"{FILTER_SLIDER_TOTAL_WIDTH_PX}px",
+                    align_items="stretch",
+                ),
+            )
+        elif len(filter_controls) >= MIN_POSITION_COMPONENTS:
+            accordion_content = widgets.VBox(
+                filter_controls,
+                layout=widgets.Layout(
+                    width=f"{FILTER_SLIDER_TOTAL_WIDTH_PX}px",
+                    align_items="stretch",
+                ),
+            )
+            accordion = widgets.Accordion(children=[accordion_content])
+            with contextlib.suppress(Exception):
+                accordion.set_title(0, "Filters")
+            accordion.selected_index = None
+            filter_control = accordion
+        controls: List[Any] = [self._custom_attrs["_scale_slider"]]
+        self._custom_attrs["_scale_slider"].layout = widgets.Layout(margin="10px 0 0 0")
+        if filter_control is not None:
+            controls.append(filter_control)
+        controls_row = widgets.HBox(controls)
+
+        if not self._custom_attrs["_widget_state"]["shown"]:
+            display(
+                widgets.VBox(
+                    [
+                        controls_row,
+                        self._custom_attrs["_output"],
+                    ]
+                )
+            )
+            self._show_output_loading_indicator(message="Loading table...")
+            if bool(display_options.get("show_static_snapshot_details", True)):
+                snapshot_html = self._generate_jupyter_dataframe_html()
+                details_html = (
+                    '<details class="cyto-static-snapshot">'
+                    "<summary>Static snapshot (for non-interactive view)</summary>"
+                    f"{snapshot_html}</details>"
+                )
+                display(HTML(details_html))
+            self._custom_attrs["_widget_state"]["shown"] = True
+
+        if not self._custom_attrs["_widget_state"]["observing"]:
+            self._custom_attrs["_scale_slider"].observe(
+                self._on_slider_change, names="value"
+            )
+            self._custom_attrs["_widget_state"]["observing"] = True
+        filter_observing = self._custom_attrs["_widget_state"].setdefault(
+            "filter_observing", {}
+        )
+        for filter_slider in filter_sliders:
+            filter_col = getattr(filter_slider, "_cyto_filter_column", None)
+            key = str(filter_col) if filter_col is not None else ""
+            if key and not filter_observing.get(key):
+                filter_slider.observe(self._on_filter_slider_change, names="value")
+                filter_observing[key] = True
+
+        self._render_output()
+
     def _repr_html_(self: CytoDataFrame_type, debug: bool = False) -> str:
         """
         Returns HTML representation of the underlying pandas DataFrame
@@ -3273,74 +5096,17 @@ class CytoDataFrame(pd.DataFrame):
         Returns:
             str: The data in a pandas DataFrame.
         """
-
         display_options = self._custom_attrs.get("display_options", {}) or {}
-        force_trame = display_options.get("view") == "trame"
-        auto_trame_for_3d = display_options.get("auto_trame_for_3d", True)
-        columns_3d = self._find_3d_columns_for_display() if auto_trame_for_3d else []
-        if (force_trame or columns_3d) and not debug:
-            if force_trame and not columns_3d:
-                columns_3d = list(
-                    dict.fromkeys(
-                        [
-                            *(self.find_image_columns() or []),
-                            *self.find_ome_arrow_columns(self),
-                        ]
-                    )
-                )
-            if columns_3d:
-                try:
-                    widget_table = self.show_widget_table(
-                        column=columns_3d[0],
-                        columns_3d=columns_3d,
-                        backend=None,
-                    )
-                    display(widget_table)
-                    html_content = self._generate_trame_snapshot_html()
-                    details_html = (
-                        '<details class="cyto-static-snapshot">'
-                        "<summary>Static snapshot (for non-interactive view)</summary>"
-                        f"{html_content}</details>"
-                    )
-                    display(HTML(details_html))
-                    return None
-                except Exception as exc:
-                    logger.debug(
-                        "Trame widget table render failed, falling back to HTML: %s",
-                        exc,
-                    )
-
-        # if we're in a notebook process as though in a jupyter environment
-        if get_option("display.notebook_repr_html") and not debug:
-            if not self._custom_attrs["_widget_state"]["shown"]:
-                display(
-                    widgets.VBox(
-                        [
-                            self._custom_attrs["_scale_slider"],
-                            self._custom_attrs["_output"],
-                        ]
-                    )
-                )
-                self._custom_attrs["_widget_state"]["shown"] = True
-
-            # Attach the slider observer exactly once
-            if not self._custom_attrs["_widget_state"]["observing"]:
-                self._custom_attrs["_scale_slider"].observe(
-                    self._on_slider_change, names="value"
-                )
-                self._custom_attrs["_widget_state"]["observing"] = True
-
-            # render fresh HTML for this cell
-            self._render_output()
-
-        # allow for debug mode to be set which returns the HTML
-        # without widgets.
-
-        elif debug:
-            return self._generate_jupyter_dataframe_html()
-
-        else:
+        if self._try_render_trame_widget_table(
+            debug=debug, display_options=display_options
+        ):
             return None
+        if get_option("display.notebook_repr_html") and not debug:
+            self._render_notebook_widget_output(display_options=display_options)
+            return None
+        if debug:
+            return self._generate_jupyter_dataframe_html()
+        return None
 
     def __repr__(self: CytoDataFrame_type, debug: bool = False) -> str:
         """

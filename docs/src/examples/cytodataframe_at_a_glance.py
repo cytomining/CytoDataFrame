@@ -45,6 +45,7 @@ frame = CytoDataFrame(
     [
         "Metadata_ImageNumber",
         "Cells_Number_Object_Number",
+        "Nuclei_Texture_Variance_RNA_5_03_256",
         "Image_FileName_OrigAGP",
         "Image_FileName_OrigDNA",
         "Image_FileName_OrigRNA",
@@ -306,6 +307,28 @@ CytoDataFrame(
 ][:3]
 
 # %%time
+# view nuclear speckles data with images and overlaid outlines from masks
+# and also apply a filter to only show rows where the value for
+# "Nuclei_Texture_Variance_DAPI_3_03_256".
+CytoDataFrame(
+    data=f"{nuclear_speckles_path}/test_slide1_converted.parquet",
+    data_context_dir=f"{nuclear_speckles_path}/images/plate1",
+    data_mask_context_dir=f"{nuclear_speckles_path}/masks/plate1",
+    display_options={
+        "filter_columns": ["Nuclei_Texture_Variance_DAPI_3_03_256"],
+    },
+)[
+    [
+        "Metadata_ImageNumber",
+        "Nuclei_Number_Object_Number",
+        "Nuclei_Texture_Variance_DAPI_3_03_256",
+        "Image_FileName_A647",
+        "Image_FileName_DAPI",
+        "Image_FileName_GOLD",
+    ]
+]
+
+# %%time
 # view ALSF pediatric cancer atlas plate BR00143976 with images
 cdf = CytoDataFrame(
     data=f"{pediatric_cancer_atlas_path}/BR00143976_shrunken.parquet",
@@ -351,6 +374,17 @@ cp_3d_path = "../../../tests/data/CP_tutorial_3D_noise_nuclei_segmentation"
 cdf = CytoDataFrame(
     data=pathlib.Path(cp_3d_path) / "output/MyExpt_RealsizeNuclei.csv",
     data_context_dir=str(pathlib.Path(cp_3d_path) / "input"),
+)
+
+cdf[["ImageNumber", "ObjectNumber", "FileName_Nuclei"]][:3]
+# +
+# %%time
+# read 3d images with segmentation masks and show the
+# segmentation masks are also 3D.
+cdf = CytoDataFrame(
+    data=pathlib.Path(cp_3d_path) / "output/MyExpt_RealsizeNuclei.csv",
+    data_context_dir=str(pathlib.Path(cp_3d_path) / "input"),
+    data_mask_context_dir=str(pathlib.Path(cp_3d_path) / "output/masks"),
 )
 
 cdf[["ImageNumber", "ObjectNumber", "FileName_Nuclei"]][:3]

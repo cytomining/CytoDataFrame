@@ -6,7 +6,7 @@
 [![Build Status](https://github.com/cytomining/CytoDataFrame/actions/workflows/run-tests.yml/badge.svg?branch=main)](https://github.com/cytomining/CytoDataFrame/actions/workflows/run-tests.yml?query=branch%3Amain)
 ![Coverage Status](https://raw.githubusercontent.com/cytomining/CytoDataFrame/main/media/coverage-badge.svg)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![Poetry](https://img.shields.io/endpoint?url=https://python-poetry.org/badge/v0.json)](https://python-poetry.org/)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![Software DOI badge](https://zenodo.org/badge/DOI/10.5281/zenodo.14797074.svg)](https://doi.org/10.5281/zenodo.14797074)
 
 ![](https://raw.githubusercontent.com/cytomining/coSMicQC/refs/heads/main/docs/presentations/2024-09-18-SBI2-Conference/images/cosmicqc-example-cytodataframe.png)
@@ -29,6 +29,12 @@ For 3D notebook display behavior:
 - 3D-aware rendering is enabled by default (`display_options={"auto_trame_for_3d": True}`).
 - Disable automatic trame switching with `display_options={"auto_trame_for_3d": False}`.
 - Force trame layout regardless of auto-detection with `display_options={"view": "trame"}`.
+
+For row display in notebook/widget tables:
+
+- CytoDataFrame respects pandas display settings (`display.max_rows`, `display.min_rows`).
+- When the table is larger than `display.max_rows`, the widget table inserts a midpoint ellipsis row (`…`) to indicate omitted rows.
+- You can control truncation behavior by changing pandas display options before rendering.
 
 📓 ___Want to see CytoDataFrame in action?___ Check out our [example notebook](docs/src/examples/cytodataframe_at_a_glance.ipynb) for a quick tour of its key features.
 

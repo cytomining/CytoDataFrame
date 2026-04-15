@@ -82,12 +82,13 @@ def _resolve_vtk_js_url(display_options: Optional[dict]) -> str:
     return str(configured) if configured else VTK_JS_CDN_URL
 
 
-def build_3d_image_html_view(
+def build_3d_image_html_view(  # noqa: C901, PLR0912, PLR0913, PLR0915
     volume: np.ndarray,
     dims: Tuple[int, int, int],
     data_value: str,
     candidate_path: pathlib.Path,
     display_options: Optional[dict],
+    label_volume: Optional[np.ndarray] = None,
 ) -> str:
     display_options = display_options or {}
     width = display_options.get("width", "300px")
@@ -111,19 +112,56 @@ def build_3d_image_html_view(
         max_inline_volume_bytes = DEFAULT_MAX_INLINE_VOLUME_BYTES
 
     volume_uint8 = np.array(volume, dtype=np.uint8, copy=True)
-    if volume_uint8.nbytes > max_inline_volume_bytes:
+    label_binary: Optional[np.ndarray] = None
+    if label_volume is not None:
+        label_arr = np.asarray(label_volume)
+        if label_arr.shape == volume_uint8.shape:
+            label_binary = np.where(label_arr > 0, 255, 0).astype(np.uint8, copy=False)
+
+    inline_payload_nbytes = volume_uint8.nbytes
+    if label_binary is not None:
+        inline_payload_nbytes += label_binary.nbytes
+    if inline_payload_nbytes > max_inline_volume_bytes:
         return build_3d_image_html_stub(
             data_value=data_value,
             candidate_path=candidate_path,
             display_options=display_options,
             message=(
                 "3D image too large for inline rendering "
-                f"({volume_uint8.nbytes} bytes > {max_inline_volume_bytes} bytes)"
+                f"({inline_payload_nbytes} bytes > {max_inline_volume_bytes} bytes)"
             ),
         )
 
     volume_bytes = volume_uint8.tobytes()
     volume_b64 = base64.b64encode(volume_bytes).decode("utf-8")
+    # Default to "no label overlay payload" unless label data is provided.
+    label_b64 = ""
+    # Default overlay tint is green in normalized RGB (0, 1, 0).
+    label_color_attr = "0,1,0"
+    # Default overlay opacity is 95%.
+    label_opacity_attr = "0.95"
+    if label_binary is not None:
+        label_b64 = base64.b64encode(label_binary.tobytes()).decode("utf-8")
+        overlay_color = display_options.get("label_overlay_color", (0, 255, 0))
+        if (
+            isinstance(overlay_color, (list, tuple))
+            and len(overlay_color) >= MIN_VOLUME_NDIM
+        ):
+            try:
+                color = np.asarray(overlay_color[:MIN_VOLUME_NDIM], dtype=np.float32)
+                if np.max(color, initial=0.0) > 1.0:
+                    color = np.clip(color / 255.0, 0.0, 1.0)
+                else:
+                    color = np.clip(color, 0.0, 1.0)
+                label_color_attr = ",".join(f"{float(v):.6f}" for v in color)
+            except Exception:
+                label_color_attr = "0,1,0"
+        try:
+            opacity = float(display_options.get("label_overlay_opacity", 0.95))
+            opacity = min(1.0, max(0.0, opacity))
+            label_opacity_attr = f"{opacity:.6f}"
+        except (TypeError, ValueError):
+            label_opacity_attr = "0.95"
     dims_attr = ",".join(str(value) for value in dims)
     element_id = f"cyto-3d-{uuid.uuid4().hex}"
     path_attr = html.escape(str(candidate_path), quote=True)
@@ -166,6 +204,9 @@ def build_3d_image_html_view(
         f'<div id="{element_id}" class="cyto-3d-image" '
         f'data-image-path="{path_attr}" data-image-value="{value_attr}" '
         f'data-volume="{volume_b64}" data-dims="{dims_attr}" '
+        f'data-label-volume="{label_b64}" '
+        f'data-label-color="{label_color_attr}" '
+        f'data-label-opacity="{label_opacity_attr}" '
         f'style="{html_style_joined}">'
         f"{fallback_html}</div>"
         + build_3d_vtk_js_script(element_id, vtk_js_url=vtk_js_url)
@@ -186,6 +227,7 @@ def build_3d_vtk_js_script(element_id: str, vtk_js_url: Optional[str] = None) ->
         "const raw=atob(container.dataset.volume);"
         "const bytes=new Uint8Array(raw.length);"
         "for(let i=0;i<raw.length;i+=1){bytes[i]=raw.charCodeAt(i);}"
+        "const labelRawB64=container.dataset.labelVolume||'';"
         "const vtk=window.vtk;"
         f"{_build_vtk_js_renderer_core(include_container_size=False)}"
         "};"
@@ -209,6 +251,8 @@ def build_3d_vtk_js_script(element_id: str, vtk_js_url: Optional[str] = None) ->
 
 
 def _build_vtk_js_renderer_core(*, include_container_size: bool) -> str:
+    # NOTE: This function returns JavaScript source (as a Python string) that runs
+    # in the notebook/browser to render VTK.js volumes.
     size_config = ""
     if include_container_size:
         size_config = (
@@ -252,6 +296,48 @@ def _build_vtk_js_renderer_core(*, include_container_size: bool) -> str:
         ".newInstance();"
         "interactor.setInteractorStyle(style);"
         "renderer.addVolume(volume);"
+        "/* Decode and render optional label-overlay volume client-side. */"
+        "if(labelRawB64){"
+        "const labelRaw=atob(labelRawB64);"
+        "if(labelRaw.length===bytes.length){"
+        "const labelBytes=new Uint8Array(labelRaw.length);"
+        "for(let i=0;i<labelRaw.length;i+=1){labelBytes[i]=labelRaw.charCodeAt(i);}"
+        "const labelData=vtk.Common.DataModel.vtkImageData.newInstance();"
+        "labelData.setDimensions(dims);"
+        "labelData.getPointData().setScalars("
+        "vtk.Common.Core.vtkDataArray.newInstance({"
+        "name:'LabelScalars',values:labelBytes,numberOfComponents:1"
+        "})"
+        ");"
+        "const labelMapper=vtk.Rendering.Core.vtkVolumeMapper.newInstance();"
+        "labelMapper.setInputData(labelData);"
+        "if(labelMapper.setBlendModeToMaximumIntensity){"
+        "labelMapper.setBlendModeToMaximumIntensity();"
+        "}"
+        "const labelVolume=vtk.Rendering.Core.vtkVolume.newInstance();"
+        "labelVolume.setMapper(labelMapper);"
+        "const labelColor=(container.dataset.labelColor||'0,1,0')"
+        ".split(',').map(Number);"
+        "const r=Math.min(1,Math.max(0,labelColor[0]||0));"
+        "const g=Math.min(1,Math.max(0,labelColor[1]||0));"
+        "const b=Math.min(1,Math.max(0,labelColor[2]||0));"
+        "const labelOpacityRaw=Number(container.dataset.labelOpacity||0.95);"
+        "const labelOpacity=Math.min(1,Math.max(0,labelOpacityRaw));"
+        "const labelCtfun=vtk.Rendering.Core.vtkColorTransferFunction.newInstance();"
+        "labelCtfun.addRGBPoint(0,0,0,0);"
+        "labelCtfun.addRGBPoint(1,r,g,b);"
+        "labelCtfun.addRGBPoint(255,r,g,b);"
+        "const labelOfun=vtk.Common.DataModel.vtkPiecewiseFunction.newInstance();"
+        "labelOfun.addPoint(0,0.0);"
+        "labelOfun.addPoint(1,labelOpacity);"
+        "labelOfun.addPoint(255,labelOpacity);"
+        "labelVolume.getProperty().setRGBTransferFunction(0,labelCtfun);"
+        "labelVolume.getProperty().setScalarOpacity(0,labelOfun);"
+        "labelVolume.getProperty().setShade(false);"
+        "labelVolume.getProperty().setInterpolationTypeToNearest();"
+        "renderer.addVolume(labelVolume);"
+        "}"
+        "}"
         "renderer.resetCamera();"
         "renderWindow.render();"
     )
@@ -268,6 +354,7 @@ def build_3d_vtk_js_initializer(display_options: Optional[dict] = None) -> str:
         "const raw=atob(container.dataset.volume);"
         "const bytes=new Uint8Array(raw.length);"
         "for(let i=0;i<raw.length;i+=1){bytes[i]=raw.charCodeAt(i);}"
+        "const labelRawB64=container.dataset.labelVolume||'';"
         "const vtk=window.vtk;"
         f"{_build_vtk_js_renderer_core(include_container_size=True)}"
         "};"

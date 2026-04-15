@@ -4,8 +4,10 @@ Tests cosmicqc CytoDataFrame module
 
 import logging
 import pathlib
+import re
 import sys
 import types
+import warnings
 from collections import OrderedDict
 from contextlib import nullcontext
 from importlib.machinery import ModuleSpec
@@ -19,7 +21,13 @@ import tifffile
 from _pytest.monkeypatch import MonkeyPatch
 from pyarrow import parquet
 
-from cytodataframe.frame import CytoDataFrame
+from cytodataframe.frame import (
+    FILTER_SLIDER_LABEL_WIDTH_PX,
+    FILTER_SLIDER_READOUT_WIDTH_PX,
+    FILTER_SLIDER_TOTAL_WIDTH_PX,
+    MAX_FILTER_SLIDER_STOPS,
+    CytoDataFrame,
+)
 from tests.utils import (
     cytodataframe_image_display_contains_pixels,
 )
@@ -282,6 +290,173 @@ def test_prepare_layers_3d_uses_loaded_volume_without_ome_arrow_fallback(
     html_value = layers.get(CytoDataFrame._HTML_3D_STUB_KEY)
     assert isinstance(html_value, str)
     assert "data-volume=" in html_value
+
+
+def test_prepare_layers_3d_includes_label_overlay_from_mask_dir(
+    tmp_path: pathlib.Path,
+) -> None:
+    volume = np.arange(4 * 5 * 6, dtype=np.uint8).reshape(4, 5, 6)
+    image_path = tmp_path / "vol3d.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    mask_dir = tmp_path / "masks"
+    mask_dir.mkdir()
+    label = np.zeros((4, 5, 6), dtype=np.uint8)
+    label[1:3, 2:4, 1:5] = 255
+    tifffile.imwrite(mask_dir / "vol3d_mask.tiff", label)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+        data_mask_context_dir=str(mask_dir),
+    )
+
+    layers = cdf._prepare_cropped_image_layers(
+        data_value=image_path.name,
+        bounding_box=(0, 0, 6, 5),
+        include_composite=False,
+        include_original=False,
+        include_mask_outline=False,
+    )
+
+    html_value = layers.get(CytoDataFrame._HTML_3D_STUB_KEY)
+    assert isinstance(html_value, str)
+    assert "data-volume=" in html_value
+    assert 'data-label-volume="' in html_value
+
+
+def test_get_3d_label_overlay_from_cell_applies_bbox_crop(
+    tmp_path: pathlib.Path,
+) -> None:
+    volume = np.arange(4 * 5 * 6, dtype=np.uint8).reshape(4, 5, 6)
+    image_path = tmp_path / "vol3d.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    mask_dir = tmp_path / "masks"
+    mask_dir.mkdir()
+    label = np.zeros((4, 5, 6), dtype=np.uint8)
+    label[1:3, 1:4, 1:5] = 255
+    tifffile.imwrite(mask_dir / "vol3d_mask.tiff", label)
+
+    data = pd.DataFrame(
+        {
+            "Image_FileName_DNA": [image_path.name],
+            "AreaShape_BoundingBoxMinimum_X": [1],
+            "AreaShape_BoundingBoxMaximum_X": [5],
+            "AreaShape_BoundingBoxMinimum_Y": [1],
+            "AreaShape_BoundingBoxMaximum_Y": [4],
+            "AreaShape_BoundingBoxMinimum_Z": [1],
+            "AreaShape_BoundingBoxMaximum_Z": [3],
+        }
+    )
+    cdf = CytoDataFrame(
+        data=data,
+        data_context_dir=str(tmp_path),
+        data_mask_context_dir=str(mask_dir),
+    )
+
+    cropped_volume, _ = cdf._get_3d_volume_from_cell(row=0, column="Image_FileName_DNA")
+    overlay = cdf._get_3d_label_overlay_from_cell(
+        row=0,
+        column="Image_FileName_DNA",
+        expected_shape=cropped_volume.shape,
+    )
+
+    assert overlay is not None
+    assert overlay.shape == cropped_volume.shape
+    assert overlay.dtype == np.uint8
+    assert overlay.max() == 255
+
+
+def test_get_3d_bbox_crop_bounds_prefers_cellprofiler_columns() -> None:
+    cdf = CytoDataFrame(
+        data=pd.DataFrame(
+            {
+                "Other_Minimum_X": [0],
+                "Other_Maximum_X": [10],
+                "Other_Minimum_Y": [0],
+                "Other_Maximum_Y": [10],
+                "Cells_AreaShape_BoundingBoxMinimum_X": [2],
+                "Cells_AreaShape_BoundingBoxMaximum_X": [6],
+                "Cells_AreaShape_BoundingBoxMinimum_Y": [3],
+                "Cells_AreaShape_BoundingBoxMaximum_Y": [7],
+                "Cells_AreaShape_BoundingBoxMinimum_Z": [1],
+                "Cells_AreaShape_BoundingBoxMaximum_Z": [4],
+            }
+        )
+    )
+
+    bounds = cdf._get_3d_bbox_crop_bounds(row=0, volume_shape=(8, 8, 8))
+
+    assert bounds == (2, 6, 3, 7, 1, 4)
+
+
+def test_get_3d_bbox_crop_bounds_accepts_custom_column_map() -> None:
+    cdf = CytoDataFrame(
+        data=pd.DataFrame(
+            {
+                "bbox_x0": [1],
+                "bbox_x1": [5],
+                "bbox_y0": [2],
+                "bbox_y1": [6],
+                "bbox_z0": [0],
+                "bbox_z1": [3],
+            }
+        ),
+        display_options={
+            "volume_bbox_column_map": {
+                "x_min": "bbox_x0",
+                "x_max": "bbox_x1",
+                "y_min": "bbox_y0",
+                "y_max": "bbox_y1",
+                "z_min": "bbox_z0",
+                "z_max": "bbox_z1",
+            }
+        },
+    )
+
+    bounds = cdf._get_3d_bbox_crop_bounds(row=0, volume_shape=(8, 8, 8))
+
+    assert bounds == (1, 5, 2, 6, 0, 3)
+
+
+def test_find_matching_segmentation_path_filters_by_image_identifier(
+    tmp_path: pathlib.Path,
+) -> None:
+    mask_dir = tmp_path / "masks"
+    mask_dir.mkdir()
+    (mask_dir / "img_a_mask.tiff").write_bytes(b"")
+    (mask_dir / "img_b_mask.tiff").write_bytes(b"")
+
+    matched = CytoDataFrame._find_matching_segmentation_path(
+        data_value="img_a.tiff",
+        pattern_map={r".*_mask\.tiff$": r".*"},
+        file_dir=str(mask_dir),
+        candidate_path=pathlib.Path("img_a.tiff"),
+    )
+
+    assert matched is not None
+    assert matched.name == "img_a_mask.tiff"
+
+
+def test_find_matching_segmentation_path_prefers_candidate_parent_tree(
+    tmp_path: pathlib.Path,
+) -> None:
+    mask_dir = tmp_path / "masks"
+    (mask_dir / "plate_a").mkdir(parents=True)
+    (mask_dir / "plate_b").mkdir(parents=True)
+    (mask_dir / "plate_a" / "nuclei1_mask.tiff").write_bytes(b"")
+    (mask_dir / "plate_b" / "nuclei1_mask.tiff").write_bytes(b"")
+
+    matched = CytoDataFrame._find_matching_segmentation_path(
+        data_value="plate_a/nuclei1.tiff",
+        pattern_map={r".*_mask\.tiff$": r".*"},
+        file_dir=str(mask_dir),
+        candidate_path=pathlib.Path("/tmp/plate_a/nuclei1.tiff"),
+    )
+
+    assert matched is not None
+    assert matched.parent.name == "plate_a"
 
 
 def test_cytodataframe_input(
@@ -675,11 +850,16 @@ def test_slider_updates_state(monkeypatch: MonkeyPatch):
 
     # Track render calls using monkeypatch or a flag
     render_called = {}
+    loading_called = {}
 
     def mock_render_output() -> None:
         render_called["called"] = True
 
+    def mock_show_loading() -> None:
+        loading_called["called"] = True
+
     monkeypatch.setattr(cdf, "_render_output", mock_render_output)
+    monkeypatch.setattr(cdf, "_show_output_loading_indicator", mock_show_loading)
 
     # Call the method manually
     cdf._on_slider_change(change)
@@ -689,6 +869,387 @@ def test_slider_updates_state(monkeypatch: MonkeyPatch):
 
     # Check if the render method was triggered
     assert render_called.get("called", False)
+    assert loading_called.get("called", False)
+
+
+def test_filter_slider_updates_state(monkeypatch: MonkeyPatch):
+    """Test that the filter slider updates internal state and triggers render."""
+    cdf = CytoDataFrame(
+        pd.DataFrame({"Image_FileName_DNA": ["example.tif"], "AreaShape_Area": [2.0]}),
+        display_options={"filter_column": "AreaShape_Area"},
+    )
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "AreaShape_Area"
+    render_called = {}
+    loading_called = {}
+
+    def mock_render_output() -> None:
+        render_called["called"] = True
+
+    def mock_show_loading() -> None:
+        loading_called["called"] = True
+
+    monkeypatch.setattr(cdf, "_render_output", mock_render_output)
+    monkeypatch.setattr(cdf, "_show_output_loading_indicator", mock_show_loading)
+    cdf._on_filter_slider_change({"new": (1.5, 2.5)})
+
+    assert cdf._custom_attrs["_widget_state"]["filter_range"] == (1.5, 2.5)
+    assert render_called.get("called", False)
+    assert loading_called.get("called", False)
+
+
+def test_filter_display_indices_by_widget_range() -> None:
+    cdf = CytoDataFrame(pd.DataFrame({"FilterScore": [1.0, 2.0, 3.0]}))
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_range"] = (1.5, 2.5)
+
+    filtered = cdf._filter_display_indices_by_widget_range(
+        data=cdf, display_indices=[0, 1, 2]
+    )
+
+    assert filtered == [1]
+
+
+def test_filter_display_indices_by_widget_range_multiple_columns() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "FilterScoreA": [1.0, 2.0, 3.0, 4.0],
+                "FilterScoreB": [10.0, 20.0, 30.0, 40.0],
+            }
+        )
+    )
+    cdf._custom_attrs["_widget_state"]["filter_columns"] = [
+        "FilterScoreA",
+        "FilterScoreB",
+    ]
+    cdf._custom_attrs["_widget_state"]["filter_ranges"] = {
+        "FilterScoreA": (1.5, 3.5),
+        "FilterScoreB": (15.0, 35.0),
+    }
+
+    filtered = cdf._filter_display_indices_by_widget_range(
+        data=cdf, display_indices=[0, 1, 2, 3]
+    )
+
+    assert filtered == [1, 2]
+
+
+def test_filter_display_indices_by_widget_range_preserves_duplicate_labels() -> None:
+    cdf = CytoDataFrame(pd.DataFrame({"FilterScore": [1.0, 2.0, 3.0]}, index=[0, 0, 1]))
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_range"] = (0.5, 2.5)
+
+    filtered = cdf._filter_display_indices_by_widget_range(
+        data=cdf, display_indices=[0, 0, 0, 1]
+    )
+
+    assert filtered == [0, 0]
+
+
+def test_filter_slider_rounds_labels_but_preserves_values() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [0.0123, 0.456, 9.87]}),
+        display_options={"filter_column": "FilterScore"},
+    )
+
+    slider = cdf._ensure_filter_range_slider()
+
+    assert isinstance(slider, widgets.SelectionRangeSlider)
+    assert "cdf-filter-range-slider" in getattr(slider, "_dom_classes", ())
+    options = list(slider.options)
+    assert options == [("0.01", 0.0123), ("0.46", 0.456), ("9.87", 9.87)]
+
+
+def test_get_filter_slider_columns_falls_back_to_single_when_many_is_empty() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [1.0, 2.0]}),
+        display_options={"filter_columns": [], "filter_column": "FilterScore"},
+    )
+
+    columns = cdf._get_filter_slider_columns()
+
+    assert columns == ["FilterScore"]
+
+
+def test_filter_slider_caps_option_count_for_near_unique_values() -> None:
+    values = np.arange(MAX_FILTER_SLIDER_STOPS + 200, dtype=np.float64)
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": values}),
+        display_options={"filter_column": "FilterScore"},
+    )
+
+    slider = cdf._ensure_filter_range_slider()
+
+    assert isinstance(slider, widgets.SelectionRangeSlider)
+    options = list(slider.options)
+    assert len(options) == MAX_FILTER_SLIDER_STOPS
+    assert options[0][1] == float(values.min())
+    assert options[-1][1] == float(values.max())
+    option_vals = np.array([float(option[1]) for option in options], dtype=np.float64)
+    deltas = np.diff(option_vals)
+    assert np.all(deltas > 0)
+    assert np.allclose(deltas, deltas[0], rtol=1e-6, atol=1e-12)
+    assert slider.value == (float(values.min()), float(values.max()))
+
+
+def test_filter_slider_reuses_cached_widget_instance() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [1.0, 2.0, 3.0]}),
+        display_options={"filter_column": "FilterScore"},
+    )
+
+    first_slider = cdf._ensure_filter_range_slider(filter_col="FilterScore")
+    assert isinstance(first_slider, widgets.SelectionRangeSlider)
+    first_options = list(first_slider.options)
+    assert first_options[-1][1] == 3.0
+
+    cdf.loc[:, "FilterScore"] = [1.0, 2.0, 4.0]
+    second_slider = cdf._ensure_filter_range_slider(filter_col="FilterScore")
+
+    assert isinstance(second_slider, widgets.SelectionRangeSlider)
+    assert second_slider is first_slider
+    second_options = list(second_slider.options)
+    assert second_options[-1][1] == 4.0
+
+
+def test_filter_distribution_constant_values_stays_centered() -> None:
+    html = CytoDataFrame._build_filter_distribution_html(
+        values=pd.Series([0.47, 0.47, 0.47, 0.47]),
+        selected_range=(0.47, 0.47),
+        size_px=(FILTER_SLIDER_TOTAL_WIDTH_PX, 52),
+        track_padding_px=(
+            FILTER_SLIDER_LABEL_WIDTH_PX,
+            FILTER_SLIDER_READOUT_WIDTH_PX,
+        ),
+    )
+
+    match = re.search(r"<polyline[^>]*points='([^']+)'", html)
+    assert match is not None
+    points = [
+        (float(part.split(",")[0]), float(part.split(",")[1]))
+        for part in match.group(1).split()
+    ]
+    peak_x = min(points, key=lambda point: point[1])[0]
+    track_left = float(FILTER_SLIDER_LABEL_WIDTH_PX)
+    track_right = float(FILTER_SLIDER_TOTAL_WIDTH_PX - FILTER_SLIDER_READOUT_WIDTH_PX)
+    track_mid = (track_left + track_right) / 2.0
+    assert abs(peak_x - track_mid) < 30.0
+
+
+def test_filter_slider_control_renders_threshold_line() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [1.0, 2.0, 3.0]}),
+        display_options={
+            "filter_column": "FilterScore",
+            "filter_plot_threshold": 2.0,
+        },
+    )
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_ranges"] = {"FilterScore": (1.0, 3.0)}
+
+    _slider, control = cdf._build_filter_slider_control_for_column("FilterScore")
+
+    assert isinstance(control, widgets.VBox)
+    assert isinstance(control.children[0], widgets.HTML)
+    assert "stroke='#dc2626'" in control.children[0].value
+    assert "y1='6.00'" in control.children[0].value
+    assert "y2='22.00'" in control.children[0].value
+
+
+def test_filter_slider_control_warns_and_clamps_out_of_range_threshold(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [1.0, 2.0, 3.0]}),
+        display_options={
+            "filter_column": "FilterScore",
+            "filter_plot_threshold": 9.0,
+        },
+    )
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_ranges"] = {"FilterScore": (1.0, 3.0)}
+
+    with caplog.at_level(logging.WARNING):
+        _slider, control = cdf._build_filter_slider_control_for_column("FilterScore")
+
+    assert isinstance(control, widgets.VBox)
+    assert isinstance(control.children[0], widgets.HTML)
+    assert "stroke='#dc2626'" in control.children[0].value
+    assert "outside data range" in caplog.text
+
+
+def test_filter_slider_control_ignores_non_numeric_threshold(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [1.0, 2.0, 3.0]}),
+        display_options={
+            "filter_column": "FilterScore",
+            "filter_plot_threshold": "not-a-number",
+        },
+    )
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_ranges"] = {"FilterScore": (1.0, 3.0)}
+
+    with caplog.at_level(logging.WARNING):
+        _slider, control = cdf._build_filter_slider_control_for_column("FilterScore")
+
+    assert isinstance(control, widgets.VBox)
+    assert isinstance(control.children[0], widgets.HTML)
+    assert "stroke='#dc2626'" not in control.children[0].value
+    assert "is not numeric" in caplog.text
+
+
+def test_filter_slider_threshold_key_match_is_case_and_whitespace_tolerant() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [1.0, 2.0, 3.0]}),
+        display_options={
+            "filter_column": "FilterScore",
+            "filter_plot_thresholds": {"  filterscore  ": 2.0},
+        },
+    )
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_ranges"] = {"FilterScore": (1.0, 3.0)}
+
+    _slider, control = cdf._build_filter_slider_control_for_column("FilterScore")
+
+    assert isinstance(control, widgets.VBox)
+    assert isinstance(control.children[0], widgets.HTML)
+    assert "stroke='#dc2626'" in control.children[0].value
+
+
+def test_filter_slider_threshold_aligns_with_selection_slider_domain() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [0.0, 1.0, 100.0]}),
+        display_options={
+            "filter_column": "FilterScore",
+            "filter_plot_threshold": 1.0,
+        },
+    )
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_ranges"] = {"FilterScore": (0.0, 100.0)}
+
+    _slider, control = cdf._build_filter_slider_control_for_column("FilterScore")
+    assert isinstance(control, widgets.VBox)
+    assert isinstance(control.children[0], widgets.HTML)
+    html = control.children[0].value
+    x_match = re.search(r"x1='([0-9.]+)' y1='[0-9.]+'", html)
+    assert x_match is not None
+    x_val = float(x_match.group(1))
+
+    track_left = float(FILTER_SLIDER_LABEL_WIDTH_PX)
+    track_right = float(FILTER_SLIDER_TOTAL_WIDTH_PX - FILTER_SLIDER_READOUT_WIDTH_PX)
+    track_mid = (track_left + track_right) / 2.0
+    assert abs(x_val - track_mid) < 8.0
+
+
+def test_filter_distribution_is_not_flat_for_clustered_values() -> None:
+    html = CytoDataFrame._build_filter_distribution_html(
+        values=pd.Series([0.0] * 60 + [0.1] * 30 + [2.0] * 10),
+        selected_range=(0.0, 100.0),
+        size_px=(FILTER_SLIDER_TOTAL_WIDTH_PX, 52),
+        track_padding_px=(
+            FILTER_SLIDER_LABEL_WIDTH_PX,
+            FILTER_SLIDER_READOUT_WIDTH_PX,
+        ),
+    )
+    match = re.search(r"<polyline[^>]*points='([^']+)'", html)
+    assert match is not None
+    ys = [float(part.split(",")[1]) for part in match.group(1).split()]
+    assert max(ys) - min(ys) > 2.0
+
+
+def test_filter_distribution_avoids_runtime_warnings_for_large_ranges() -> None:
+    values = pd.Series(
+        np.concatenate(
+            [
+                np.full(2000, 0.0),
+                np.full(1500, 1.0),
+                np.linspace(2.0, 5000.0, 2000),
+            ]
+        )
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        html = CytoDataFrame._build_filter_distribution_html(
+            values=values,
+            selected_range=(0.0, 5000.0),
+            size_px=(FILTER_SLIDER_TOTAL_WIDTH_PX, 52),
+            track_padding_px=(
+                FILTER_SLIDER_LABEL_WIDTH_PX,
+                FILTER_SLIDER_READOUT_WIDTH_PX,
+            ),
+        )
+
+    runtime_warnings = [
+        warning for warning in caught if issubclass(warning.category, RuntimeWarning)
+    ]
+    assert html
+    assert not runtime_warnings
+
+
+def test_generate_html_removes_rows_outside_filter_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "Label": ["keep-row", "drop-row"],
+                "FilterScore": [2.0, 9.0],
+            }
+        ),
+        display_options={"filter_column": "FilterScore"},
+    )
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_range"] = (1.5, 2.5)
+
+    options = {
+        "display.notebook_repr_html": True,
+        "display.max_rows": 10,
+        "display.min_rows": 10,
+        "display.max_columns": 10,
+        "display.show_dimensions": False,
+    }
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda name: options[name])
+
+    html = cdf._generate_jupyter_dataframe_html()
+
+    assert "keep-row" in html
+    assert "drop-row" not in html
+
+
+def test_generate_html_filters_full_frame_before_display_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    labels = [f"row-{idx}" for idx in range(20)]
+    scores = [0.0] * 20
+    labels[10] = "middle-keep"
+    scores[10] = 5.0
+
+    cdf = CytoDataFrame(
+        pd.DataFrame({"Label": labels, "FilterScore": scores}),
+        display_options={"filter_column": "FilterScore"},
+    )
+    cdf._custom_attrs["_widget_state"]["filter_column"] = "FilterScore"
+    cdf._custom_attrs["_widget_state"]["filter_range"] = (4.9, 5.1)
+    cdf._custom_attrs["_widget_state"]["filter_columns"] = ["FilterScore"]
+    cdf._custom_attrs["_widget_state"]["filter_ranges"] = {"FilterScore": (4.9, 5.1)}
+
+    options = {
+        "display.notebook_repr_html": True,
+        "display.max_rows": 8,
+        "display.min_rows": 4,
+        "display.max_columns": 10,
+        "display.show_dimensions": False,
+    }
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda name: options[name])
+    monkeypatch.setattr("pandas.get_option", lambda name: options[name])
+
+    html = cdf._generate_jupyter_dataframe_html()
+
+    assert "middle-keep" in html
+    assert "row-0" not in html
+    assert "row-19" not in html
 
 
 def test_get_3d_volume_from_cell_loads_3d_tiff(tmp_path: pathlib.Path) -> None:
@@ -972,6 +1533,143 @@ def test_repr_html_force_trame_falls_back_to_candidate_columns(
     assert displayed
 
 
+def test_repr_html_trame_with_filter_columns_uses_notebook_widget_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "Image_FileName_DNA": ["volume.tiff"],
+                "FilterScoreA": [1.0],
+                "FilterScoreB": [2.0],
+            }
+        ),
+        display_options={
+            "view": "trame",
+            "filter_columns": ["FilterScoreA", "FilterScoreB"],
+        },
+    )
+    calls = {"show_widget_table": 0, "render_notebook": 0}
+
+    monkeypatch.setattr(
+        cdf, "_find_3d_columns_for_display", lambda: ["Image_FileName_DNA"]
+    )
+
+    def fake_show_widget_table(**_kwargs: object) -> str:
+        calls["show_widget_table"] += 1
+        return "widget_table"
+
+    def fake_render_notebook_widget_output(**_kwargs: object) -> None:
+        calls["render_notebook"] += 1
+
+    monkeypatch.setattr(cdf, "show_widget_table", fake_show_widget_table)
+    monkeypatch.setattr(
+        cdf, "_render_notebook_widget_output", fake_render_notebook_widget_output
+    )
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda _name: True)
+
+    assert cdf._repr_html_() is None
+    assert calls["show_widget_table"] == 0
+    assert calls["render_notebook"] == 1
+
+
+def test_repr_html_2d_displays_static_snapshot_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
+    displayed: list[object] = []
+
+    monkeypatch.setattr(cdf, "_find_3d_columns_for_display", lambda: [])
+    monkeypatch.setattr(cdf, "_render_output", lambda: None)
+    monkeypatch.setattr(cdf, "_generate_jupyter_dataframe_html", lambda: "<table/>")
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda _name: True)
+
+    def capture_display(value: object) -> None:
+        displayed.append(value)
+
+    monkeypatch.setattr("cytodataframe.frame.display", capture_display)
+
+    assert cdf._repr_html_() is None
+    html_blocks = [
+        str(getattr(widget, "data", ""))
+        for widget in displayed
+        if hasattr(widget, "data")
+    ]
+    assert any("cyto-static-snapshot" in block for block in html_blocks)
+
+
+def test_repr_html_2d_places_filter_slider_next_to_image_adjustment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame({"FilterScore": [1.0, 2.0, 3.0]}),
+        display_options={"filter_column": "FilterScore"},
+    )
+    displayed: list[object] = []
+
+    monkeypatch.setattr(cdf, "_find_3d_columns_for_display", lambda: [])
+    monkeypatch.setattr(cdf, "_render_output", lambda: None)
+    monkeypatch.setattr(cdf, "_generate_jupyter_dataframe_html", lambda: "<table/>")
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda _name: True)
+
+    def capture_display(value: object) -> None:
+        displayed.append(value)
+
+    monkeypatch.setattr("cytodataframe.frame.display", capture_display)
+
+    assert cdf._repr_html_() is None
+
+    container = next(widget for widget in displayed if isinstance(widget, widgets.VBox))
+    controls_row = container.children[0]
+    assert isinstance(controls_row, widgets.HBox)
+    assert len(controls_row.children) == 2
+    filter_wrapper = controls_row.children[1]
+    assert isinstance(filter_wrapper, widgets.VBox)
+    assert len(filter_wrapper.children) == 1
+    filter_control = filter_wrapper.children[0]
+    assert isinstance(filter_control, widgets.VBox)
+    assert isinstance(filter_control.children[0], widgets.HTML)
+    assert "<svg " in filter_control.children[0].value
+    assert isinstance(filter_control.children[1], widgets.SelectionRangeSlider)
+
+
+def test_repr_html_2d_uses_accordion_for_multiple_filter_columns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "FilterScoreA": [1.0, 2.0, 3.0],
+                "FilterScoreB": [10.0, 20.0, 30.0],
+            }
+        ),
+        display_options={"filter_columns": ["FilterScoreA", "FilterScoreB"]},
+    )
+    displayed: list[object] = []
+
+    monkeypatch.setattr(cdf, "_find_3d_columns_for_display", lambda: [])
+    monkeypatch.setattr(cdf, "_render_output", lambda: None)
+    monkeypatch.setattr(cdf, "_generate_jupyter_dataframe_html", lambda: "<table/>")
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda _name: True)
+
+    def capture_display(value: object) -> None:
+        displayed.append(value)
+
+    monkeypatch.setattr("cytodataframe.frame.display", capture_display)
+
+    assert cdf._repr_html_() is None
+
+    container = next(widget for widget in displayed if isinstance(widget, widgets.VBox))
+    controls_row = container.children[0]
+    assert isinstance(controls_row, widgets.HBox)
+    assert len(controls_row.children) == 2
+    accordion = controls_row.children[1]
+    assert isinstance(accordion, widgets.Accordion)
+    assert len(accordion.children) == 1
+    assert isinstance(accordion.children[0], widgets.VBox)
+    assert len(accordion.children[0].children) == 2
+
+
 def test_is_notebook_or_lab_detects_zmq_shell(monkeypatch: pytest.MonkeyPatch) -> None:
     zmq_shell = type("ZMQInteractiveShell", (), {})()
     monkeypatch.setattr("cytodataframe.frame.get_ipython", lambda: zmq_shell)
@@ -1019,6 +1717,9 @@ def test_show_widget_table_renders_fallback_when_3d_fails():
     # Header + 2 rows, index + 2 columns
     assert grid.n_rows == 3
     assert grid.n_columns == 3
+    assert grid.layout.width == "100%"
+    assert grid.layout.height == "700px"
+    assert grid.layout.overflow == "auto"
     assert "3D render failed" in grid[1, 1].value
     assert "\u2026" in grid[2, 1].value
 
@@ -1056,6 +1757,11 @@ def test_show_widget_table_renders_3d_viewer_cells_successfully(
         "_get_3d_volume_from_cell",
         lambda row, column: (np.ones((2, 2, 2), dtype=np.uint8), (2, 2, 2)),
     )
+    monkeypatch.setattr(
+        cdf,
+        "_get_3d_label_overlay_from_cell",
+        lambda row, column, expected_shape: np.ones(expected_shape, dtype=np.uint8),
+    )
 
     captured: dict[str, object] = {}
 
@@ -1082,6 +1788,9 @@ def test_show_widget_table_renders_3d_viewer_cells_successfully(
     assert "…" in grid[2, 1].value
     assert captured["backend"] == "trame"
     assert captured["widget_height"] == "140px"
+    assert isinstance(captured.get("label_volume"), np.ndarray)
+    assert isinstance(grid[1, 1], widgets.Box)
+    assert len(grid[1, 1].children) == 1
 
 
 def test_get_displayed_rows_when_under_limit(monkeypatch: pytest.MonkeyPatch):
@@ -1171,6 +1880,9 @@ def _install_fake_pyvista(  # noqa: C901
         def set_active_scalars(self, _name: str) -> None:
             return None
 
+        def contour(self, *args: object, **kwargs: object) -> object:
+            return object()
+
     class FakeProp:
         def SetInterpolationTypeToNearest(self) -> None:
             return None
@@ -1228,6 +1940,9 @@ def _install_fake_pyvista(  # noqa: C901
         def add_axes(self) -> None:
             return None
 
+        def add_mesh(self, *args: object, **kwargs: object) -> object:
+            return object()
+
         def show(self, **_kwargs: object) -> FakeViewer:
             return FakeViewer()
 
@@ -1260,6 +1975,127 @@ def test_build_pyvista_viewer_with_fake_module(monkeypatch: pytest.MonkeyPatch) 
     assert hasattr(viewer, "_cdf_plotter")
     assert "width: 100%;" in viewer.value
     assert "height: 100%;" in viewer.value
+
+
+def test_build_pyvista_viewer_with_filled_label_overlay_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pyvista(
+        monkeypatch,
+        screenshot_image=np.zeros((2, 2, 3), dtype=np.uint8),
+    )
+    cdf = CytoDataFrame(
+        pd.DataFrame({"A": [1]}),
+        display_options={"label_overlay_mode": "filled"},
+    )
+
+    viewer = cdf._build_pyvista_viewer(
+        volume=np.ones((2, 2, 2), dtype=np.uint8),
+        backend="trame",
+        widget_height="120px",
+        label_volume=np.ones((2, 2, 2), dtype=np.uint8),
+    )
+    assert hasattr(viewer, "_cdf_plotter")
+
+
+def test_build_pyvista_viewer_with_surface_label_overlay_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pyvista(
+        monkeypatch,
+        screenshot_image=np.zeros((2, 2, 3), dtype=np.uint8),
+    )
+    cdf = CytoDataFrame(
+        pd.DataFrame({"A": [1]}),
+        display_options={"label_overlay_mode": "surface"},
+    )
+
+    viewer = cdf._build_pyvista_viewer(
+        volume=np.ones((2, 2, 2), dtype=np.uint8),
+        backend="trame",
+        widget_height="120px",
+        label_volume=np.ones((2, 2, 2), dtype=np.uint8),
+    )
+    assert hasattr(viewer, "_cdf_plotter")
+
+
+def test_add_label_overlay_toggle_control_toggles_overlay_actor_visibility() -> None:
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
+    toggles: list[int] = []
+    renders: list[bool] = []
+    checkbox_kwargs: dict[str, object] = {}
+    label_kwargs: dict[str, object] = {}
+
+    class FakeActor:
+        def SetVisibility(self, value: int) -> None:
+            toggles.append(value)
+
+    class FakePlotter:
+        window_size = (300, 300)
+
+        def render(self) -> None:
+            renders.append(True)
+
+        def add_checkbox_button_widget(
+            self,
+            callback: object,
+            value: bool,
+            size: int,
+            position: tuple[int, int],
+        ) -> None:
+            checkbox_kwargs["callback"] = callback
+            checkbox_kwargs["value"] = value
+            checkbox_kwargs["size"] = size
+            checkbox_kwargs["position"] = position
+
+        def add_text(self, *_args: object, **kwargs: object) -> None:
+            label_kwargs.update(kwargs)
+
+    actor = FakeActor()
+    plotter = FakePlotter()
+    cdf._add_label_overlay_toggle_control(
+        plotter=plotter,
+        overlay_actors=[actor],
+        display_options={},
+    )
+
+    assert checkbox_kwargs["value"] is True
+    assert checkbox_kwargs["size"] == 24
+    assert checkbox_kwargs["position"] == (266, 10)
+    label_position = label_kwargs["position"]
+    assert isinstance(label_position, tuple)
+    assert label_position == pytest.approx((0.01, 20 / 300))
+    assert label_kwargs["viewport"] is True
+    assert label_kwargs["color"] == "white"
+    assert label_kwargs["font_size"] == 9
+    callback = checkbox_kwargs["callback"]
+    assert callable(callback)
+
+    callback(False)
+    callback(True)
+    assert toggles == [0, 1]
+    assert len(renders) == 2
+
+
+def test_add_label_overlay_toggle_control_respects_disable_option() -> None:
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
+    checkbox_added: list[bool] = []
+
+    class FakeActor:
+        def SetVisibility(self, _value: int) -> None:
+            return None
+
+    class FakePlotter:
+        def add_checkbox_button_widget(self, **_kwargs: object) -> None:
+            checkbox_added.append(True)
+
+    cdf._add_label_overlay_toggle_control(
+        plotter=FakePlotter(),
+        overlay_actors=[FakeActor()],
+        display_options={"label_overlay_toggle": False},
+    )
+
+    assert checkbox_added == []
 
 
 def test_show_trame_falls_back_to_ipywidgets(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1438,6 +2274,35 @@ def test_render_output_displays_js_and_print_html(monkeypatch: pytest.MonkeyPatc
     assert len(displayed) == 3
 
 
+def test_render_output_clears_output_before_display(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
+
+    class DummyOutput:
+        def __init__(self) -> None:
+            self.clear_calls: list[bool] = []
+
+        def clear_output(self, wait: bool = False) -> None:
+            self.clear_calls.append(wait)
+
+        def __enter__(self) -> "DummyOutput":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+            return False
+
+    dummy_output = DummyOutput()
+    cdf._custom_attrs["_output"] = dummy_output
+    monkeypatch.setattr(cdf, "_generate_jupyter_dataframe_html", lambda: "<table/>")
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda _name: True)
+    monkeypatch.setattr("cytodataframe.frame.display", lambda _value: None)
+
+    cdf._render_output()
+
+    assert dummy_output.clear_calls == [True]
+
+
 def test_generate_trame_snapshot_html_paths(monkeypatch: pytest.MonkeyPatch):
     cdf = CytoDataFrame(pd.DataFrame({"Image_FileName_DNA": ["dna.tiff"]}, index=[0]))
     monkeypatch.setattr(cdf, "_generate_jupyter_dataframe_html", lambda: "<table/>")
@@ -1467,11 +2332,19 @@ def test_generate_trame_snapshot_html_paths(monkeypatch: pytest.MonkeyPatch):
     )
     monkeypatch.setattr(
         cdf,
-        "_pyvista_volume_snapshot_html",
-        lambda volume, dims: "<img/>",
+        "_get_3d_label_overlay_from_cell",
+        lambda row, column, expected_shape: np.ones(expected_shape, dtype=np.uint8),
     )
+    captured: dict[str, object] = {}
+
+    def fake_snapshot(volume, dims, label_volume=None):  # noqa: ANN001, ANN202
+        captured["label_volume"] = label_volume
+        return "<img/>"
+
+    monkeypatch.setattr(cdf, "_pyvista_volume_snapshot_html", fake_snapshot)
     out = cdf._generate_trame_snapshot_html()
     assert "<img/>" in out or "Snapshot unavailable" in out
+    assert isinstance(captured.get("label_volume"), np.ndarray)
 
 
 def test_pyvista_volume_snapshot_html_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1501,6 +2374,141 @@ def test_pyvista_volume_snapshot_html_returns_none_when_no_image(
         dims=(2, 2, 2),
     )
     assert html is None
+
+
+def _install_fake_pyvista_with_records(  # noqa: C901
+    monkeypatch: pytest.MonkeyPatch,
+    records: dict[str, list[dict[str, object]]],
+) -> None:
+    """Install a lightweight fake PyVista module that records render calls."""
+
+    class FakePointData:
+        def __init__(self) -> None:
+            self.data = {}
+
+        def clear(self) -> None:
+            self.data = {}
+
+        def __setitem__(self, key: str, value: object) -> None:
+            self.data[key] = value
+
+        def set_active_scalars(self, _name: str) -> None:
+            raise AttributeError
+
+    class FakeImageData:
+        def __init__(self) -> None:
+            self.dimensions = None
+            self.spacing = None
+            self.origin = None
+            self.point_data = FakePointData()
+
+        def set_active_scalars(self, _name: str) -> None:
+            return None
+
+        def contour(self, *args: object, **kwargs: object) -> object:
+            return {"args": args, "kwargs": kwargs}
+
+    class FakeProp:
+        def SetInterpolationTypeToNearest(self) -> None:
+            return None
+
+        def SetInterpolationTypeToLinear(self) -> None:
+            return None
+
+        def SetInterpolateScalarsBeforeMapping(self, _value: bool) -> None:
+            return None
+
+        def SetScalarOpacityUnitDistance(self, _value: float) -> None:
+            return None
+
+    class FakeMapper:
+        def SetAutoAdjustSampleDistances(self, _value: bool) -> None:
+            return None
+
+        def SetUseJittering(self, _value: bool) -> None:
+            return None
+
+        def SetSampleDistance(self, _value: float) -> None:
+            return None
+
+    class FakeActor:
+        def __init__(self) -> None:
+            self.prop = FakeProp()
+            self.mapper = FakeMapper()
+
+        def GetProperty(self) -> FakeProp:
+            return self.prop
+
+        def GetMapper(self) -> FakeMapper:
+            return self.mapper
+
+    class FakePlotter:
+        def __init__(self, notebook: bool = False, off_screen: bool = False) -> None:
+            self.notebook = notebook
+            self.off_screen = off_screen
+
+        def set_background(self, _value: str) -> None:
+            return None
+
+        def add_volume(self, *args: object, **kwargs: object) -> FakeActor:
+            records["add_volume"].append({"args": args, "kwargs": kwargs})
+            return FakeActor()
+
+        def add_mesh(self, *args: object, **kwargs: object) -> object:
+            records["add_mesh"].append({"args": args, "kwargs": kwargs})
+            return object()
+
+        def screenshot(self, return_img: bool = True) -> np.ndarray | None:
+            if not return_img:
+                return None
+            return np.zeros((2, 2, 3), dtype=np.uint8)
+
+    fake_module = types.SimpleNamespace(
+        ImageData=FakeImageData,
+        Plotter=FakePlotter,
+        set_jupyter_backend=lambda _backend: None,
+        __spec__=ModuleSpec("pyvista", loader=None),
+    )
+    monkeypatch.setitem(sys.modules, "pyvista", fake_module)
+
+
+def test_pyvista_volume_snapshot_html_surface_adds_mesh_overlay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records = {"add_volume": [], "add_mesh": []}
+    _install_fake_pyvista_with_records(monkeypatch, records)
+    cdf = CytoDataFrame(
+        pd.DataFrame({"A": [1]}),
+        display_options={"label_overlay_mode": "surface"},
+    )
+    html = cdf._pyvista_volume_snapshot_html(
+        volume=np.ones((2, 2, 2), dtype=np.uint8),
+        dims=(2, 2, 2),
+        label_volume=np.ones((2, 2, 2), dtype=np.uint8),
+    )
+    assert html is not None
+    assert len(records["add_mesh"]) >= 2
+
+
+def test_pyvista_volume_snapshot_html_filled_adds_volume_overlay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records = {"add_volume": [], "add_mesh": []}
+    _install_fake_pyvista_with_records(monkeypatch, records)
+    cdf = CytoDataFrame(
+        pd.DataFrame({"A": [1]}),
+        display_options={"label_overlay_mode": "filled"},
+    )
+    html = cdf._pyvista_volume_snapshot_html(
+        volume=np.ones((2, 2, 2), dtype=np.uint8),
+        dims=(2, 2, 2),
+        label_volume=np.ones((2, 2, 2), dtype=np.uint8),
+    )
+    assert html is not None
+    assert len(records["add_volume"]) >= 2
+    assert any(
+        call["kwargs"].get("blending") == "maximum" for call in records["add_volume"]
+    )
 
 
 def test_show_trame_trame_layout_success(monkeypatch: pytest.MonkeyPatch) -> None:

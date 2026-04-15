@@ -4,7 +4,7 @@ with coSMicQC tests.
 
 This file may be processed using the following command from the root
 of the project repository:
-`poetry run python tests/data/cytotable/NF1_cellpainting_data/gather_and_create_data.py`
+`uv run python tests/data/cytotable/NF1_cellpainting_data/gather_and_create_data.py`
 """
 
 import pathlib

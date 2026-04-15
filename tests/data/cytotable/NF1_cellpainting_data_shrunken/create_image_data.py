@@ -1,10 +1,10 @@
 """
-Creates and shrunken dataset for testing puproses
+Creates and shrunken dataset for testing purposes
 based on coSMicQC/tests/data/cytotable/NF1_cellpainting_data (Plate 2)
 
 This file may be processed using the following command from the root
 of the project repository:
-`poetry run python tests/data/cytotable/NF1_cellpainting_data_shrunken/create.py`
+`uv run python tests/data/cytotable/NF1_cellpainting_data_shrunken/create_image_data.py`
 """
 
 import pathlib

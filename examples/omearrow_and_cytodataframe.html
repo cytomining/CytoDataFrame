@@ -1,0 +1,627 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>OME-Arrow and CytoDataFrame &#8212; CytoDataFrame  documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../_static/mystnb.8ecb98da25f57f5357bf6f572d296f466b2cfe2517ffebfabe82451661e28f02.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=76a74e97" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'examples/omearrow_and_cytodataframe';</script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Python API" href="../python-api.html" />
+    <link rel="prev" title="CytoDataFrame at a Glance" href="cytodataframe_at_a_glance.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class=" navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+  
+    <p class="title logo__title">CytoDataFrame</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class=" navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="../examples.html">
+    Examples
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../python-api.html">
+    Python API
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../presentations.html">
+    Presentations
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../contributing.html">
+    Contributing
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../code_of_conduct.html">
+    Code of Conduct
+  </a>
+</li>
+
+            <li class="nav-item dropdown">
+                <button class="btn dropdown-toggle nav-item" type="button"
+                data-bs-toggle="dropdown" aria-expanded="false"
+                aria-controls="pst-nav-more-links">
+                    More
+                </button>
+                <ul id="pst-nav-more-links" class="dropdown-menu">
+                    
+<li class=" ">
+  <a class="nav-link dropdown-item nav-external" href="https://github.com/cytomining/coSMicQC">
+    coSMicQC
+  </a>
+</li>
+
+                </ul>
+            </li>
+            
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/cytomining/CytoDataFrame" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="../examples.html">
+    Examples
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../python-api.html">
+    Python API
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../presentations.html">
+    Presentations
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../contributing.html">
+    Contributing
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../code_of_conduct.html">
+    Code of Conduct
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-external" href="https://github.com/cytomining/coSMicQC">
+    coSMicQC
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/cytomining/CytoDataFrame" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">List of examples</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="cytodataframe_at_a_glance.html">CytoDataFrame at a Glance</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">OME-Arrow and CytoDataFrame</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="../examples.html" class="nav-link">Examples</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">OME-Arrow and CytoDataFrame</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="ome-arrow-and-cytodataframe">
+<h1>OME-Arrow and CytoDataFrame<a class="headerlink" href="#ome-arrow-and-cytodataframe" title="Link to this heading">#</a></h1>
+<p>This notebook demonstrates how <a class="reference external" href="https://github.com/WayScience/ome-arrow">OME-Arrow</a> works in context with CytoDataFrame.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pa</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow.parquet</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pq</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ome_arrow</span><span class="w"> </span><span class="kn">import</span> <span class="n">OMEArrow</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">cytodataframe</span><span class="w"> </span><span class="kn">import</span> <span class="n">CytoDataFrame</span>
+
+<span class="c1"># load a tiff using OME Arrow</span>
+<span class="n">oa_img</span> <span class="o">=</span> <span class="n">OMEArrow</span><span class="p">(</span>
+    <span class="s2">&quot;../../../tests/data/cytotable/JUMP_plate_BR00117006/images/orig/r01c01f01p01-ch2sk1fk1fl1.tiff&quot;</span>
+<span class="p">)</span>
+<span class="n">oa_img</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html">2D image, single-channel - shape (T=1, C=1, Z=1, Y=1080, X=1080)</div><img alt="../_images/a0d868842f3cff00c872d0f8737d871cac384e0275e8f8d9a84aff71ba47cea5.png" src="../_images/a0d868842f3cff00c872d0f8737d871cac384e0275e8f8d9a84aff71ba47cea5.png" />
+</div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># make a &quot;slice&quot; (crop) from the overall image</span>
+<span class="n">oa_img_slice</span> <span class="o">=</span> <span class="n">oa_img</span><span class="o">.</span><span class="n">slice</span><span class="p">(</span><span class="n">x_min</span><span class="o">=</span><span class="mi">240</span><span class="p">,</span> <span class="n">x_max</span><span class="o">=</span><span class="mi">310</span><span class="p">,</span> <span class="n">y_min</span><span class="o">=</span><span class="mi">360</span><span class="p">,</span> <span class="n">y_max</span><span class="o">=</span><span class="mi">430</span><span class="p">)</span>
+<span class="n">oa_img_slice</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html">2D image, single-channel - shape (T=1, C=1, Z=1, Y=70, X=70)</div><img alt="../_images/1953b33fe2a1d716303b775b4485bc048789c03113e6c5b4d015b9a53caf2ae0.png" src="../_images/1953b33fe2a1d716303b775b4485bc048789c03113e6c5b4d015b9a53caf2ae0.png" />
+</div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># show the OME Arrow struct</span>
+<span class="n">oa_img_slice</span><span class="o">.</span><span class="n">data</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>&lt;pyarrow.StructScalar: [(&#39;type&#39;, &#39;ome.arrow&#39;), (&#39;version&#39;, &#39;0.0.4&#39;), (&#39;id&#39;, &#39;r01c01f01p01-ch2sk1fk1fl1&#39;), (&#39;name&#39;, &#39;r01c01f01p01-ch2sk1fk1fl1.tiff&#39;), (&#39;acquisition_datetime&#39;, datetime.datetime(2026, 4, 15, 20, 24, 10, 45209)), (&#39;pixels_meta&#39;, {&#39;dimension_order&#39;: &#39;XYCT&#39;, &#39;type&#39;: &#39;uint16&#39;, &#39;size_x&#39;: 70, &#39;size_y&#39;: 70, &#39;size_z&#39;: 1, &#39;size_c&#39;: 1, &#39;size_t&#39;: 1, &#39;physical_size_x&#39;: 6.450363636016846, &#39;physical_size_y&#39;: 6.450363636016846, &#39;physical_size_z&#39;: 1.0, &#39;physical_size_x_unit&#39;: &#39;µm&#39;, &#39;physical_size_y_unit&#39;: &#39;µm&#39;, &#39;physical_size_z_unit&#39;: &#39;µm&#39;, &#39;channels&#39;: [{&#39;id&#39;: &#39;ch-0&#39;, &#39;name&#39;: &#39;C0&#39;, &#39;emission_um&#39;: 0.0, &#39;excitation_um&#39;: 0.0, &#39;illumination&#39;: &#39;Unknown&#39;, &#39;color_rgba&#39;: 4294967295}]}), (&#39;planes&#39;, [{&#39;z&#39;: 0, &#39;t&#39;: 0, &#39;c&#39;: 0, &#39;pixels&#39;: [5772, 6209, 5847, 5408, 4959, 4513, 4232, 4181, 4020, 4196, 4264, 4454, 4718, 4916, 5663, 6358, 6160, 5144, 4283, 4093, 4270, 4760, 5641, 6585, 7169, 7073, 6220, 5362, 5038, 5063, 5343, 5341, 5645, 5735, 4975, 4504, 4532, 4712, 5094, 5362, 5527, 5934, 6132, 6384, 6395, 6216, 5847, 6752, 8245, 8280, 6904, 6000, 5481, 5642, 6373, 6932, 7426, 7514, 6866, 6392, 6963, 7639, 7665, 7562, 7100, 6648, 6698, 6345, 5505, 4889, 6138, 6746, 6400, 5838, 5284, 4894, 4660, 4545, 4248, 4115, 4115, 4348, 4709, 5017, 6072, 7100, 6791, 5305, 4254, 4022, 4009, 4349, 5204, 6208, 6762, 6701, 6110, 5327, 4959, 4963, 5047, 4947, 5381, 5804, 5110, 4446, 4516, 4993, 5392, 5564, 5677, 5985, 6336, 6499, 6309, 6097, 5634, 6107, 7021, 6959, 6272, 6198, 5758, 5703, 6274, 6792, 7518, 7779, 6924, 6398, 7042, 7665, 7532, 6901, 6332, 6188, 6298, 5847, 5128, 4602, 5801, 6405, 6385, 6035, 5488, 5169, 5018, 4801, 4322, 3934, 3956, 4259, 4586, 4834, 5686, 6680, 6225, 4860, 4059, 3884, 3992, 4238, 4887, 5996, 6861, 7095, 6377, 5125, 4719, 4715, 4764, 4601, 4937, 5483, 5141, 4608, 4822, 5530, 5892, 6141, 6556, 6384, 6257, 6066, 5684, 5403, 4917, 5110, 5586, 5685, 5470, 5512, 5353, 5311, 5961, 6938, 7774, 8029, 7175, 6382, 6737, 7288, 7393, 6784, 5970, 5637, 5560, 5156, 4721, 4263, 5128, 5695, 5889, 5730, 5487, 5394, 5335, 5032, 4318, 3824, 3970, 4427, 4747, 4774, 4810, 5090, 4680, 3936, 3652, 3643, 3862, 4179, 4693, 5496, 6501, 7396, 6628, 4744, 4353, 4204, 4225, 4108, 4221, 4448, 4450, 4528, 4963, 5692, 6273, 6746, 7377, 6961, 6179, 5546, 5044, 4703, 4352, 4512, 4749, 4830, 4715, 4723, 4883, 5070, 5639, 6883, 7774, 7529, 6663, 6092, 6355, 6979, 7180, 6559, 5626, 5076, 4945, 4550, 4213, 3953, 4675, 5167, 5564, 5464, 5209, 5220, 5346, 5198, 4480, 3906, 4197, 5007, 5679, 5457, 4498, 3862, 3567, 3382, 3294, 3361, 3728, 4186, 4623, 4943, 5368, 6099, 5796, 4448, 4048, 3834, 3809, 3757, 3720, 3767, 3801, 4069, 4654, 5245, 6051, 6731, 7074, 6648, 5905, 5350, 4858, 4394, 4064, 4220, 4457, 4583, 4573, 4633, 4911, 5164, 5449, 6330, 6937, 6423, 5761, 5560, 5883, 6613, 6883, 6220, 5190, 4631, 4311, 4004, 3843, 3711, 4603, 4992, 5562, 5677, 5255, 5112, 5291, 5397, 4867, 4204, 4523, 5495, 6416, 6298, 4852, 3621, 3323, 3353, 3225, 3240, 3626, 3945, 4322, 4624, 4747, 4916, 4691, 4278, 4033, 3765, 3675, 3646, 3543, 3623, 3668, 3717, 4195, 4708, 5412, 5967, 6215, 5841, 5419, 5314, 4951, 4373, 3970, 4096, 4391, 4699, 4930, 4968, 5142, 5376, 5423, 5703, 5840, 5344, 5060, 5248, 5634, 6326, 6675, 6002, 4810, 4237, 3890, 3675, 3626, 3549, 4625, 4890, 5431, 5950, 5854, 5628, 5552, 5819, 5503, 4665, 4777, 5662, 6681, 6710, 5251, 3911, 3485, 3436, 3320, 3341, 3609, 3681, 3851, 4205, 4600, 4745, 4610, 4367, 4297, 3990, 3817, 3728, 3617, 3880, 4208, 3819, 3767, 4170, 4628, 4997, 5279, 4948, 4784, 5063, 4915, 4486, 4186, 4178, 4179, 4540, 4988, 5080, 5287, 5563, 5541, 5484, 5320, 4853, 4680, 4989, 5486, 6026, 6107, 5533, 4549, 4028, 3668, 3539, 3454, 3390, 4839, 4785, 5190, 5963, 5985, 5970, 6064, 6028, 5975, 5357, 5182, 5887, 6822, 6848, 5613, 4441, 3869, 3582, 3577, 3792, 3929, 3791, 3722, 3855, 4287, 4528, 4593, 4422, 4344, 4311, 4339, 4066, 3845, 4182, 4756, 4029, 3670, 3833, 4048, 4259, 4432, 4237, 4153, 4511, 4496, 4277, 4188, 4275, 4270, 4583, 4977, 4971, 4995, 5318, 5501, 5562, 5519, 5044, 4670, 4849, 5410, 5810, 5565, 5041, 4345, 3872, 3555, 3437, 3407, 3315, 5088, 4884, 4931, 5635, 6019, 6176, 6436, 6308, 6323, 5969, 5605, 5924, 6559, 6834, 6206, 5331, 4727, 4300, 4310, 4409, 4309, 4065, 3801, 3699, 3812, 4262, 4812, 4623, 4236, 4323, 4712, 4685, 4356, 4264, 4469, 3980, 3781, 3847, 3897, 3860, 3893, 3858, 3874, 4030, 4025, 3912, 3998, 4311, 4422, 4826, 5369, 5104, 4666, 4858, 5295, 5632, 5741, 5401, 4809, 4740, 5171, 5351, 5128, 4818, 4405, 4015, 3718, 3494, 3394, 3245, 5138, 4918, 4791, 5202, 6260, 7045, 7180, 7057, 6929, 6681, 6353, 6299, 6405, 6675, 6684, 6383, 6025, 5593, 5344, 5048, 4772, 4456, 4170, 3995, 4063, 4691, 5731, 5821, 4847, 4574, 4984, 5394, 5255, 4855, 4535, 4194, 4084, 4238, 4119, 3877, 3844, 3810, 3948, 4065, 3960, 3861, 3972, 4241, 4384, 4868, 5442, 5054, 4477, 4695, 5270, 5663, 5680, 5383, 4826, 4533, 4702, 4682, 4749, 4711, 4494, 4275, 3977, 3573, 3434, 3308, 5136, 4915, 4775, 4922, 5919, 7260, 7990, 8069, 7533, 7217, 7247, 7197, 6920, 6686, 6624, 6746, 6858, 6492, 5873, 5449, 5270, 5070, 4956, 4916, 5034, 5767, 7460, 8060, 6365, 5503, 5548, 5849, 5922, 5701, 5350, 4978, 4895, 5042, 4904, 4447, 4334, 4354, 4513, 4774, 4590, 4203, 4078, 4168, 4318, 4719, 5079, 4775, 4393, 4648, 5212, 5704, 5716, 5164, 4600, 4325, 4362, 4306, 4370, 4564, 4544, 4425, 4177, 3613, 3348, 3320, 5389, 5402, 5147, 5122, 5562, 6683, 7725, 7859, 7334, 7139, 7470, 7856, 7667, 6976, 6519, 6432, 6581, 6593, 6095, 5650, 5514, 5410, 5442, 5713, 5934, 6455, 8183, 9044, 7204, 6090, 5800, 5906, 5999, 5933, 5890, 5829, 5678, 5633, 5709, 5295, 5160, 5183, 5498, 5869, 5646, 4912, 4371, 4293, 4441, 4766, 5041, 4811, 4490, 4647, 5092, 5607, 5499, 4645, 4200, 4131, 4206, 4196, 4189, 4474, 4543, 4431, 4125, 3571, 3253, 3174, 5731, 6146, 5863, 5566, 5495, 5883, 6606, 6640, 6227, 6234, 6711, 7449, 7610, 6932, 6312, 6035, 6031, 6155, 5986, 5688, 5565, 5524, 5655, 5810, 5731, 5796, 6720, 7203, 6191, 5770, 5662, 5591, 5618, 5740, 6018, 6248, 6053, 5817, 5918, 5771, 5726, 5633, 5990, 6338, 6281, 5699, 5044, 4966, 5212, 5515, 5748, 5297, 4713, 4872, 5238, 5446, 5045, 4356, 4122, 4087, 4202, 4386, 4440, 4675, 4817, 4441, 3956, 3496, 3248, 3150, 6153, 6654, 6292, 5944, 5600, 5379, 5574, 5449, 5104, 5168, 5629, 6207, 6280, 5962, 5814, 5722, 5763, 5834, 5682, 5523, 5466, 5435, 5545, 5554, 5222, 4953, 5151, 5260, 5086, 5054, 5093, 5018, 5019, 5204, 5562, 5951, 5951, 5774, 5807, 5798, 5668, 5552, 5654, 5770, 5908, 5743, 5449, 5785, 6380, 6442, 6024, 5273, 4840, 5216, 5539, 5515, 5122, 4564, 4370, 4361, 4432, 4632, 4636, 4754, 4865, 4433, 3783, 3400, 3184, 3037, 6205, 6816, 6604, 6254, 5811, 5270, 5032, 4794, 4542, 4478, 4717, 5068, 5016, 4927, 5215, 5457, 5496, 5451, 5288, 5290, 5510, 5627, 5419, 5181, 4898, 4591, 4463, 4474, 4517, 4578, 4506, 4477, 4561, 4609, 4708, 5057, 5279, 5329, 5520, 5653, 5400, 5250, 5142, 5034, 5008, 5011, 5200, 6076, 6985, 6503, 5278, 4636, 4826, 5571, 5993, 5983, 5666, 5170, 4738, 4760, 4742, 4777, 4797, 4848, 4902, 4399, 3695, 3317, 3216, 3031, 5759, 6386, 6478, 6446, 6067, 5276, 4709, 4424, 4332, 4387, 4597, 4694, 4485, 4529, 4885, 5093, 5101, 5024, 5017, 5333, 5769, 5699, 5212, 4846, 4649, 4507, 4412, 4257, 4319, 4422, 4197, 4171, 4173, 4232, 4215, 4237, 4436, 4612, 5078, 5420, 5239, 5023, 4791, 4546, 4368, 4330, 4743, 5941, 6938, 6102, 4548, 4152, 4643, 5688, 6635, 6804, 6178, 5606, 5142, 5070, 5022, 4956, 4978, 4848, 4578, 4039, 3442, 3134, 3126, 3057, 5502, 5938, 6189, 6719, 6689, 5764, 4833, 4530, 4680, 4865, 5082, 5038, 4665, 4563, 4719, 4901, 4906, 4786, 4854, 5200, 5601, 5455, 5067, 4834, 4646, 4502, 4372, 4257, 4310, 4324, 4127, 4020, 4079, 4102, 3919, 3834, 3815, 4061, 4649, 5137, 5204, 5014, 4660, 4306, 4226, 4235, 4542, 5560, 6542, 6033, 4623, 4206, 4596, 5519, 6710, 7011, 6166, 5519, 5224, 5138, 5198, 5209, 5051, 4724, 4114, 3572, 3181, 2959, 2814, 2793, 5431, 5857, 6388, 7482, 7920, 6821, 5590, 5401, 5797, 6059, 5973, 5717, 5276, 4770, 4738, 4864, 4868, 4683, 4669, 4967, 5326, 5343, 5175, 4912, 4763, 4672, 4543, 4440, 4481, 4476, 4328, 4227, 4326, 4321, 3990, 3816, 3808, 3889, 4319, 4859, 5072, 5089, 4917, 4568, 4492, 4712, 4942, 5340, 6001, 5996, 5150, 4852, 5158, 5542, 5975, 6042, 5259, 4731, 4626, 4830, 5335, 5568, 5188, 4500, 3836, 3387, 3023, 2785, 2532, 2535, 5296, 5890, 6874, 8421, 9118, 7849, 6383, 6209, 6793, 7144, 6899, 6434, 5668, 4854, 4697, 4710, 4609, 4578, 4497, 4862, 5204, 5364, 5233, 4984, 4822, 4948, 5075, 4956, 4929, 4853, 4752, 4738, 4767, 4737, 4345, 4174, 4209, 4216, 4510, 4847, 4949, 5125, 5412, 5349, 5177, 5396, 5611, 5560, 5670, 5830, 5591, 5537, 5793, 5503, 4940, 4554, 3920, 3596, 3675, 4169, 5040, 5633, 5298, 4472, 3944, 3522, 3272, 3013, 2533, 2334, 5387, 6064, 7132, 8679, 9292, 8136, 6707, 6346, 6831, 7073, 6694, 6147, 5424, 4695, 4499, 4495, 4351, 4322, 4359, 4690, 4867, 4986, 4949, 4886, 4974, 5236, 5663, 5826, 5838, 5856, 5927, 5920, 5768, 5542, 5075, 4843, 4855, 4993, 5055, 5081, 5147, 5376, 6025, 6358, 6108, 5881, 5838, 5708, 5544, 5766, 5801, 5621, 5535, 4882, 3958, 3472, 3052, 2820, 2981, 3476, 4396, 5249, 5140, 4366, 4053, 3915, 3744, 3434, 2941, 2496, 5534, 6141, 7150, 8363, 8482, 7492, 6507, 6047, 6027, 5881, 5502, 5042, 4648, 4312, 4157, 4176, 4172, 4243, 4325, 4439, 4496, 4553, 4569, 4640, 5006, 5667, 6513, 7101, 7436, 7579, 7671, 7726, 7665, 7225, 6468, 5836, 5659, 5643, 5572, 5696, 5682, 5919, 6566, 6823, 6497, 5955, 5783, 5781, 5603, 5761, 6007, 5801, 5296, 4616, 3727, 3203, 2901, 2688, 2715, 2992, 3799, 4715, 4778, 4184, 4023, 4302, 4245, 3974, 3582, 2961, 5575, 6321, 7322, 7885, 7416, 6490, 5825, 5404, 5194, 4871, 4533, 4298, 4046, 3976, 3876, 3874, 3913, 4058, 4224, 4219, 4259, 4288, 4345, 4506, 5342, 6768, 7841, 8460, 8750, 8924, 8853, 8944, 9042, 8932, 8299, 7434, 6754, 6280, 6208, 6471, 6473, 6484, 6850, 7020, 6732, 6460, 6521, 6494, 6102, 5984, 6320, 6298, 5934, 5391, 4419, 3707, 3242, 2990, 2936, 3073, 3658, 4370, 4521, 4098, 4027, 4300, 4441, 4363, 3998, 3413, 5528, 6470, 7187, 7034, 6293, 5396, 4794, 4505, 4469, 4326, 4137, 4082, 3854, 3801, 3779, 3662, 3670, 3753, 3902, 4057, 4116, 4201, 4470, 5038, 6277, 7778, 8627, 8951, 9211, 9426, 9532, 9560, 9363, 9442, 9394, 9076, 8457, 7411, 6927, 7154, 7112, 6903, 7074, 7209, 7131, 7484, 8146, 8169, 7301, 6757, 6774, 6676, 6721, 6488, 5505, 4805, 4149, 3720, 3526, 3649, 4035, 4344, 4466, 4284, 4305, 4453, 4521, 4411, 4069, 3685, 5195, 5892, 6434, 6105, 5115, 4289, 3901, 3773, 3809, 3841, 3967, 3957, 3776, 3643, 3643, 3551, 3554, 3569, 3684, 3936, 4124, 4443, 5157, 6287, 7692, 8557, 8955, 9112, 9333, 9500, 9653, 9654, 9602, 9723, 9778, 9744, 9765, 8918, 7995, 7777, 7620, 7291, 7100, 7069, 7149, 8045, 9503, 9823, 8690, 7924, 7697, 7404, 7444, 7395, 6742, 6196, 5322, 4637, 4310, 4393, 4721, 4762, 4545, 4513, 4638, 4713, 4550, 4171, 3791, 3566, 5033, 5378, 5703, 5359, 4277, 3620, 3433, 3419, 3455, 3543, 3789, 3755, 3695, 3493, 3452, 3489, 3521, 3577, 3707, 3885, 4146, 4644, 5879, 7698, 9094, 9401, 9423, 9443, 9628, 9666, 9764, 9727, 9753, 9941, 10146, 10220, 10435, 10410, 9453, 8271, 7648, 7436, 7371, 7225, 7425, 8467, 9759, 9979, 9092, 8694, 8460, 8048, 7889, 7909, 7430, 6989, 6126, 5346, 5074, 5196, 5448, 5129, 4736, 4786, 4914, 4797, 4425, 3963, 3635, 3502, 5019, 5224, 5238, 4794, 3996, 3496, 3335, 3327, 3308, 3432, 3618, 3636, 3634, 3475, 3378, 3414, 3505, 3620, 3755, 3879, 4192, 4858, 6427, 8400, 9519, 9679, 9654, 9730, 9916, 9918, 9917, 10049, 10046, 10212, 10653, 10928, 10962, 11093, 10651, 9163, 7873, 7576, 7649, 7699, 7978, 8657, 9177, 9132, 8836, 8646, 8566, 8244, 7801, 7750, 7353, 6883, 6400, 5816, 5594, 5755, 5845, 5355, 4983, 4887, 4922, 4841, 4637, 4262, 3779, 3446, 5078, 5123, 5077, 4700, 4082, 3758, 3626, 3479, 3362, 3505, 3543, 3605, 3505, 3436, 3398, 3430, 3520, 3621, 3832, 3962, 4285, 5221, 7225, 8921, 9391, 9599, 9771, 9886, 9999, 10034, 10033, 10209, 10516, 10824, 11276, 11597, 11338, 11136, 11229, 10114, 8454, 8206, 8474, 8447, 8616, 9056, 9157, 8818, 8645, 8631, 8621, 8458, 7772, 7557, 7384, 6847, 6495, 6233, 6015, 6017, 5952, 5667, 5260, 4958, 4877, 4918, 4953, 4852, 4203, 3543, 4854, 4921, 5043, 4804, 4327, 4097, 3882, 3679, 3475, 3551, 3572, 3558, 3409, 3365, 3437, 3500, 3592, 3686, 3904, 4038, 4404, 5517, 7707, 9130, 9202, 9448, 9709, 10073, 10437, 10309, 10003, 10205, 10744, 11155, 11522, 11742, 11446, 11082, 11312, 10926, 9423, 8903, 9494, 9422, 9170, 9444, 9377, 8939, 8711, 8870, 8824, 8887, 8759, 8691, 8191, 7292, 6763, 6841, 6794, 6333, 6051, 5956, 5649, 5281, 5086, 5037, 5100, 5092, 4448, 3658, 4525, 4518, 4772, 4914, 4572, 4210, 3942, 3745, 3492, 3445, 3538, 3464, 3324, 3305, 3344, 3448, 3602, 3749, 3926, 4081, 4489, 5528, 7493, 8871, 9235, 9608, 9752, 10225, 10610, 10389, 10171, 10427, 10884, 11480, 11809, 11737, 11568, 11484, 11823, 12043, 11045, 9894, 9992, 10035, 9819, 10007, 9739, 9210, 9365, 10280, 10454, 10891, 11913, 11742, 10365, 8309, 7245, 7504, 7954, 7094, 6456, 6365, 6347, 5970, 5491, 5245, 5171, 4973, 4479, 3776, 4483, 4539, 4660, 4801, 4711, 4272, 4013, 3770, 3472, 3352, 3432, 3368, 3285, 3298, 3292, 3477, 3637, 3784, 3944, 4159, 4619, 5365, 7073, 8583, 9322, 9711, 9827, 10074, 10231, 10214, 10446, 10679, 10923, 11426, 11735, 11782, 11873, 12147, 12631, 13080, 12593, 11351, 11198, 11295, 10927, 10833, 10900, 10716, 11291, 13340, 14184, 14993, 16997, 16334, 13527, 9802, 7889, 7785, 8421, 7897, 7270, 6996, 7045, 6782, 5986, 5512, 5380, 5040, 4526, 3879, 4682, 5093, 5034, 4597, 4401, 4173, 3865, 3611, 3319, 3227, 3308, 3309, 3386, 3472, 3506, 3737, 3835, 3989, 3995, 4189, 4524, 5180, 6831, 8613, 9552, 9930, 10012, 10053, 10047, 10144, 10184, 10398, 10774, 11154, 11458, 11768, 12150, 12809, 13430, 13551, 13502, 13147, 13248, 13509, 12713, 11863, 12698, 12918, 12979, 14873, 16308, 17670, 20209, 19903, 16066, 11107, 8477, 7851, 8113, 7995, 7826, 7476, 7334, 7107, 6362, 5851, 5721, 5271, 4533, 3938, 4954, 5423, 5426, 4660, 4107, 3939, 3783, 3562, 3371, 3315, 3238, 3289, 3393, 3577, 3622, 3845, 3938, 4147, 4176, 4217, 4425, 5028, 6592, 8801, 9775, 10006, 10135, 10173, 10232, 10358, 10211, 10336, 10770, 11125, 11486, 12215, 13312, 13991, 13740, 13133, 13348, 14277, 15567, 16880, 15870, 13852, 14525, 14600, 14644, 15168, 16207, 18181, 20979, 21465, 17201, 12020, 9306, 8593, 8266, 7741, 7494, 7345, 7320, 6942, 6514, 6217, 6071, 5439, 4576, 4059, 5309, 5750, 5670, 4951, 4099, 3906, 3951, 3797, 3697, 3654, 3480, 3458, 3465, 3569, 3549, 3709, 3885, 4027, 4141, 4193, 4416, 4928, 6135, 8206, 9752, 10279, 10532, 10730, 11196, 11355, 10969, 10980, 11233, 11463, 11777, 12447, 13741, 14527, 13880, 12807, 12909, 14465, 16981, 18861, 18110, 15493, 15828, 16423, 17314, 17203, 17093, 18219, 20438, 21320, 17696, 13204, 10705, 9787, 9013, 7722, 6894, 7116, 7231, 6743, 6543, 6312, 6118, 5471, 4654, 4133, 5256, 5977, 6276, 5569, 4411, 4162, 4194, 4131, 4046, 3999, 3777, 3589, 3541, 3521, 3505, 3605, 3783, 3886, 3934, 4096, 4449, 4941, 5744, 7106, 9039, 10491, 11437, 12268, 13308, 13287, 12269, 11787, 11769, 11878, 11977, 12307, 13148, 13723, 13581, 12960, 12850, 13918, 16298, 18641, 18623, 16355, 16375, 18004, 20141, 20584, 19633, 19128, 19696, 19841, 17699, 14745, 12584, 11445, 10487, 8520, 7166, 7197, 7221, 7018, 6789, 6378, 5966, 5381, 4746, 4262, 4922, 5791, 6557, 6035, 4841, 4414, 4333, 4220, 4211, 4155, 3868, 3515, 3424, 3313, 3390, 3521, 3662, 3810, 3863, 4095, 4656, 5216, 5757, 6660, 8149, 10097, 11989, 13652, 15386, 15899, 14225, 12553, 12133, 12033, 11987, 12315, 12870, 13110, 13155, 12859, 12750, 13321, 14811, 17275, 18361, 17648, 18039, 19836, 22921, 24660, 22793, 20960, 20079, 19775, 18487, 16689, 14510, 12282, 10702, 9049, 7570, 7257, 7253, 7356, 7081, 6592, 6029, 5309, 4861, 4645, 4721, 5647, 6422, 6001, 5011, 4523, 4298, 4141, 4076, 3925, 3627, 3385, 3320, 3208, 3252, 3443, 3643, 3797, 3918, 4145, 4603, 5294, 6034, 7422, 8610, 9909, 11537, 13041, 14475, 15182, 13891, 12278, 11693, 11513, 11706, 12091, 12631, 12737, 12737, 12743, 12714, 13063, 13903, 15637, 17722, 19042, 19865, 21064, 24018, 26911, 25843, 23475, 21726, 21520, 20823, 18883, 15690, 11968, 9850, 8788, 7832, 7324, 7067, 7223, 7048, 6511, 5817, 5101, 4982, 5156, 4632, 5492, 6060, 5622, 4858, 4592, 4348, 4071, 3856, 3595, 3403, 3323, 3206, 3157, 3241, 3359, 3546, 3892, 4137, 4236, 4498, 5233, 6653, 8793, 10038, 10530, 10992, 11587, 12233, 12563, 12039, 11388, 11022, 10803, 11172, 11716, 12256, 12377, 12421, 12430, 12498, 12737, 13329, 14382, 16371, 19030, 20748, 21415, 23619, 26213, 26469, 24657, 22791, 22170, 21520, 19464, 15643, 11674, 9891, 9147, 7871, 6789, 6356, 6711, 6861, 6209, 5269, 4794, 5026, 5401, 4332, 5096, 5739, 5460, 4597, 4386, 4195, 3890, 3758, 3550, 3383, 3239, 3130, 3034, 3246, 3260, 3383, 3848, 4081, 4215, 4578, 5548, 7556, 9908, 11002, 11122, 10967, 10984, 11234, 11256, 10950, 10771, 10760, 10875, 11264, 11663, 12153, 12315, 12354, 12392, 12227, 12153, 12809, 13584, 14850, 17067, 19501, 20961, 23442, 25345, 25927, 25091, 23351, 21286, 19635, 17754, 14394, 10980, 9186, 8416, 7304, 6220, 5717, 5893, 6146, 5614, 4782, 4560, 4807, 5053, 4107, 4614, 5343, 5431, 4569, 4077, 3884, 3775, 3611, 3427, 3290, 3145, 3072, 3067, 3225, 3271, 3357, 3532, 3799, 4024, 4566, 5960, 8227, 10539, 11463, 11461, 11359, 11146, 11041, 10960, 10700, 10570, 10762, 11230, 11654, 11891, 12273, 12358, 12337, 12216, 11718, 11604, 12355, 13011, 13598, 14336, 15755, 18008, 21334, 23584, 24986, 25155, 24163, 20508, 16429, 13824, 11569, 9764, 8254, 7200, 6448, 5758, 5415, 5417, 5362, 4946, 4434, 4315, 4412, 4441, 4075, 4275, 4755, 5077, 4441, 3791, 3595, 3601, 3457, 3318, 3297, 3159, 3062, 3140, 3205, 3282, 3378, 3440, 3572, 3916, 4781, 6489, 8770, 10525, 11338, 11645, 11695, 11462, 11145, 10994, 10808, 10660, 11039, 11701, 11988, 11992, 12110, 12222, 12313, 11874, 11425, 11356, 11873, 12316, 12344, 12258, 12813, 14314, 16777, 18732, 20457, 21735, 22193, 19291, 14604, 11090, 9330, 8636, 7660, 6626, 6140, 5781, 5691, 5708, 5398, 4869, 4378, 4098, 4020, 4019, 4167, 4289, 4484, 4647, 4239, 3723, 3440, 3349, 3275, 3125, 3112, 3045, 3018, 3158, 3254, 3358, 3510, 3584, 3620, 3902, 4962, 6862, 8802, 9787, 10427, 10968, 11233, 11366, 11251, 11149, 10999, 10931, 11531, 12293, 12523, 12094, 11839, 11813, 11690, 11263, 11065, 11159, 11556, 11656, 11421, 11338, 11416, 12077, 13217, 14336, 15281, 16758, 17930, 16468, 12975, 9513, 8098, 7952, 7261, 6317, 5955, 5825, 6142, 6671, 6324, 5647, 5046, 4274, 3900, 3813, 4348, 4613, 4603, 4585, 4275, 3695, 3324, 3204, 3184, 3105, 2991, 2935, 2928, 3055, 3267, 3296, 3474, 3646, 3755, 4051, 5012, 6848, 8208, 8889, 9541, 9927, 10362, 10942, 11210, 11207, 10995, 11067, 11635, 12324, 12691, 11816, 11261, 11054, 10769, 10655, 10714, 11288, 12165, 12025, 11300, 10807, 10739, 11104, 11504, 11933, 12273, 13306, 14392, 13483, 10898, 8390, 7466, 7230, 6557, 5891, 5581, 5719, 6167, 6957, 6888, 6188, 5665, 4549, 3880, 3768, 4514, 4535, 4517, 4769, 4836, 4231, 3626, 3382, 3282, 3141, 2937, 2986, 2944, 2978, 3149, 3274, 3393, 3486, 3630, 4003, 5038, 6744, 7906, 8556, 9076, 9407, 9877, 10551, 11002, 10951, 10755, 10757, 11140, 11852, 12203, 11258, 10708, 10514, 10447, 10591, 10808, 11905, 13149, 12876, 11582, 10477, 10306, 10591, 10731, 10798, 10818, 11216, 12091, 11833, 9682, 7663, 7173, 6746, 5880, 5288, 5020, 5321, 5446, 5721, 5798, 5354, 5133, 4350, 3798, 3770, 4784, 4404, 4363, 4749, 5218, 5125, 4476, 3851, 3372, 3140, 3027, 3025, 2984, 2971, 3125, 3309, 3456, 3407, 3488, 3857, 4861, 6358, 7499, 8112, 8584, 9128, 9602, 10169, 10581, 10424, 10287, 10319, 10807, 11577, 11828, 11169, 10719, 10483, 10554, 10903, 11420, 12624, 13790, 13661, 12134, 10617, 10086, 10120, 10145, 10229, 10251, 10327, 10769, 10751, 9072, 7221, 6615, 6006, 5061, 4587, 4302, 4249, 4333, 4301, 4221, 4071, 3900, 3664, 3562, 3714, 5098, 4650, 4416, 4557, 5169, 5657, 5352, 4318, 3617, 3276, 3205, 3074, 2939, 2918, 3075, 3285, 3383, 3411, 3650, 3978, 4700, 6101, 7164, 7604, 8213, 8856, 9257, 9732, 10040, 9849, 9770, 10287, 11110, 11601, 11756, 11380, 10732, 10516, 10628, 11081, 11857, 12801, 13559, 13389, 11985, 10477, 9786, 9673, 9593, 9808, 9992, 10247, 10444, 10018, 8576, 7050, 6035, 5279, 4773, 4478, 4060, 3751, 3738, 3597, 3433, 3441, 3353, 3337, 3436, 3607, 5293, 5023, 4769, 4638, 4971, 5583, 5812, 4918, 4008, 3458, 3359, 3202, 3023, 2926, 3025, 3112, 3205, 3384, 3742, 4045, 4556, 5784, 6823, 7386, 8068, 8670, 9121, 9396, 9456, 9460, 9522, 10116, 11058, 11334, 11290, 11152, 10584, 10333, 10325, 10698, 11407, 12287, 12833, 12157, 10967, 9943, 9479, 9379, 9365, 9431, 9667, 10079, 10133, 9304, 8049, 6954, 5903, 5081, 4731, 4387, 3856, 3535, 3480, 3331, 3173, 3218, 3220, 3297, 3456, 3556, 5864, 5532, 5275, 5000, 4992, 5359, 5709, 5265, 4411, 3750, 3566, 3374, 3226, 3121, 3158, 3203, 3258, 3372, 3671, 3903, 4250, 5332, 6459, 7097, 7735, 8441, 8964, 9111, 9069, 9118, 9220, 9500, 10091, 10344, 10227, 10296, 10359, 10105, 10024, 10161, 10557, 11257, 11677, 11049, 10364, 9846, 9517, 9458, 9415, 9376, 9459, 9624, 9468, 8716, 7741, 6918, 5999, 5051, 4490, 4024, 3645, 3545, 3428, 3259, 3128, 3100, 3219, 3414, 3535, 3600, 6690, 6373, 6045, 5638, 5371, 5389, 5484, 5151, 4526, 4054, 3911, 3738, 3543, 3438, 3372, 3291, 3203, 3276, 3522, 3660, 3907, 4805, 6015, 6882, 7507, 8129, 8613, 8837, 8833, 8822, 8922, 9107, 9337, 9428, 9382, 9523, 9811, 9733, 9814, 10002, 10087, 10348, 10528, 10341, 9967, 9794, 9693, 9591, 9386, 9499, 9363, 9390, 9223, 8293, 7353, 6767, 5938, 4940, 4323, 3918, 3625, 3620, 3565, 3340, 3200, 3171, 3305, 3572, 3854, 3896, 7089, 6798, 6730, 6326, 5996, 5700, 5422, 4836, 4234, 3967, 4207, 4309, 4019, 3871, 3629, 3374, 3186, 3147, 3259, 3385, 3538, 4189, 5469, 6558, 7296, 7939, 8339, 8610, 8662, 8671, 8542, 8687, 8949, 9040, 9074, 9146, 9176, 9339, 9578, 9776, 9839, 10025, 10221, 10126, 9619, 9601, 9637, 9468, 9208, 9213, 9093, 8928, 8867, 7888, 6747, 6101, 5485, 4771, 4268, 4002, 3756, 3761, 3800, 3562, 3383, 3355, 3498, 3737, 3984, 4082, 7542, 6841, 6861, 6753, 6509, 6294, 5648, 4579, 3741, 3481, 4122, 4635, 4586, 4438, 4033, 3666, 3378, 3141, 3110, 3175, 3311, 3716, 4577, 5787, 6956, 7698, 8069, 8273, 8314, 8482, 8286, 8262, 8332, 8511, 8656, 8760, 8790, 9087, 9311, 9281, 9390, 9781, 10191, 10302, 9802, 9655, 9486, 9352, 9189, 9073, 8891, 8377, 7931, 6926, 5790, 5203, 4816, 4410, 4154, 4013, 3869, 3977, 4089, 3885, 3649, 3578, 3789, 3988, 4080, 4151, 8752, 7469, 7179, 7026, 6778, 6786, 6482, 5090, 3847, 3369, 3943, 4737, 4795, 4668, 4355, 3968, 3612, 3297, 3163, 3212, 3401, 3578, 3938, 4953, 6376, 7355, 7764, 7888, 7919, 8254, 8100, 7845, 7846, 8004, 8255, 8461, 8685, 8904, 9005, 8968, 8985, 9365, 9782, 10429, 10248, 9755, 9230, 9166, 8926, 8698, 8265, 7464, 6703, 5828, 4950, 4456, 4230, 4059, 3925, 3861, 3967, 4128, 4114, 3987, 3866, 4040, 4471, 4634, 4543, 4469, 10289, 8971, 8062, 7217, 6673, 6844, 7127, 5956, 4633, 4000, 4116, 4815, 4872, 4544, 4433, 4369, 3963, 3550, 3331, 3305, 3563, 3623, 3658, 4241, 5384, 6657, 7282, 7376, 7505, 7885, 7767, 7561, 7667, 7766, 8048, 8147, 8482, 8713, 8811, 8742, 8814, 9268, 9561, 10332, 10286, 9586, 9053, 8870, 8326, 7770, 7134, 6240, 5392, 4800, 4316, 3955, 3844, 3863, 3805, 3765, 3984, 4156, 4086, 3933, 3870, 4177, 4869, 5342, 5113, 4738, 11085, 10513, 9517, 8100, 6935, 6670, 7041, 6365, 5437, 4990, 4817, 5213, 5366, 4912, 4620, 4706, 4419, 3883, 3475, 3355, 3656, 3735, 3599, 3823, 4388, 5292, 6157, 6544, 6944, 7414, 7490, 7435, 7627, 7713, 7936, 7862, 8126, 8414, 8521, 8301, 8531, 9273, 9537, 9741, 9263, 8756, 8565, 8210, 7448, 6708, 6052, 5120, 4430, 4159, 3921, 3733, 3691, 3825, 3859, 3896, 4162, 4184, 4148, 4085, 3926, 4066, 4668, 5410, 5444, 4846, 11764, 11492, 10479, 9495, 7778, 6669, 6665, 6349, 5832, 5405, 5262, 5371, 5518, 5218, 4923, 4907, 4715, 4258, 3704, 3378, 3412, 3497, 3497, 3641, 3910, 4358, 4716, 5210, 5826, 6351, 6568, 6725, 7019, 7391, 7719, 7736, 7863, 7971, 7977, 7669, 7961, 8811, 9121, 8607, 7583, 7339, 7637, 7246, 6363, 5592, 5040, 4396, 3870, 3726, 3590, 3516, 3689, 3923, 3962, 3899, 4038, 3962, 3981, 3976, 3820, 3883, 4258, 4971, 5284, 4758, 13568, 12766, 11320, 10469, 8661, 6901, 6422, 6285, 6092, 5689, 5483, 5300, 5214, 5141, 5033, 4958, 4775, 4409, 3943, 3505, 3319, 3409, 3447, 3547, 3641, 3858, 3930, 4203, 4581, 4842, 5078, 5438, 5729, 6270, 6676, 6832, 6988, 6890, 6793, 6645, 6943, 7701, 8070, 7237, 6203, 6124, 6677, 6337, 5357, 4604, 4173, 3823, 3495, 3376, 3281, 3253, 3538, 3906, 3983, 3808, 3733, 3540, 3527, 3520, 3506, 3699, 3987, 4435, 4795, 4570, 15653, 14756, 13008, 11805, 10006, 7459, 6292, 6224, 6375, 6176, 5865, 5589, 5183, 4869, 4791, 4828, 4717, 4425, 4186, 3897, 3617, 3514, 3398, 3440, 3515, 3573, 3583, 3732, 3805, 3898, 4053, 4385, 4581, 4882, 5184, 5473, 5633, 5769, 5625, 5487, 5613, 6064, 6366, 5841, 5188, 5239, 5534, 5133, 4329, 3844, 3576, 3289, 3061, 2953, 2847, 2810, 3078, 3422, 3583, 3588, 3404, 3247, 3261, 3238, 3436, 3701, 3882, 4095, 4366, 4345, 17211, 16239, 14670, 13231, 11059, 8001, 6406, 6164, 6444, 6548, 6264, 5866, 5341, 4789, 4486, 4448, 4551, 4497, 4439, 4541, 4252, 3876, 3602, 3496, 3423, 3402, 3512, 3639, 3527, 3478, 3688, 3908, 3959, 4007, 4189, 4497, 4753, 4996, 4840, 4647, 4670, 4802, 4895, 4763, 4400, 4484, 4491, 4031, 3557, 3409, 3265, 2989, 2726, 2545, 2409, 2291, 2414, 2688, 2999, 3192, 3203, 3200, 3324, 3387, 3544, 3728, 3894, 4022, 4075, 4116, 17343, 16063, 14769, 13835, 11729, 8552, 6744, 6334, 6576, 6852, 6607, 5953, 5354, 4803, 4343, 4186, 4258, 4355, 4627, 5126, 4965, 4458, 4235, 3986, 3800, 3748, 3782, 3774, 3683, 3547, 3660, 3802, 3733, 3673, 3787, 4064, 4313, 4411, 4415, 4279, 4287, 4309, 4215, 4030, 3879, 4098, 4088, 3717, 3436, 3344, 3186, 2903, 2537, 2196, 2033, 1934, 1990, 2253, 2515, 2819, 3118, 3343, 3651, 3763, 3841, 3862, 3977, 3976, 3843, 3770, 15721, 14615, 13646, 13582, 12447, 9366, 7141, 6496, 6536, 6703, 6528, 5961, 5371, 4784, 4198, 3885, 3963, 4164, 4416, 5127, 5480, 5082, 4915, 4656, 4449, 4428, 4358, 4173, 4005, 3892, 3878, 3852, 3761, 3689, 3632, 3873, 4107, 4323, 4346, 4213, 4234, 4153, 3855, 3618, 3663, 3995, 4077, 3747, 3509, 3357, 3104, 2745, 2287, 1920, 1787, 1851, 2044, 2355, 2567, 2834, 3135, 3464, 3849, 4020, 4041, 4093, 4030, 3821, 3651, 3460, 14554, 13584, 13128, 13325, 12750, 10032, 7701, 6788, 6519, 6479, 6256, 6021, 5872, 5090, 4066, 3725, 3805, 3950, 4125, 4809, 5383, 5252, 5212, 5151, 5126, 5231, 5176, 4789, 4564, 4441, 4278, 4185, 4024, 3890, 3816, 4002, 4160, 4404, 4482, 4339, 4216, 4033, 3737, 3549, 3643, 3976, 4095, 3807, 3561, 3349, 2974, 2493, 2009, 1726, 1686, 1954, 2420, 2892, 3158, 3152, 3234, 3456, 3848, 4147, 4148, 4139, 4065, 3843, 3617, 3453, 15064, 13799, 13416, 13461, 12929, 10871, 8648, 7330, 6794, 6510, 6152, 6240, 6807, 6003, 4242, 3721, 3819, 3995, 3986, 4337, 4968, 5189, 5275, 5454, 5754, 5889, 5782, 5297, 5002, 4778, 4491, 4239, 4162, 4074, 4105, 4223, 4314, 4569, 4753, 4578, 4181, 3864, 3628, 3505, 3703, 4030, 4107, 3910, 3683, 3369, 2898, 2354, 1810, 1539, 1606, 2019, 2736, 3449, 3647, 3412, 3405, 3558, 3926, 4264, 4321, 4353, 4433, 4316, 3820, 3738, 15549, 13743, 12960, 12654, 12549, 11350, 9116, 7585, 7024, 6446, 6026, 6401, 6750, 5818, 4388, 3802, 3768, 3951, 4111, 4372, 4644, 5012, 5444, 5793, 6167, 6310, 6145, 5585, 5064, 4641, 4371, 4259, 4313, 4225, 4157, 4126, 4319, 4620, 4936, 4721, 4131, 3652, 3422, 3499, 3871, 4095, 4080, 3959, 3779, 3454, 2890, 2284, 1759, 1475, 1553, 2014, 2796, 3573, 3813, 3626, 3576, 3714, 3981, 4291, 4469, 4602, 4771, 4759, 4374, 4305, 14630, 12729, 11704, 11182, 11219, 10344, 8619, 7496, 6862, 6180, 5968, 6607, 6507, 5228, 4317, 3882, 3827, 4016, 4330, 4696, 4868, 5022, 5524, 6090, 6345, 6339, 6297, 5603, 4794, 4374, 4245, 4280, 4333, 4227, 4076, 4133, 4385, 4508, 4733, 4531, 3965, 3487, 3432, 3638, 3968, 4144, 4059, 3935, 3813, 3483, 2843, 2256, 1844, 1534, 1578, 2032, 2715, 3387, 3738, 3684, 3659, 3865, 4136, 4362, 4497, 4681, 4747, 4716, 4552, 4483, 14007, 12558, 11612, 10924, 10376, 9339, 8443, 7685, 6763, 6015, 5816, 6295, 6178, 5286, 4599, 4072, 3914, 4022, 4410, 4998, 5448, 5520, 5607, 6253, 6443, 6421, 6248, 5313, 4503, 4132, 4103, 4310, 4363, 4220, 3908, 3963, 4260, 4459, 4501, 4316, 3886, 3556, 3599, 3810, 4004, 4149, 4099, 3902, 3749, 3413, 2816, 2280, 1876, 1632, 1691, 2051, 2559, 3077, 3428, 3605, 3780, 4120, 4440, 4595, 4610, 4719, 4587, 4442, 4326, 4450, 14493, 13652, 13205, 11930, 10383, 9182, 8585, 7847, 6968, 6314, 5929, 5987, 5831, 5564, 5187, 4458, 4034, 4070, 4461, 5213, 5762, 5956, 5759, 6086, 6335, 6468, 6073, 5101, 4481, 4117, 4060, 4261, 4314, 4141, 3838, 3774, 4095, 4273, 4281, 4205, 3916, 3722, 3777, 3967, 4102, 4103, 3981, 3788, 3693, 3460, 2915, 2355, 1902, 1701, 1751, 1984, 2401, 2820, 3191, 3634, 4080, 4514, 4759, 4822, 4727, 4659, 4400, 4219, 4179, 4514, 15089, 15078, 14959, 13137, 10628, 8993, 8252, 7613, 7080, 6755, 6455, 6316, 6210, 6179, 5919, 5051, 4360, 4202, 4632, 5382, 5709, 6021, 5967, 6088, 6220, 6275, 5783, 4922, 4350, 3931, 3912, 4134, 4196, 4076, 3769, 3615, 3772, 3939, 4052, 3958, 3786, 3707, 3772, 3895, 3953, 3972, 3838, 3640, 3565, 3372, 2941, 2443, 2034, 1789, 1815, 1988, 2332, 2719, 3179, 3635, 4199, 4635, 4823, 4854, 4666, 4527, 4423, 4315, 4495, 5124, 16852, 16958, 15970, 13877, 11382, 9242, 8165, 7714, 7294, 6860, 6604, 6455, 6444, 6605, 6367, 5616, 4864, 4430, 4862, 5450, 5599, 5825, 5936, 6095, 6166, 6118, 5459, 4620, 4057, 3689, 3717, 3866, 4016, 3898, 3540, 3399, 3457, 3538, 3725, 3690, 3613, 3600, 3627, 3682, 3707, 3732, 3597, 3467, 3484, 3325, 2932, 2447, 2151, 2036, 2092, 2196, 2436, 2742, 3206, 3594, 4049, 4339, 4491, 4600, 4577, 4684, 4824, 4683, 4893, 5866, 21075, 20411, 17355, 14322, 11925, 9784, 8322, 7734, 7422, 6859, 6500, 6318, 6272, 6384, 6221, 5995, 5425, 4746, 5087, 5541, 5688, 5707, 5984, 6286, 6426, 6331, 5519, 4462, 3780, 3488, 3471, 3542, 3710, 3617, 3392, 3334, 3263, 3330, 3452, 3413, 3369, 3337, 3342, 3460, 3564, 3605, 3551, 3442, 3496, 3439, 3040, 2637, 2398, 2377, 2398, 2482, 2724, 2958, 3309, 3679, 3971, 4051, 4120, 4264, 4476, 4951, 5412, 5363, 5507, 6404, 25093, 24684, 19124, 13773, 11449, 9995, 8272, 7200, 7050, 6980, 6686, 6400, 6321, 6203, 6290, 6342, 5695, 5112, 5393, 5684, 5746, 5853, 6299, 6599, 6765, 6658, 6037, 4782, 3812, 3412, 3326, 3465, 3533, 3420, 3377, 3240, 3092, 3136, 3155, 3171, 3176, 3133, 3167, 3320, 3541, 3636, 3600, 3621, 3688, 3631, 3315, 2982, 2785, 2816, 2753, 2882, 3097, 3284, 3483, 3661, 3884, 3915, 3866, 3911, 4252, 5017, 5900, 6309, 6297, 6752, 25070, 24676, 18455, 12376, 10493, 10074, 8644, 7010, 6672, 6918, 6800, 6618, 6651, 6353, 6583, 6591, 5885, 5602, 5783, 5877, 5938, 6227, 6719, 7047, 6942, 6563, 6340, 5508, 4378, 3724, 3462, 3428, 3369, 3355, 3301, 3193, 3120, 3078, 3028, 3040, 3050, 3036, 3149, 3410, 3754, 3976, 4000, 4001, 3959, 3809, 3514, 3305, 3193, 3300, 3332, 3442, 3606, 3783, 3771, 3633, 3769, 3831, 3648, 3659, 4099, 5019, 6196, 6955, 6898, 7035]}]), (&#39;masks&#39;, None)]&gt;
+</pre></div>
+</div>
+</div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># create a pyarrow table for writing the data</span>
+<span class="n">table</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">table</span><span class="p">(</span>
+    <span class="p">{</span>
+        <span class="c1"># two columns, two values each, both int64 type</span>
+        <span class="s2">&quot;metadata_1&quot;</span><span class="p">:</span> <span class="n">pa</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="nb">type</span><span class="o">=</span><span class="n">pa</span><span class="o">.</span><span class="n">int64</span><span class="p">()),</span>
+        <span class="s2">&quot;feature_1&quot;</span><span class="p">:</span> <span class="n">pa</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="nb">type</span><span class="o">=</span><span class="n">pa</span><span class="o">.</span><span class="n">int64</span><span class="p">()),</span>
+        <span class="c1"># add an image column with repeated entries based on the image slice</span>
+        <span class="s2">&quot;image&quot;</span><span class="p">:</span> <span class="n">pa</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">oa_img_slice</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+    <span class="p">}</span>
+<span class="p">)</span>
+
+<span class="c1"># write a parquet table</span>
+<span class="n">pq</span><span class="o">.</span><span class="n">write_table</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="s2">&quot;example.ome.parquet&quot;</span><span class="p">)</span>
+
+<span class="c1"># read the parquet table with cytodataframe</span>
+<span class="c1"># (showing the OME-Arrow image that was written)</span>
+<span class="n">CytoDataFrame</span><span class="p">(</span><span class="s2">&quot;example.ome.parquet&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><style>.cdf-filter-range-slider .widget-readout,.cdf-filter-range-slider input.widget-readout {min-width:96px !important;max-width:96px !important;width:96px !important;font-size:11px !important;text-align:right;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;}.cdf-filter-range-slider .widget-label {font-size:11px !important;line-height:1.2 !important;margin-top:8px !important;}</style></div><script type="application/vnd.jupyter.widget-view+json">{"model_id": "54568150b6aa484eaa09e6f47a423444", "version_major": 2, "version_minor": 0}</script><div class="output text_html"><details class="cyto-static-snapshot"><summary>Static snapshot (for non-interactive view)</summary><style>table.dataframe thead tr {background:#EBEBEB;}table.dataframe thead th {background:#EBEBEB;}table.dataframe tbody tr {background:#FFFFFF;}table.dataframe tbody tr:nth-child(even) {background:#F5F5F5;}</style><table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>metadata_1</th>
+      <th>feature_1</th>
+      <th>image</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>0</td>
+      <td>1</td>
+      <td><img src="data:image/png;base64,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" style="width:300px"/></td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>2</td>
+      <td>2</td>
+      <td><img src="data:image/png;base64,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" style="width:300px"/></td>
+    </tr>
+  </tbody>
+</table></details></div><div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>
+</pre></div>
+</div>
+</div>
+</div>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="cytodataframe_at_a_glance.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">CytoDataFrame at a Glance</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="../python-api.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Python API</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="../_sources/examples/omearrow_and_cytodataframe.ipynb.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2024, Cytomining Community.
+      <br/>
+    
+  </p>
+</div>
+      
+    </div>
+  
+  
+    <div class="footer-items__center">
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 9.0.4.
+    <br/>
+  </p>
+</div>
+      
+    </div>
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  <!-- # L10n: Setting the PST URL as an argument as this does not need to be localized -->
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.16.1.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  </body>
+</html>

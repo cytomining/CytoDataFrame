@@ -31,7 +31,7 @@ jobs:
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@v7
       # run pre-commmit checks using prek for faster execution
-      - uses: j178/prek-action@v1
+      - uses: j178/prek-action@v2
         id: pre_commit
         continue-on-error: true
       - name: Check for changes

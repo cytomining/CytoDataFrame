@@ -796,6 +796,71 @@ def test_return_cytodataframe(cytotable_NF1_data_parquet_shrunken: str):
     assert isinstance(cdf.tail(), CytoDataFrame)
     assert isinstance(cdf.sort_values(by="Metadata_ImageNumber"), CytoDataFrame)
     assert isinstance(cdf.sample(n=5), CytoDataFrame)
+    assert isinstance(cdf[0:2], CytoDataFrame)
+    assert isinstance(cdf[1:1], CytoDataFrame)
+    assert isinstance(cdf[0:5:2], CytoDataFrame)
+    assert isinstance(cdf.iloc[0:2], CytoDataFrame)
+    assert isinstance(cdf.iloc[1:1], CytoDataFrame)
+    assert isinstance(cdf.iloc[0:5:2], CytoDataFrame)
+
+
+def test_return_cytodataframe_passthroughs_non_dataframe_results() -> None:
+    """Ensure helper methods return scalar-like results without wrapping."""
+
+    cdf = CytoDataFrame(pd.DataFrame({"a": [1, 2, 3]}))
+
+    result = cdf._return_cytodataframe(lambda: 3, "dummy_method")
+
+    assert result == 3
+
+
+def test_iloc_slice_preserves_cytodataframe_html_formatting():
+    """Ensure ``iloc`` slices keep the CytoDataFrame notebook HTML renderer."""
+
+    cdf = CytoDataFrame(pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}))
+
+    bracket_sliced = cdf[0:3:2]
+    bracket_empty_sliced = cdf[1:1]
+    sliced = cdf.iloc[0:3:2]
+    empty_sliced = cdf.iloc[1:1]
+
+    assert isinstance(bracket_sliced, CytoDataFrame)
+    assert isinstance(bracket_empty_sliced, CytoDataFrame)
+    assert bracket_sliced._custom_attrs["_output"] is cdf._custom_attrs["_output"]
+    assert (
+        bracket_sliced._custom_attrs["_widget_state"]
+        is cdf._custom_attrs["_widget_state"]
+    )
+    assert bracket_empty_sliced._custom_attrs["_output"] is cdf._custom_attrs["_output"]
+    assert (
+        bracket_empty_sliced._custom_attrs["_widget_state"]
+        is cdf._custom_attrs["_widget_state"]
+    )
+    assert isinstance(sliced, CytoDataFrame)
+    assert isinstance(empty_sliced, CytoDataFrame)
+    assert sliced._custom_attrs["_output"] is cdf._custom_attrs["_output"]
+    assert sliced._custom_attrs["_widget_state"] is cdf._custom_attrs["_widget_state"]
+    assert empty_sliced._custom_attrs["_output"] is cdf._custom_attrs["_output"]
+    assert (
+        empty_sliced._custom_attrs["_widget_state"]
+        is cdf._custom_attrs["_widget_state"]
+    )
+    assert "background:#EBEBEB" in bracket_sliced._repr_html_(debug=True)
+    assert "background:#EBEBEB" in bracket_empty_sliced._repr_html_(debug=True)
+    assert "background:#EBEBEB" in sliced._repr_html_(debug=True)
+    assert "background:#EBEBEB" in empty_sliced._repr_html_(debug=True)
+
+
+def test_transpose_toggles_transposed_state() -> None:
+    """Ensure repeated transposes flip the transposed rendering state back."""
+
+    cdf = CytoDataFrame(pd.DataFrame({"a": [1, 2], "b": [3, 4]}))
+
+    transposed = cdf.T
+    double_transposed = transposed.T
+
+    assert transposed._custom_attrs["is_transposed"] is True
+    assert double_transposed._custom_attrs["is_transposed"] is False
 
 
 def test_cytodataframe_dynamic_width_and_height(

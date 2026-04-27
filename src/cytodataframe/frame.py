@@ -124,7 +124,7 @@ class CytoDataFrame(pd.DataFrame):
         segmentation_file_regex: Optional[Dict[str, str]] = None,
         image_adjustment: Optional[Callable] = None,
         display_options: Optional[Dict[str, Any]] = None,
-        *args: Tuple[Any, ...],
+        *args: Any,
         **kwargs: Dict[str, Any],
     ) -> None:
         """
@@ -277,6 +277,7 @@ class CytoDataFrame(pd.DataFrame):
                 )
             ),
             "_filter_range_sliders": {},
+            "_initializing": True,
         }
 
         if self._custom_attrs["data_context_dir"] is not None:
@@ -351,6 +352,7 @@ class CytoDataFrame(pd.DataFrame):
         # Wrap methods so they return CytoDataFrames
         # instead of Pandas DataFrames.
         self._wrap_methods()
+        self._custom_attrs["_initializing"] = False
 
     def __getitem__(self: CytoDataFrame_type, key: Union[int, str]) -> Any:
         """
@@ -371,34 +373,56 @@ class CytoDataFrame(pd.DataFrame):
             return result
 
         elif isinstance(result, pd.DataFrame):
-            cdf = CytoDataFrame(
-                super().__getitem__(key),
-                data_context_dir=self._custom_attrs["data_context_dir"],
-                data_image_paths=self._custom_attrs["data_image_paths"],
-                data_bounding_box=self._custom_attrs["data_bounding_box"],
-                compartment_center_xy=self._custom_attrs["compartment_center_xy"],
-                data_mask_context_dir=self._custom_attrs["data_mask_context_dir"],
-                data_outline_context_dir=self._custom_attrs["data_outline_context_dir"],
-                segmentation_file_regex=self._custom_attrs["segmentation_file_regex"],
-                image_adjustment=self._custom_attrs["image_adjustment"],
-                display_options=self._custom_attrs["display_options"],
-            )
+            return self._build_result_cdf(result)
 
-            # add widget control meta
-            cdf._custom_attrs["_widget_state"] = self._custom_attrs["_widget_state"]
-            cdf._custom_attrs["_scale_slider"] = self._custom_attrs["_scale_slider"]
-            cdf._custom_attrs["_filter_range_sliders"] = self._custom_attrs[
-                "_filter_range_sliders"
-            ]
-            cdf._custom_attrs["_output"] = self._custom_attrs["_output"]
+    @property
+    def _constructor(self: CytoDataFrame_type) -> Callable[..., CytoDataFrame_type]:
+        """Return a constructor that preserves CytoDataFrame display state."""
+        if self._custom_attrs.get("_initializing", False):
+            return pd.DataFrame
+        return self._build_result_cdf
 
-            return cdf
+    def _build_result_cdf(
+        self: CytoDataFrame_type,
+        data: Union["CytoDataFrame", pd.DataFrame, pd.Series, Any],
+        *args: Any,
+        **kwargs: Dict[str, Any],
+    ) -> CytoDataFrame_type:
+        """Construct a result frame while preserving CytoDataFrame metadata."""
+        if data is None and "data" in kwargs:
+            data = kwargs.pop("data")
+
+        cdf = CytoDataFrame(
+            data,
+            *args,
+            data_context_dir=self._custom_attrs["data_context_dir"],
+            data_image_paths=self._custom_attrs["data_image_paths"],
+            data_bounding_box=self._custom_attrs["data_bounding_box"],
+            compartment_center_xy=self._custom_attrs["compartment_center_xy"],
+            data_mask_context_dir=self._custom_attrs["data_mask_context_dir"],
+            data_outline_context_dir=self._custom_attrs["data_outline_context_dir"],
+            segmentation_file_regex=self._custom_attrs["segmentation_file_regex"],
+            image_adjustment=self._custom_attrs["image_adjustment"],
+            display_options=self._custom_attrs["display_options"],
+            **kwargs,
+        )
+
+        # Preserve the shared interactive widget objects across derived views.
+        cdf._custom_attrs["is_transposed"] = self._custom_attrs["is_transposed"]
+        cdf._custom_attrs["_widget_state"] = self._custom_attrs["_widget_state"]
+        cdf._custom_attrs["_scale_slider"] = self._custom_attrs["_scale_slider"]
+        cdf._custom_attrs["_filter_range_sliders"] = self._custom_attrs[
+            "_filter_range_sliders"
+        ]
+        cdf._custom_attrs["_output"] = self._custom_attrs["_output"]
+
+        return cdf
 
     def _return_cytodataframe(
         self: CytoDataFrame_type,
         method: Callable,
         method_name: str,
-        *args: Tuple[Any, ...],
+        *args: Any,
         **kwargs: Dict[str, Any],
     ) -> Any:
         """
@@ -410,7 +434,7 @@ class CytoDataFrame(pd.DataFrame):
                 The method to be called and wrapped.
             method_name (str):
                 The name of the method to be wrapped.
-            *args (Tuple[Any, ...]):
+            *args (Any):
                 Positional arguments to be passed to the method.
             **kwargs (Dict[str, Any]):
                 Keyword arguments to be passed to the method.
@@ -423,33 +447,20 @@ class CytoDataFrame(pd.DataFrame):
 
         """
 
-        result = method(*args, **kwargs)
+        result = (
+            pd.DataFrame(self).transpose(*args, **kwargs)
+            if method_name == "transpose"
+            else method(*args, **kwargs)
+        )
 
-        if isinstance(result, pd.DataFrame):
-            cdf = CytoDataFrame(
-                data=result,
-                data_context_dir=self._custom_attrs["data_context_dir"],
-                data_image_paths=self._custom_attrs["data_image_paths"],
-                data_bounding_box=self._custom_attrs["data_bounding_box"],
-                compartment_center_xy=self._custom_attrs["compartment_center_xy"],
-                data_mask_context_dir=self._custom_attrs["data_mask_context_dir"],
-                data_outline_context_dir=self._custom_attrs["data_outline_context_dir"],
-                segmentation_file_regex=self._custom_attrs["segmentation_file_regex"],
-                image_adjustment=self._custom_attrs["image_adjustment"],
-                display_options=self._custom_attrs["display_options"],
-            )
-            # If the method name is transpose we know that
-            # the dataframe has been transposed.
-            if method_name == "transpose" and not self._custom_attrs["is_transposed"]:
-                cdf._custom_attrs["is_transposed"] = True
+        if not isinstance(result, pd.DataFrame):
+            return result
 
-            # add widget control meta
-            cdf._custom_attrs["_widget_state"] = self._custom_attrs["_widget_state"]
-            cdf._custom_attrs["_scale_slider"] = self._custom_attrs["_scale_slider"]
-            cdf._custom_attrs["_filter_range_sliders"] = self._custom_attrs[
-                "_filter_range_sliders"
-            ]
-            cdf._custom_attrs["_output"] = self._custom_attrs["_output"]
+        cdf = self._build_result_cdf(result)
+        # If the method name is transpose we know that
+        # the dataframe has been transposed.
+        if method_name == "transpose":
+            cdf._custom_attrs["is_transposed"] = not self._custom_attrs["is_transposed"]
 
         return cdf
 
@@ -473,7 +484,7 @@ class CytoDataFrame(pd.DataFrame):
                 the result is a CytoDataFrame.
         """
 
-        def wrapper(*args: Tuple[Any, ...], **kwargs: Dict[str, Any]) -> Any:
+        def wrapper(*args: Any, **kwargs: Dict[str, Any]) -> Any:
             """
             Wraps the specified method to ensure
             it returns a CytoDataFrame.
@@ -485,7 +496,7 @@ class CytoDataFrame(pd.DataFrame):
             custom attributes.
 
             Args:
-                *args (Tuple[Any, ...]):
+                *args (Any):
                     Positional arguments to be passed to the method.
                 **kwargs (Dict[str, Any]):
                     Keyword arguments to be passed to the method.
@@ -4346,7 +4357,7 @@ class CytoDataFrame(pd.DataFrame):
                 # if the data are transposed,
                 # we transpose them back to keep
                 # logic the same here.
-                data = self.transpose()
+                data = pd.DataFrame(self).transpose()
 
             # Re-add bounding box columns if they are no longer available
             bounding_box_externally_joined = False
@@ -4362,7 +4373,12 @@ class CytoDataFrame(pd.DataFrame):
                 )
                 bounding_box_externally_joined = True
             else:
-                data = self.copy() if not bounding_box_externally_joined else data
+                data = (
+                    data
+                    if self._custom_attrs["is_transposed"]
+                    or bounding_box_externally_joined
+                    else self.copy()
+                )
 
             # Re-add compartment center xy columns if they are no longer available
             compartment_center_externally_joined = False
@@ -4381,7 +4397,8 @@ class CytoDataFrame(pd.DataFrame):
             else:
                 data = (
                     data
-                    if bounding_box_externally_joined
+                    if self._custom_attrs["is_transposed"]
+                    or bounding_box_externally_joined
                     or compartment_center_externally_joined
                     else self.copy()
                 )
@@ -4411,7 +4428,9 @@ class CytoDataFrame(pd.DataFrame):
             else:
                 data = (
                     data
-                    if image_paths_externally_joined or bounding_box_externally_joined
+                    if self._custom_attrs["is_transposed"]
+                    or image_paths_externally_joined
+                    or bounding_box_externally_joined
                     else self.copy()
                 )
 

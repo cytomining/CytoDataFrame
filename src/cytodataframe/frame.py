@@ -42,6 +42,7 @@ from pandas.io.formats import (
 )
 from skimage.util import img_as_ubyte
 
+from . import engine
 from .image import (
     add_image_scale_bar,
     adjust_with_adaptive_histogram_equalization,
@@ -49,6 +50,9 @@ from .image import (
     draw_outline_on_image_from_outline,
     get_pixel_bbox_from_offsets,
 )
+from .lazy import CytoLazyFrame, build_context
+from .lazy import scan_parquet as _lazy_scan_parquet
+from .schema import CytoSchema
 from .volume import (
     build_3d_html_from_path,
     build_3d_image_html_stub,
@@ -112,7 +116,7 @@ class CytoDataFrame(pd.DataFrame):
     # while avoiding oversized outputs in typical Jupyter viewports.
     _DEFAULT_TABLE_MAX_HEIGHT: ClassVar[str] = "700px"
 
-    def __init__(  # noqa: PLR0913
+    def __init__(  # noqa: PLR0913, C901, PLR0912
         self: CytoDataFrame_type,
         data: Union[CytoDataFrame_type, pd.DataFrame, str, pathlib.Path],
         data_context_dir: Optional[str] = None,
@@ -326,6 +330,19 @@ class CytoDataFrame(pd.DataFrame):
 
             super().__init__(data)
 
+        # polars/arrow inputs are probed last so the common pandas/path cases
+        # never trigger a polars/pyarrow import.
+        elif engine.is_polars_lazyframe(data):
+            # Lazy polars input: collect through the Arrow contract into the
+            # pandas compatibility facade.
+            self._custom_attrs["data_source"] = "polars.LazyFrame"
+            super().__init__(engine.normalize_to_pandas(data))
+        elif engine.is_polars_dataframe(data):
+            self._custom_attrs["data_source"] = "polars.DataFrame"
+            super().__init__(engine.normalize_to_pandas(data))
+        elif engine.is_arrow_table(data):
+            self._custom_attrs["data_source"] = "pyarrow.Table"
+            super().__init__(engine.normalize_to_pandas(data))
         else:
             super().__init__(data)
 
@@ -1505,6 +1522,111 @@ class CytoDataFrame(pd.DataFrame):
             self.to_parquet(file_path, **kwargs)
         else:
             raise ValueError("Unsupported file format for export.")
+
+    # ------------------------------------------------------------------ #
+    # Backend / interchange conversions (Polars engine, Arrow contract)
+    # ------------------------------------------------------------------ #
+    def to_pandas(self: CytoDataFrame_type) -> pd.DataFrame:
+        """
+        Return the data as a plain :class:`pandas.DataFrame`.
+
+        The pandas layer is CytoDataFrame's compatibility boundary; this
+        returns a standard pandas DataFrame (not a CytoDataFrame) for use with
+        pandas-native tooling.
+        """
+        return pd.DataFrame(self)
+
+    def to_polars(self: CytoDataFrame_type) -> Any:
+        """
+        Return the tabular data as an eager :class:`polars.DataFrame`.
+
+        Note: polars has no row-index concept, so the pandas index is dropped.
+        Object columns holding non-Arrow values (e.g. numpy image arrays) cannot
+        be converted and will raise a ``TypeError``.
+        """
+        return engine.to_polars(pd.DataFrame(self))
+
+    def to_lazy(self: CytoDataFrame_type) -> CytoLazyFrame:
+        """
+        Return a lazy, Polars-backed :class:`CytoLazyFrame` view.
+
+        The returned object carries this frame's image/display context so that a
+        subsequent ``.collect()`` rebuilds an equivalently-configured
+        CytoDataFrame.
+        """
+        return CytoLazyFrame(
+            engine.to_lazyframe(pd.DataFrame(self)),
+            context=build_context(self._custom_attrs),
+        )
+
+    def to_arrow(self: CytoDataFrame_type, preserve_index: bool = False) -> Any:
+        """
+        Return the tabular data as a :class:`pyarrow.Table`.
+
+        Arrow is CytoDataFrame's canonical schema and interchange contract.
+        """
+        return engine.to_arrow(pd.DataFrame(self), preserve_index=preserve_index)
+
+    @property
+    def cyto_schema(self: CytoDataFrame_type) -> CytoSchema:
+        """
+        The inferred :class:`CytoSchema` describing this frame's columns.
+
+        Classifies columns into image/object keys, metadata, feature, and
+        geometry roles using the Arrow-native schema contract.
+        """
+        return CytoSchema.from_pandas(pd.DataFrame(self))
+
+    @classmethod
+    def from_file(
+        cls,
+        source: Union[str, pathlib.Path],
+        **kwargs: Any,
+    ) -> "CytoDataFrame":
+        """
+        Eagerly construct a CytoDataFrame from a file path.
+
+        A thin, explicit alias for ``CytoDataFrame(source, ...)`` matching the
+        domain-oriented API in the evolution plan.
+        """
+        return cls(source, **kwargs)
+
+    @classmethod
+    def scan_parquet(  # noqa: PLR0913
+        cls,
+        source: Union[str, pathlib.Path],
+        data_context_dir: Optional[str] = None,
+        data_mask_context_dir: Optional[str] = None,
+        data_outline_context_dir: Optional[str] = None,
+        segmentation_file_regex: Optional[Dict[str, str]] = None,
+        image_adjustment: Optional[Callable] = None,
+        display_options: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> CytoLazyFrame:
+        """
+        Lazily scan a Parquet source into a :class:`CytoLazyFrame`.
+
+        Enables predicate/projection pushdown for large profiling datasets::
+
+            (
+                CytoDataFrame.scan_parquet("profiles.parquet")
+                .filter(...)
+                .select_features()
+                .collect()
+            )
+
+        The image/display context provided here is carried through the lazy
+        pipeline and applied when the result is ``.collect()``-ed.
+        """
+        context = {
+            "data_context_dir": data_context_dir,
+            "data_mask_context_dir": data_mask_context_dir,
+            "data_outline_context_dir": data_outline_context_dir,
+            "segmentation_file_regex": segmentation_file_regex,
+            "image_adjustment": image_adjustment,
+            "display_options": display_options,
+        }
+        return _lazy_scan_parquet(source, context=context, **kwargs)
 
     def to_ome_parquet(  # noqa: PLR0915, PLR0912, C901
         self: CytoDataFrame_type,

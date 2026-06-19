@@ -23,6 +23,39 @@ With CytoDataFrame you can:
 - Highlight image objects using mask or outline files to understand their segmentation.
 - Adjust image displays on-the-fly using interactive slider widgets.
 - Automatically detect 3D image volumes and render interactive [trame](https://github.com/Kitware/trame) views in notebooks when 3D dependencies are installed (with graceful fallback otherwise).
+- Interoperate with the [Polars](https://pola.rs/) and [Apache Arrow](https://arrow.apache.org/) ecosystems while keeping the familiar Pandas-based experience.
+
+### Polars and Arrow interoperability
+
+CytoDataFrame uses Apache Arrow as its canonical schema/interchange contract and
+Polars as an execution engine, while Pandas remains the compatibility layer. You
+can move between representations and run lazy, scalable queries without leaving
+the CytoDataFrame API:
+
+```python
+import polars as pl
+from cytodataframe import CytoDataFrame
+
+# Construct from pandas, polars (DataFrame or LazyFrame), or a pyarrow Table.
+cdf = CytoDataFrame("profiles.parquet")
+
+# Convert out to any representation (Pandas stays a boundary layer).
+cdf.to_pandas()   # pandas.DataFrame
+cdf.to_polars()   # polars.DataFrame
+cdf.to_arrow()    # pyarrow.Table
+cdf.to_lazy()     # CytoLazyFrame (lazy, Polars-backed)
+
+# Inspect the inferred schema (metadata / feature / geometry roles).
+cdf.cyto_schema
+
+# Lazily scan large Parquet datasets with predicate/projection pushdown.
+result = (
+    CytoDataFrame.scan_parquet("profiles.parquet")
+    .filter(pl.col("Metadata_Well") == "A01")
+    .select_features()
+    .collect()  # -> CytoDataFrame
+)
+```
 
 For 3D notebook display behavior:
 
@@ -51,6 +84,20 @@ pip install cytodataframe
 
 # or install directly from source
 pip install git+https://github.com/cytomining/CytoDataFrame.git
+```
+
+The core install is intentionally lean. Heavier, feature-specific stacks are
+available as optional extras:
+
+```shell
+# interactive 3D volume rendering (trame / pyvista)
+pip install "cytodataframe[viz3d]"
+
+# OME-Arrow image read/write/embedding (to_ome_parquet, OME-Arrow columns)
+pip install "cytodataframe[ome]"
+
+# everything
+pip install "cytodataframe[all]"
 ```
 
 ## Contributing, Development, and Testing

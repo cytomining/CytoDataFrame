@@ -25,7 +25,7 @@ With CytoDataFrame you can:
 - Automatically detect 3D image volumes and render interactive [trame](https://github.com/Kitware/trame) views in notebooks when 3D dependencies are installed (with graceful fallback otherwise).
 - Interoperate with the [Polars](https://pola.rs/) and [Apache Arrow](https://arrow.apache.org/) ecosystems while keeping the familiar Pandas-based experience.
 
-### Polars and Arrow interoperability
+## Polars and Arrow interoperability
 
 CytoDataFrame uses Apache Arrow as its canonical schema/interchange contract and
 Polars as an execution engine, while Pandas remains the compatibility layer. You

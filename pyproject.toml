@@ -30,6 +30,9 @@ dependencies = [
   "pyarrow>=16",
   "scikit-image>0.19.3",
 ]
+optional-dependencies.all = [
+  "cytodataframe[ome,viz3d]",
+]
 # Optional feature stacks. Install with e.g. `pip install cytodataframe[viz3d,ome]`.
 # These are imported lazily, so the core package imports fine without them.
 optional-dependencies.ome = [
@@ -42,9 +45,6 @@ optional-dependencies.viz3d = [
   "trame>=3.12",
   "trame-vtk>=2.10",
   "trame-vuetify>=3.1",
-]
-optional-dependencies.all = [
-  "cytodataframe[ome,viz3d]",
 ]
 
 [dependency-groups]
@@ -59,13 +59,13 @@ dev = [
   "jupyterlab>=4.3,<5",
   "jupyterlab-code-formatter>=3.0.2,<4",
   "jupytext>=1.16.4,<2",
+  # optional-feature stacks needed to exercise the full test suite
+  "ome-arrow>=0.0.3,<0.0.10",
   "poethepoet>=0.37,<0.47",
   "pytest>=8.3.3,<10",
   "pytest-cov>=5,<8",
-  "sqlalchemy>=1.3.6,<3",
-  # optional-feature stacks needed to exercise the full test suite
-  "ome-arrow>=0.0.3,<0.0.10",
   "pyvista>=0.46.4",
+  "sqlalchemy>=1.3.6,<3",
   "trame>=3.12",
   "trame-vtk>=2.10",
   "trame-vuetify>=3.1",
@@ -80,14 +80,14 @@ docs = [
 ]
 
 [tool.setuptools]
-package-dir = { "" = "src" }
 packages.find.where = [ "src" ]
+package-dir = { "" = "src" }
 
 [tool.setuptools_scm]
-root = "."
+version_file = "src/cytodataframe/_version.py"
 version_scheme = "no-guess-dev"
 local_scheme = "no-local-version"
-version_file = "src/cytodataframe/_version.py"
+root = "."
 
 [tool.uv]
 default-groups = [

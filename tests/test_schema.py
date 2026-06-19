@@ -66,9 +66,7 @@ def test_schema_classification_buckets(cellprofiler_frame: pd.DataFrame):
 def test_schema_inference_matches_across_backends(cellprofiler_frame: pd.DataFrame):
     """pandas, polars, and Arrow inference agree."""
     from_pandas = CytoSchema.from_pandas(cellprofiler_frame).to_dict()
-    from_polars = CytoSchema.from_polars(
-        pl.from_pandas(cellprofiler_frame)
-    ).to_dict()
+    from_polars = CytoSchema.from_polars(pl.from_pandas(cellprofiler_frame)).to_dict()
     from_arrow = CytoSchema.from_arrow(
         pa.Table.from_pandas(cellprofiler_frame, preserve_index=False).schema
     ).to_dict()
@@ -77,9 +75,10 @@ def test_schema_inference_matches_across_backends(cellprofiler_frame: pd.DataFra
 
 def test_schema_infer_dispatch(cellprofiler_frame: pd.DataFrame):
     table = pa.Table.from_pandas(cellprofiler_frame, preserve_index=False)
-    assert CytoSchema.infer(table).to_dict() == CytoSchema.infer(
-        cellprofiler_frame
-    ).to_dict()
+    assert (
+        CytoSchema.infer(table).to_dict()
+        == CytoSchema.infer(cellprofiler_frame).to_dict()
+    )
     assert CytoSchema.infer(pl.from_pandas(cellprofiler_frame).lazy()).to_dict() == (
         CytoSchema.infer(cellprofiler_frame).to_dict()
     )
@@ -138,8 +137,7 @@ _NAME_VOCAB = [
 )
 def test_schema_partition_invariants(columns: list, numeric_seed: list):
     numeric = {
-        name: numeric_seed[idx % len(numeric_seed)]
-        for idx, name in enumerate(columns)
+        name: numeric_seed[idx % len(numeric_seed)] for idx, name in enumerate(columns)
     }
     schema = CytoSchema.from_columns(columns, numeric=numeric)
 

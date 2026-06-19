@@ -75,8 +75,7 @@ _KNOWN_ID_COLUMNS = frozenset(
 def _is_image_column(name: str) -> bool:
     """Return True when a column name references an image filename or path."""
     return bool(
-        _IMAGE_FILENAME_PATTERN.search(name)
-        or _IMAGE_PATHNAME_PATTERN.search(name)
+        _IMAGE_FILENAME_PATTERN.search(name) or _IMAGE_PATHNAME_PATTERN.search(name)
     )
 
 
@@ -300,13 +299,11 @@ class CytoSchema:
         overlap_fg = feature_set & geometry_set
         if overlap_fm:
             issues.append(
-                f"Columns classified as both feature and metadata: "
-                f"{sorted(overlap_fm)}"
+                f"Columns classified as both feature and metadata: {sorted(overlap_fm)}"
             )
         if overlap_fg:
             issues.append(
-                f"Columns classified as both feature and geometry: "
-                f"{sorted(overlap_fg)}"
+                f"Columns classified as both feature and geometry: {sorted(overlap_fg)}"
             )
         if self.image_key is not None and self.image_key not in metadata_set:
             issues.append(
@@ -328,9 +325,7 @@ class CytoSchema:
         """
         missing = [key for key in keys if getattr(self, key, None) is None]
         if missing:
-            raise ValueError(
-                f"CytoSchema is missing required key(s): {missing}"
-            )
+            raise ValueError(f"CytoSchema is missing required key(s): {missing}")
         return self
 
     def to_dict(self) -> dict:

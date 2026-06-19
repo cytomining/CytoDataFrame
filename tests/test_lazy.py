@@ -35,9 +35,7 @@ def test_to_lazy_returns_cytolazyframe(profiles: pd.DataFrame):
 
 def test_lazy_filter_matches_pandas(profiles: pd.DataFrame):
     cdf = CytoDataFrame(profiles)
-    lazy_result = (
-        cdf.to_lazy().filter(pl.col("Cells_AreaShape_Area") >= 30.0).collect()
-    )
+    lazy_result = cdf.to_lazy().filter(pl.col("Cells_AreaShape_Area") >= 30.0).collect()
     pandas_result = profiles[profiles["Cells_AreaShape_Area"] >= 30.0]
 
     assert isinstance(lazy_result, CytoDataFrame)
@@ -51,9 +49,7 @@ def test_lazy_filter_matches_pandas(profiles: pd.DataFrame):
 def test_lazy_eager_equivalence(profiles: pd.DataFrame):
     """Lazy and eager polars execution produce identical results."""
     cdf = CytoDataFrame(profiles)
-    lazy_df = (
-        cdf.to_lazy().filter(pl.col("Metadata_Well") == "B02").to_polars()
-    )
+    lazy_df = cdf.to_lazy().filter(pl.col("Metadata_Well") == "B02").to_polars()
     eager_df = cdf.to_polars().filter(pl.col("Metadata_Well") == "B02")
     assert lazy_df.equals(eager_df)
 
@@ -102,9 +98,7 @@ def test_lazy_join(profiles: pd.DataFrame):
     annotations = pl.DataFrame(
         {"Metadata_Well": ["A01", "B02"], "treatment": ["drug", "ctrl"]}
     )
-    result = (
-        cdf.to_lazy().join(annotations, on="Metadata_Well", how="inner").collect()
-    )
+    result = cdf.to_lazy().join(annotations, on="Metadata_Well", how="inner").collect()
     assert "treatment" in result.columns
     # only A01 (2 rows) + B02 (2 rows) survive the inner join
     assert len(result) == 4

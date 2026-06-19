@@ -197,9 +197,7 @@ def normalize_to_pandas(data: TabularData) -> pd.DataFrame:
     return to_pandas(data)
 
 
-def scan_parquet(
-    source: Union[str, pathlib.Path], **kwargs: Any
-) -> "pl.LazyFrame":
+def scan_parquet(source: Union[str, pathlib.Path], **kwargs: Any) -> "pl.LazyFrame":
     """
     Lazily scan a Parquet file/dataset into a :class:`polars.LazyFrame`.
 

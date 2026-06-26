@@ -2673,6 +2673,14 @@ class CytoDataFrame(pd.DataFrame):
                     "image; returning layers without a cropped image."
                 )
                 return layers
+        except KeyError as exc:
+            # the only dict access above is offset_bounding_box[...], so a
+            # KeyError here means a required offset key is missing or misspelled.
+            raise ValueError(
+                "The 'offset_bounding_box' display option is missing a required "
+                f"key: {exc}. Expected keys are 'x_min', 'y_min', 'x_max', and "
+                "'y_max'."
+            ) from exc
         except (TypeError, ValueError) as exc:
             raise ValueError(
                 f"Bounding box contains invalid values: {bounding_box}"
@@ -4589,15 +4597,14 @@ class CytoDataFrame(pd.DataFrame):
 
             if (
                 display_options.get("offset_bounding_box") is not None
-                and not has_bounding_box
                 and not has_compartment_center
                 and not render_whole_image
             ):
                 logger.warning(
                     "An 'offset_bounding_box' display option was provided but no "
-                    "compartment center xy columns were found to apply it to. "
-                    "Images will not be cropped. Provide compartment center "
-                    "columns (e.g. Nuclei_Location_Center_X/Y) or pass "
+                    "compartment center xy columns were found to apply it to; the "
+                    "offset_bounding_box will be ignored. Provide compartment "
+                    "center columns (e.g. Nuclei_Location_Center_X/Y) or pass "
                     "compartment_center_xy explicitly."
                 )
 

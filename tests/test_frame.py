@@ -964,6 +964,85 @@ def test_repr_html_render_whole_image_without_bounding_box_or_center(
     assert all(size == (expected_width, expected_height) for size in sizes)
 
 
+def test_repr_html_offset_bounding_box_warns_when_centers_missing_with_bbox(
+    cytotable_NF1_data_parquet_shrunken: str,
+    caplog: pytest.LogCaptureFixture,
+):
+    """
+    Tests that an offset_bounding_box with bounding box columns but no
+    compartment center columns warns that the offset is ignored, while still
+    cropping via the bounding box columns.
+
+    See https://github.com/cytomining/CytoDataFrame/issues/215.
+    """
+
+    image_dir = (
+        f"{pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent}/Plate_2_images"
+    )
+    image_cols = ["Image_FileName_DAPI", "Image_FileName_GFP", "Image_FileName_RFP"]
+
+    nf1_data = pd.read_parquet(path=cytotable_NF1_data_parquet_shrunken)
+    data_without_center = nf1_data.drop(
+        columns=[col for col in nf1_data.columns if "Location_Center" in col],
+    )
+
+    frame = CytoDataFrame(
+        data=data_without_center,
+        data_context_dir=image_dir,
+        display_options={
+            "offset_bounding_box": {
+                "x_min": -20,
+                "y_min": -20,
+                "x_max": 20,
+                "y_max": 20,
+            }
+        },
+    )
+    assert frame._custom_attrs["data_bounding_box"] is not None
+    assert frame._custom_attrs["compartment_center_xy"] is None
+
+    with caplog.at_level(logging.WARNING):
+        html_output = frame[image_cols]._repr_html_(debug=True)
+
+    assert "no compartment center xy columns were found" in caplog.text
+    assert "offset_bounding_box will be ignored" in caplog.text
+    # the bounding box columns are still used to crop the images.
+    assert re.findall(r"data:image/png;base64,([^\"]+)", html_output) != []
+
+
+def test_repr_html_offset_bounding_box_with_missing_key_raises_value_error(
+    cytotable_NF1_data_parquet_shrunken: str,
+):
+    """
+    Tests that a misspelled/missing offset_bounding_box key raises a clear
+    ValueError instead of a raw KeyError.
+
+    See https://github.com/cytomining/CytoDataFrame/issues/215.
+    """
+
+    image_dir = (
+        f"{pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent}/Plate_2_images"
+    )
+    image_cols = ["Image_FileName_DAPI", "Image_FileName_GFP", "Image_FileName_RFP"]
+
+    frame = CytoDataFrame(
+        data=cytotable_NF1_data_parquet_shrunken,
+        data_context_dir=image_dir,
+        display_options={
+            # "ymin" is a typo for "y_min".
+            "offset_bounding_box": {
+                "x_min": -20,
+                "ymin": -20,
+                "x_max": 20,
+                "y_max": 20,
+            }
+        },
+    )
+
+    with pytest.raises(ValueError, match="offset_bounding_box.*missing a required key"):
+        frame[image_cols]._repr_html_(debug=True)
+
+
 def test_return_cytodataframe(cytotable_NF1_data_parquet_shrunken: str):
     """
     Tests to ensure we return a CytoDataFrame

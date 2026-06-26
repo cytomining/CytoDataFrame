@@ -1037,7 +1037,9 @@ def test_repr_html_offset_bounding_box_with_missing_key_raises_value_error(
         },
     )
 
-    with pytest.raises(ValueError, match="offset_bounding_box.*missing a required key"):
+    with pytest.raises(
+        ValueError, match=r"offset_bounding_box.*missing a required key"
+    ):
         frame[image_cols]._repr_html_(debug=True)
 
 

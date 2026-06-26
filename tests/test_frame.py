@@ -818,9 +818,7 @@ def test_repr_html_offset_bounding_box_without_bounding_box_columns(
         """Decode every cropped image embedded in the HTML and return its size."""
         html_output = frame[image_cols]._repr_html_(debug=True)
         matches = re.findall(r"data:image/png;base64,([^\"]+)", html_output)
-        return [
-            Image.open(BytesIO(base64.b64decode(match))).size for match in matches
-        ]
+        return [Image.open(BytesIO(base64.b64decode(match))).size for match in matches]
 
     # Sanity check: no bounding box columns but compartment centers are present.
     no_offset_frame = CytoDataFrame(

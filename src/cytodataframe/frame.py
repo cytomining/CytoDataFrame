@@ -191,6 +191,12 @@ class CytoDataFrame(pd.DataFrame):
                 e.g. {'offset_bounding_box':
                 {'x_min': -100, 'y_min': -100, 'x_max': 100, 'y_max': 100}
                 }
+                - 'render_whole_image': When True, render the full field of view
+                without cropping. This supports image-level inputs that have
+                neither bounding box nor compartment center columns (e.g.
+                whole-FOV quality control metrics) and takes precedence over any
+                bounding box columns.
+                e.g. {'render_whole_image': True}
                 - 'scale_bar': Adds a physical scale bar to each displayed crop.
                   note: um / pixel details can often be found within the metadata
                   of the images themselves or within the experiment documentation.
@@ -2635,8 +2641,17 @@ class CytoDataFrame(pd.DataFrame):
         # None. See https://github.com/cytomining/CytoDataFrame/issues/215.
         display_options = self._custom_attrs.get("display_options", None) or {}
         offset_bounding_box = display_options.get("offset_bounding_box", None)
+        render_whole_image = bool(display_options.get("render_whole_image", False))
         try:
-            if offset_bounding_box is not None and compartment_center_xy is not None:
+            if render_whole_image:
+                # Render the full field of view without cropping. Supports
+                # image-level inputs that have neither bounding box nor
+                # compartment center columns (e.g. whole-FOV quality control
+                # metrics), and takes precedence over any bounding box columns.
+                # See https://github.com/cytomining/CytoDataFrame/issues/202.
+                image_height, image_width = prepared_image.shape[:2]
+                x_min, y_min, x_max, y_max = 0, 0, image_width, image_height
+            elif offset_bounding_box is not None and compartment_center_xy is not None:
                 center_x, center_y = map(int, compartment_center_xy)
                 x_min, y_min, x_max, y_max = get_pixel_bbox_from_offsets(
                     center_x=center_x,
@@ -4565,11 +4580,18 @@ class CytoDataFrame(pd.DataFrame):
                 and has_compartment_center
                 and display_options.get("offset_bounding_box") is not None
             )
+            # The render_whole_image display option renders full fields of view
+            # without cropping, supporting image-level inputs that have neither
+            # bounding box nor compartment center columns (e.g. whole-FOV quality
+            # control metrics).
+            # See https://github.com/cytomining/CytoDataFrame/issues/202.
+            render_whole_image = bool(display_options.get("render_whole_image", False))
 
             if (
                 display_options.get("offset_bounding_box") is not None
                 and not has_bounding_box
                 and not has_compartment_center
+                and not render_whole_image
             ):
                 logger.warning(
                     "An 'offset_bounding_box' display option was provided but no "
@@ -4579,7 +4601,7 @@ class CytoDataFrame(pd.DataFrame):
                     "compartment_center_xy explicitly."
                 )
 
-            if has_bounding_box or offset_crop_without_bbox:
+            if has_bounding_box or offset_crop_without_bbox or render_whole_image:
                 bounding_box_cols = (
                     self._custom_attrs["data_bounding_box"].columns.tolist()
                     if has_bounding_box

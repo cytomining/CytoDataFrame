@@ -909,6 +909,63 @@ def test_repr_html_offset_bounding_box_without_center_columns_warns(
     assert re.findall(r"data:image/png;base64,([^\"]+)", html_output) == []
 
 
+def test_repr_html_render_whole_image_without_bounding_box_or_center(
+    cytotable_NF1_data_parquet_shrunken: str,
+):
+    """
+    Tests that the ``render_whole_image`` display option renders full fields of
+    view for image-level inputs that have neither bounding box nor compartment
+    center columns (e.g. whole-FOV quality control metrics).
+
+    See https://github.com/cytomining/CytoDataFrame/issues/202.
+    """
+
+    image_dir = (
+        f"{pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent}/Plate_2_images"
+    )
+    image_cols = ["Image_FileName_DAPI", "Image_FileName_GFP", "Image_FileName_RFP"]
+
+    # Simulate whole-FOV inputs by removing both bounding box and center columns.
+    nf1_data = pd.read_parquet(path=cytotable_NF1_data_parquet_shrunken)
+    fov_data = nf1_data.drop(
+        columns=[
+            col
+            for col in nf1_data.columns
+            if "BoundingBox" in col or "Location_Center" in col
+        ],
+    )
+
+    def displayed_image_sizes(frame: CytoDataFrame) -> list:
+        """Decode every image embedded in the HTML and return its size."""
+        html_output = frame[image_cols]._repr_html_(debug=True)
+        matches = re.findall(r"data:image/png;base64,([^\"]+)", html_output)
+        return [
+            Image.open(BytesIO(base64.b64decode(match))).size for match in matches
+        ]
+
+    # Without the flag, there is nothing to crop with so nothing renders.
+    plain_frame = CytoDataFrame(data=fov_data, data_context_dir=image_dir)
+    assert plain_frame._custom_attrs["data_bounding_box"] is None
+    assert plain_frame._custom_attrs["compartment_center_xy"] is None
+    assert displayed_image_sizes(plain_frame) == []
+
+    # With render_whole_image, full fields of view render uncropped.
+    whole_frame = CytoDataFrame(
+        data=fov_data,
+        data_context_dir=image_dir,
+        display_options={"render_whole_image": True},
+    )
+    sizes = displayed_image_sizes(whole_frame)
+    assert len(sizes) == len(whole_frame) * len(image_cols)
+
+    # Each rendered image matches the dimensions of its source field of view.
+    source_image = imageio.imread(
+        next(pathlib.Path(image_dir).rglob(fov_data["Image_FileName_DAPI"].iloc[0]))
+    )
+    expected_height, expected_width = source_image.shape[:2]
+    assert all(size == (expected_width, expected_height) for size in sizes)
+
+
 def test_return_cytodataframe(cytotable_NF1_data_parquet_shrunken: str):
     """
     Tests to ensure we return a CytoDataFrame

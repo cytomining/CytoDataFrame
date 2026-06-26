@@ -937,9 +937,7 @@ def test_repr_html_render_whole_image_without_bounding_box_or_center(
         """Decode every image embedded in the HTML and return its size."""
         html_output = frame[image_cols]._repr_html_(debug=True)
         matches = re.findall(r"data:image/png;base64,([^\"]+)", html_output)
-        return [
-            Image.open(BytesIO(base64.b64decode(match))).size for match in matches
-        ]
+        return [Image.open(BytesIO(base64.b64decode(match))).size for match in matches]
 
     # Without the flag, there is nothing to crop with so nothing renders.
     plain_frame = CytoDataFrame(data=fov_data, data_context_dir=image_dir)

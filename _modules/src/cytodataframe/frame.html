@@ -582,12 +582,21 @@
 <span class="sd">                None will default to display a center dot.</span>
 <span class="sd">                e.g. {&#39;center_dot&#39;: True} to draw a red dot at the compartment center.</span>
 <span class="sd">                - &#39;offset_bounding_box&#39;: declare a relative bounding box using</span>
-<span class="sd">                the nuclei center xy coordinates to dynamically crop all images</span>
-<span class="sd">                by offsets from the center of the bounding box.</span>
-<span class="sd">                (overriding the bounding box data from the dataframe).</span>
-<span class="sd">                e.g. {&#39;bounding_box&#39;:</span>
+<span class="sd">                the compartment center xy coordinates to dynamically crop all</span>
+<span class="sd">                images by offsets from the center. This overrides any bounding</span>
+<span class="sd">                box columns found in the dataframe and also enables cropping for</span>
+<span class="sd">                inputs that do not include AreaShape bounding box columns (e.g.</span>
+<span class="sd">                older CellProfiler outputs such as LINCS), as long as compartment</span>
+<span class="sd">                center xy columns are available.</span>
+<span class="sd">                e.g. {&#39;offset_bounding_box&#39;:</span>
 <span class="sd">                {&#39;x_min&#39;: -100, &#39;y_min&#39;: -100, &#39;x_max&#39;: 100, &#39;y_max&#39;: 100}</span>
 <span class="sd">                }</span>
+<span class="sd">                - &#39;render_whole_image&#39;: When True, render the full field of view</span>
+<span class="sd">                without cropping. This supports image-level inputs that have</span>
+<span class="sd">                neither bounding box nor compartment center columns (e.g.</span>
+<span class="sd">                whole-FOV quality control metrics) and takes precedence over any</span>
+<span class="sd">                bounding box columns.</span>
+<span class="sd">                e.g. {&#39;render_whole_image&#39;: True}</span>
 <span class="sd">                - &#39;scale_bar&#39;: Adds a physical scale bar to each displayed crop.</span>
 <span class="sd">                  note: um / pixel details can often be found within the metadata</span>
 <span class="sd">                  of the images themselves or within the experiment documentation.</span>
@@ -3130,43 +3139,27 @@
                 <span class="p">)</span>
                 <span class="n">mask_source_array</span> <span class="o">=</span> <span class="kc">None</span>
 
-        <span class="k">if</span> <span class="p">(</span>
-            <span class="n">compartment_center_xy</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span>
-        <span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;display_options&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;center_dot&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
-        <span class="p">):</span>
-            <span class="n">center_x</span><span class="p">,</span> <span class="n">center_y</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">compartment_center_xy</span><span class="p">)</span>
-
-            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">prepared_image</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>  <span class="c1"># noqa: PLR2004</span>
-                <span class="n">prepared_image</span> <span class="o">=</span> <span class="n">skimage</span><span class="o">.</span><span class="n">color</span><span class="o">.</span><span class="n">gray2rgb</span><span class="p">(</span><span class="n">prepared_image</span><span class="p">)</span>
-
-            <span class="k">if</span> <span class="p">(</span>
-                <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">center_y</span> <span class="o">&lt;</span> <span class="n">prepared_image</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-                <span class="ow">and</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">center_x</span> <span class="o">&lt;</span> <span class="n">prepared_image</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
-            <span class="p">):</span>
-                <span class="n">x_min</span><span class="p">,</span> <span class="n">y_min</span><span class="p">,</span> <span class="n">x_max</span><span class="p">,</span> <span class="n">y_max</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">bounding_box</span><span class="p">)</span>
-                <span class="n">box_width</span> <span class="o">=</span> <span class="n">x_max</span> <span class="o">-</span> <span class="n">x_min</span>
-                <span class="n">box_height</span> <span class="o">=</span> <span class="n">y_max</span> <span class="o">-</span> <span class="n">y_min</span>
-                <span class="n">radius</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">box_width</span><span class="p">,</span> <span class="n">box_height</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.03</span><span class="p">))</span>
-
-                <span class="n">rr</span><span class="p">,</span> <span class="n">cc</span> <span class="o">=</span> <span class="n">skimage</span><span class="o">.</span><span class="n">draw</span><span class="o">.</span><span class="n">disk</span><span class="p">(</span>
-                    <span class="p">(</span><span class="n">center_y</span><span class="p">,</span> <span class="n">center_x</span><span class="p">),</span> <span class="n">radius</span><span class="o">=</span><span class="n">radius</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="n">prepared_image</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span>
-                <span class="p">)</span>
-                <span class="n">prepared_image</span><span class="p">[</span><span class="n">rr</span><span class="p">,</span> <span class="n">cc</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
-
+        <span class="c1"># Resolve the effective bounding box used for cropping. When an</span>
+        <span class="c1"># ``offset_bounding_box`` display option is provided together with</span>
+        <span class="c1"># compartment center coordinates, derive the crop region from the</span>
+        <span class="c1"># center and the offsets (overriding any bounding box columns). This</span>
+        <span class="c1"># also supports inputs that lack AreaShape bounding box columns (e.g.</span>
+        <span class="c1"># older CellProfiler outputs such as LINCS), where ``bounding_box`` is</span>
+        <span class="c1"># None. See https://github.com/cytomining/CytoDataFrame/issues/215.</span>
+        <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">offset_bounding_box</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;offset_bounding_box&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">render_whole_image</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;render_whole_image&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">x_min</span><span class="p">,</span> <span class="n">y_min</span><span class="p">,</span> <span class="n">x_max</span><span class="p">,</span> <span class="n">y_max</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">bounding_box</span><span class="p">)</span>
-
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span>
-                <span class="s2">&quot;display_options&quot;</span>
-            <span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;offset_bounding_box&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">render_whole_image</span><span class="p">:</span>
+                <span class="c1"># Render the full field of view without cropping. Supports</span>
+                <span class="c1"># image-level inputs that have neither bounding box nor</span>
+                <span class="c1"># compartment center columns (e.g. whole-FOV quality control</span>
+                <span class="c1"># metrics), and takes precedence over any bounding box columns.</span>
+                <span class="c1"># See https://github.com/cytomining/CytoDataFrame/issues/202.</span>
+                <span class="n">image_height</span><span class="p">,</span> <span class="n">image_width</span> <span class="o">=</span> <span class="n">prepared_image</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span>
+                <span class="n">x_min</span><span class="p">,</span> <span class="n">y_min</span><span class="p">,</span> <span class="n">x_max</span><span class="p">,</span> <span class="n">y_max</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">image_width</span><span class="p">,</span> <span class="n">image_height</span>
+            <span class="k">elif</span> <span class="n">offset_bounding_box</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">compartment_center_xy</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">center_x</span><span class="p">,</span> <span class="n">center_y</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">compartment_center_xy</span><span class="p">)</span>
-
-                <span class="n">offset_bounding_box</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;display_options&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
-                    <span class="s2">&quot;offset_bounding_box&quot;</span>
-                <span class="p">)</span>
                 <span class="n">x_min</span><span class="p">,</span> <span class="n">y_min</span><span class="p">,</span> <span class="n">x_max</span><span class="p">,</span> <span class="n">y_max</span> <span class="o">=</span> <span class="n">get_pixel_bbox_from_offsets</span><span class="p">(</span>
                     <span class="n">center_x</span><span class="o">=</span><span class="n">center_x</span><span class="p">,</span>
                     <span class="n">center_y</span><span class="o">=</span><span class="n">center_y</span><span class="p">,</span>
@@ -3177,7 +3170,52 @@
                         <span class="n">offset_bounding_box</span><span class="p">[</span><span class="s2">&quot;y_max&quot;</span><span class="p">],</span>
                     <span class="p">),</span>
                 <span class="p">)</span>
+            <span class="k">elif</span> <span class="n">bounding_box</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">x_min</span><span class="p">,</span> <span class="n">y_min</span><span class="p">,</span> <span class="n">x_max</span><span class="p">,</span> <span class="n">y_max</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">bounding_box</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Without a bounding box (or an offset + center to derive one)</span>
+                <span class="c1"># we cannot crop, so return the requested layers uncropped.</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                    <span class="s2">&quot;No bounding box or offset_bounding_box available to crop &quot;</span>
+                    <span class="s2">&quot;image; returning layers without a cropped image.&quot;</span>
+                <span class="p">)</span>
+                <span class="k">return</span> <span class="n">layers</span>
+        <span class="k">except</span> <span class="ne">KeyError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="c1"># the only dict access above is offset_bounding_box[...], so a</span>
+            <span class="c1"># KeyError here means a required offset key is missing or misspelled.</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;The &#39;offset_bounding_box&#39; display option is missing a required &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;key: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">. Expected keys are &#39;x_min&#39;, &#39;y_min&#39;, &#39;x_max&#39;, and &quot;</span>
+                <span class="s2">&quot;&#39;y_max&#39;.&quot;</span>
+            <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Bounding box contains invalid values: </span><span class="si">{</span><span class="n">bounding_box</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
 
+        <span class="k">if</span> <span class="n">compartment_center_xy</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="ow">or</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;center_dot&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="n">center_x</span><span class="p">,</span> <span class="n">center_y</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">compartment_center_xy</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">prepared_image</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>  <span class="c1"># noqa: PLR2004</span>
+                <span class="n">prepared_image</span> <span class="o">=</span> <span class="n">skimage</span><span class="o">.</span><span class="n">color</span><span class="o">.</span><span class="n">gray2rgb</span><span class="p">(</span><span class="n">prepared_image</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">center_y</span> <span class="o">&lt;</span> <span class="n">prepared_image</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="ow">and</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">center_x</span> <span class="o">&lt;</span> <span class="n">prepared_image</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="p">):</span>
+                <span class="n">box_width</span> <span class="o">=</span> <span class="n">x_max</span> <span class="o">-</span> <span class="n">x_min</span>
+                <span class="n">box_height</span> <span class="o">=</span> <span class="n">y_max</span> <span class="o">-</span> <span class="n">y_min</span>
+                <span class="n">radius</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">box_width</span><span class="p">,</span> <span class="n">box_height</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.03</span><span class="p">))</span>
+
+                <span class="n">rr</span><span class="p">,</span> <span class="n">cc</span> <span class="o">=</span> <span class="n">skimage</span><span class="o">.</span><span class="n">draw</span><span class="o">.</span><span class="n">disk</span><span class="p">(</span>
+                    <span class="p">(</span><span class="n">center_y</span><span class="p">,</span> <span class="n">center_x</span><span class="p">),</span> <span class="n">radius</span><span class="o">=</span><span class="n">radius</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="n">prepared_image</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span>
+                <span class="p">)</span>
+                <span class="n">prepared_image</span><span class="p">[</span><span class="n">rr</span><span class="p">,</span> <span class="n">cc</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+
+        <span class="k">try</span><span class="p">:</span>
             <span class="n">cropped_img_array</span> <span class="o">=</span> <span class="n">prepared_image</span><span class="p">[</span><span class="n">y_min</span><span class="p">:</span><span class="n">y_max</span><span class="p">,</span> <span class="n">x_min</span><span class="p">:</span><span class="n">x_max</span><span class="p">]</span>
 
             <span class="n">cropped_original</span> <span class="o">=</span> <span class="p">(</span>
@@ -3378,6 +3416,36 @@
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_image_array_to_html</span><span class="p">(</span><span class="n">array</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
             <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">data_value</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._row_bounding_box">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._row_bounding_box">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_row_bounding_box</span><span class="p">(</span>
+        <span class="n">row</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">bounding_box_cols</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Build a ``(x_min, y_min, x_max, y_max)`` bounding box tuple from a row.</span>
+
+<span class="sd">        Bounding box columns are matched by substring so the underlying column</span>
+<span class="sd">        order does not matter.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            row (Any):</span>
+<span class="sd">                A row (mapping of column name to value) to read values from.</span>
+<span class="sd">            bounding_box_cols (Sequence[Any]):</span>
+<span class="sd">                The bounding box column names to match against.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Tuple[Any, Any, Any, Any]:</span>
+<span class="sd">                The ``(x_min, y_min, x_max, y_max)`` bounding box values.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">row</span><span class="p">[</span><span class="nb">next</span><span class="p">(</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span> <span class="k">if</span> <span class="s2">&quot;Minimum_X&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">))],</span>
+            <span class="n">row</span><span class="p">[</span><span class="nb">next</span><span class="p">(</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span> <span class="k">if</span> <span class="s2">&quot;Minimum_Y&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">))],</span>
+            <span class="n">row</span><span class="p">[</span><span class="nb">next</span><span class="p">(</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span> <span class="k">if</span> <span class="s2">&quot;Maximum_X&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">))],</span>
+            <span class="n">row</span><span class="p">[</span><span class="nb">next</span><span class="p">(</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span> <span class="k">if</span> <span class="s2">&quot;Maximum_Y&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">))],</span>
+        <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="CytoDataFrame.process_image_data_as_html_display">
@@ -5086,14 +5154,51 @@
                     <span class="n">display_indices</span><span class="o">=</span><span class="n">display_indices</span><span class="p">,</span>
                 <span class="p">)</span>
 
-            <span class="c1"># gather bounding box columns for use below</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_bounding_box&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">bounding_box_cols</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span>
-                    <span class="s2">&quot;data_bounding_box&quot;</span>
-                <span class="p">]</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="c1"># Gather bounding box columns for use below. Images are cropped</span>
+            <span class="c1"># using either explicit bounding box columns or, when those are</span>
+            <span class="c1"># unavailable, an ``offset_bounding_box`` display option applied to</span>
+            <span class="c1"># the compartment center coordinates. The latter lets inputs without</span>
+            <span class="c1"># AreaShape bounding box columns (e.g. older CellProfiler outputs</span>
+            <span class="c1"># such as LINCS) still display cropped images.</span>
+            <span class="c1"># See https://github.com/cytomining/CytoDataFrame/issues/215.</span>
+            <span class="n">has_bounding_box</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_bounding_box&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="n">has_compartment_center</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;compartment_center_xy&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="p">)</span>
+            <span class="n">offset_crop_without_bbox</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="ow">not</span> <span class="n">has_bounding_box</span>
+                <span class="ow">and</span> <span class="n">has_compartment_center</span>
+                <span class="ow">and</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;offset_bounding_box&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="p">)</span>
+            <span class="c1"># The render_whole_image display option renders full fields of view</span>
+            <span class="c1"># without cropping, supporting image-level inputs that have neither</span>
+            <span class="c1"># bounding box nor compartment center columns (e.g. whole-FOV quality</span>
+            <span class="c1"># control metrics).</span>
+            <span class="c1"># See https://github.com/cytomining/CytoDataFrame/issues/202.</span>
+            <span class="n">render_whole_image</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;render_whole_image&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
+
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;offset_bounding_box&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="ow">and</span> <span class="ow">not</span> <span class="n">has_compartment_center</span>
+                <span class="ow">and</span> <span class="ow">not</span> <span class="n">render_whole_image</span>
+            <span class="p">):</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">&quot;An &#39;offset_bounding_box&#39; display option was provided but no &quot;</span>
+                    <span class="s2">&quot;compartment center xy columns were found to apply it to; the &quot;</span>
+                    <span class="s2">&quot;offset_bounding_box will be ignored. Provide compartment &quot;</span>
+                    <span class="s2">&quot;center columns (e.g. Nuclei_Location_Center_X/Y) or pass &quot;</span>
+                    <span class="s2">&quot;compartment_center_xy explicitly.&quot;</span>
+                <span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">has_bounding_box</span> <span class="ow">or</span> <span class="n">offset_crop_without_bbox</span> <span class="ow">or</span> <span class="n">render_whole_image</span><span class="p">:</span>
+                <span class="n">bounding_box_cols</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_bounding_box&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                    <span class="k">if</span> <span class="n">has_bounding_box</span>
+                    <span class="k">else</span> <span class="kc">None</span>
+                <span class="p">)</span>
 
                 <span class="c1"># gather compartment_xy columns for use below</span>
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;compartment_center_xy&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">has_compartment_center</span><span class="p">:</span>
                     <span class="n">compartment_center_xy_cols</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span>
                         <span class="s2">&quot;compartment_center_xy&quot;</span>
                     <span class="p">]</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
@@ -5104,39 +5209,14 @@
                     <span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
                         <span class="k">lambda</span> <span class="n">row</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_image_data_as_html_display</span><span class="p">(</span>
                             <span class="n">data_value</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="n">image_col</span><span class="p">],</span>
+                            <span class="c1"># use explicit bounding box columns when present;</span>
+                            <span class="c1"># otherwise fall back to the offset_bounding_box</span>
+                            <span class="c1"># applied to the compartment center within</span>
+                            <span class="c1"># process_image_data_as_html_display.</span>
                             <span class="n">bounding_box</span><span class="o">=</span><span class="p">(</span>
-                                <span class="c1"># rows below are specified using the column name to</span>
-                                <span class="c1"># determine which part of the bounding box the columns</span>
-                                <span class="c1"># relate to (the list of column names could be in</span>
-                                <span class="c1"># various order).</span>
-                                <span class="n">row</span><span class="p">[</span>
-                                    <span class="nb">next</span><span class="p">(</span>
-                                        <span class="n">col</span>
-                                        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span>
-                                        <span class="k">if</span> <span class="s2">&quot;Minimum_X&quot;</span> <span class="ow">in</span> <span class="n">col</span>
-                                    <span class="p">)</span>
-                                <span class="p">],</span>
-                                <span class="n">row</span><span class="p">[</span>
-                                    <span class="nb">next</span><span class="p">(</span>
-                                        <span class="n">col</span>
-                                        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span>
-                                        <span class="k">if</span> <span class="s2">&quot;Minimum_Y&quot;</span> <span class="ow">in</span> <span class="n">col</span>
-                                    <span class="p">)</span>
-                                <span class="p">],</span>
-                                <span class="n">row</span><span class="p">[</span>
-                                    <span class="nb">next</span><span class="p">(</span>
-                                        <span class="n">col</span>
-                                        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span>
-                                        <span class="k">if</span> <span class="s2">&quot;Maximum_X&quot;</span> <span class="ow">in</span> <span class="n">col</span>
-                                    <span class="p">)</span>
-                                <span class="p">],</span>
-                                <span class="n">row</span><span class="p">[</span>
-                                    <span class="nb">next</span><span class="p">(</span>
-                                        <span class="n">col</span>
-                                        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">bounding_box_cols</span>
-                                        <span class="k">if</span> <span class="s2">&quot;Maximum_Y&quot;</span> <span class="ow">in</span> <span class="n">col</span>
-                                    <span class="p">)</span>
-                                <span class="p">],</span>
+                                <span class="bp">self</span><span class="o">.</span><span class="n">_row_bounding_box</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">bounding_box_cols</span><span class="p">)</span>
+                                <span class="k">if</span> <span class="n">bounding_box_cols</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                                <span class="k">else</span> <span class="kc">None</span>
                             <span class="p">),</span>
                             <span class="n">compartment_center_xy</span><span class="o">=</span><span class="p">(</span>
                                 <span class="p">(</span>

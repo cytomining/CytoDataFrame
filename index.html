@@ -391,6 +391,7 @@ With CytoDataFrame you can:</p>
 <li><p>View image objects alongside their feature data using a Pandas DataFrame-like interface.</p></li>
 <li><p>Highlight image objects using mask or outline files to understand their segmentation.</p></li>
 <li><p>Adjust image displays on-the-fly using interactive slider widgets.</p></li>
+<li><p>Display image objects even when bounding box columns are missing, by cropping from compartment-center offsets or rendering whole fields of view.</p></li>
 <li><p>Automatically detect 3D image volumes and render interactive <a class="reference external" href="https://github.com/Kitware/trame">trame</a> views in notebooks when 3D dependencies are installed (with graceful fallback otherwise).</p></li>
 </ul>
 <p>For 3D notebook display behavior:</p>
@@ -398,6 +399,11 @@ With CytoDataFrame you can:</p>
 <li><p>3D-aware rendering is enabled by default (<code class="docutils literal notranslate"><span class="pre">display_options={&quot;auto_trame_for_3d&quot;:</span> <span class="pre">True}</span></code>).</p></li>
 <li><p>Disable automatic trame switching with <code class="docutils literal notranslate"><span class="pre">display_options={&quot;auto_trame_for_3d&quot;:</span> <span class="pre">False}</span></code>.</p></li>
 <li><p>Force trame layout regardless of auto-detection with <code class="docutils literal notranslate"><span class="pre">display_options={&quot;view&quot;:</span> <span class="pre">&quot;trame&quot;}</span></code>.</p></li>
+</ul>
+<p>For images without bounding box columns (e.g. older CellProfiler outputs or image-level data):</p>
+<ul class="simple">
+<li><p>Crop from compartment-center coordinates plus pixel offsets with <code class="docutils literal notranslate"><span class="pre">display_options={&quot;offset_bounding_box&quot;:</span> <span class="pre">{&quot;x_min&quot;:</span> <span class="pre">-20,</span> <span class="pre">&quot;y_min&quot;:</span> <span class="pre">-20,</span> <span class="pre">&quot;x_max&quot;:</span> <span class="pre">20,</span> <span class="pre">&quot;y_max&quot;:</span> <span class="pre">20}}</span></code> (requires compartment center columns such as <code class="docutils literal notranslate"><span class="pre">Nuclei_Location_Center_X/Y</span></code>).</p></li>
+<li><p>Render the full field of view without cropping with <code class="docutils literal notranslate"><span class="pre">display_options={&quot;render_whole_image&quot;:</span> <span class="pre">True}</span></code> (works even with no bounding box and no center columns).</p></li>
 </ul>
 <p>For row display in notebook/widget tables:</p>
 <ul class="simple">

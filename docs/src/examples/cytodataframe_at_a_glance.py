@@ -221,6 +221,68 @@ CytoDataFrame(
 ][:5]
 
 # %%time
+# CytoDataFrame can also crop images when the data does not include AreaShape
+# bounding box columns (e.g. older CellProfiler outputs such as LINCS). Here we
+# drop the bounding box columns to simulate this case; cropping then relies on
+# offset_bounding_box applied to the compartment center coordinates.
+jump_without_bounding_boxes = pd.read_parquet(
+    f"{jump_data_path}/BR00117006_shrunken.parquet"
+)
+jump_without_bounding_boxes = jump_without_bounding_boxes.drop(
+    columns=[
+        column
+        for column in jump_without_bounding_boxes.columns
+        if "BoundingBox" in column
+    ]
+)
+CytoDataFrame(
+    data=jump_without_bounding_boxes,
+    data_context_dir=f"{jump_data_path}/images/orig",
+    display_options={
+        "offset_bounding_box": {
+            "x_min": -20,
+            "y_min": -20,
+            "x_max": 20,
+            "y_max": 20,
+        },
+    },
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:5]
+
+# %%time
+# For image-level data that has neither bounding box nor compartment center
+# columns (for example, whole-image quality control metrics), use
+# render_whole_image to display the full field of view without cropping.
+jump_image_level = pd.read_parquet(f"{jump_data_path}/BR00117006_shrunken.parquet")
+jump_image_level = jump_image_level.drop(
+    columns=[
+        column
+        for column in jump_image_level.columns
+        if "BoundingBox" in column or "Location_Center" in column
+    ]
+)
+CytoDataFrame(
+    data=jump_image_level,
+    data_context_dir=f"{jump_data_path}/images/orig",
+    display_options={"render_whole_image": True},
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:3]
+
+# %%time
 # view NF1 Cell Painting data with images
 CytoDataFrame(
     data=f"{nf1_cellpainting_path}/Plate_2_with_image_data_shrunken.parquet",

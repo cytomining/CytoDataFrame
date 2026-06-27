@@ -2,6 +2,7 @@
 Tests cosmicqc CytoDataFrame module
 """
 
+import base64
 import logging
 import pathlib
 import re
@@ -11,6 +12,7 @@ import warnings
 from collections import OrderedDict
 from contextlib import nullcontext
 from importlib.machinery import ModuleSpec
+from io import BytesIO
 
 import imageio.v2 as imageio
 import ipywidgets as widgets
@@ -19,6 +21,7 @@ import pandas as pd
 import pytest
 import tifffile
 from _pytest.monkeypatch import MonkeyPatch
+from PIL import Image
 from pyarrow import parquet
 
 from cytodataframe.frame import (
@@ -782,6 +785,262 @@ def test_repr_html_red_pixels(
         ],
         color_conditions={"green": None, "red": 255, "blue": None},
     ), "The pediatric cancer atlas speckles images do not contain red dots."
+
+
+def test_repr_html_offset_bounding_box_without_bounding_box_columns(
+    cytotable_NF1_data_parquet_shrunken: str,
+):
+    """
+    Tests that images are cropped via the ``offset_bounding_box`` display option
+    when the input lacks AreaShape bounding box columns (e.g. older CellProfiler
+    outputs such as LINCS), relying instead on compartment center coordinates.
+
+    See https://github.com/cytomining/CytoDataFrame/issues/215.
+    """
+
+    image_dir = (
+        f"{pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent}/Plate_2_images"
+    )
+    image_cols = [
+        "Image_FileName_DAPI",
+        "Image_FileName_GFP",
+        "Image_FileName_RFP",
+    ]
+
+    # Simulate old CellProfiler outputs by removing all bounding box columns
+    # while keeping the Location_Center columns.
+    nf1_data = pd.read_parquet(path=cytotable_NF1_data_parquet_shrunken)
+    data_without_bounding_box = nf1_data.drop(
+        columns=[col for col in nf1_data.columns if "BoundingBox" in col],
+    )
+
+    def displayed_image_sizes(frame: CytoDataFrame) -> list:
+        """Decode every cropped image embedded in the HTML and return its size."""
+        html_output = frame[image_cols]._repr_html_(debug=True)
+        matches = re.findall(r"data:image/png;base64,([^\"]+)", html_output)
+        return [Image.open(BytesIO(base64.b64decode(match))).size for match in matches]
+
+    # Sanity check: no bounding box columns but compartment centers are present.
+    no_offset_frame = CytoDataFrame(
+        data=data_without_bounding_box,
+        data_context_dir=image_dir,
+    )
+    assert no_offset_frame._custom_attrs["data_bounding_box"] is None
+    assert no_offset_frame._custom_attrs["compartment_center_xy"] is not None
+
+    # Without an offset_bounding_box and without bounding box columns there is
+    # nothing to crop with, so no cropped images are produced.
+    assert displayed_image_sizes(no_offset_frame) == []
+
+    # With an offset_bounding_box, images are cropped using the compartment
+    # center coordinates plus the provided offsets.
+    offset = {"x_min": -20, "y_min": -20, "x_max": 20, "y_max": 20}
+    offset_frame = CytoDataFrame(
+        data=data_without_bounding_box,
+        data_context_dir=image_dir,
+        display_options={"offset_bounding_box": offset},
+    )
+    sizes = displayed_image_sizes(offset_frame)
+
+    # One cropped image is produced per displayed row and image column.
+    assert len(sizes) == len(offset_frame) * len(image_cols)
+    # Each crop spans the full offset range (clamped at the image edges), so it
+    # should be no larger than the requested width/height.
+    expected_width = offset["x_max"] - offset["x_min"]
+    expected_height = offset["y_max"] - offset["y_min"]
+    for width, height in sizes:
+        assert 0 < width <= expected_width
+        assert 0 < height <= expected_height
+
+    # The cropped images should still include the red compartment center dot.
+    assert cytodataframe_image_display_contains_pixels(
+        frame=offset_frame,
+        image_cols=image_cols,
+        color_conditions={"green": None, "red": 255, "blue": None},
+    ), "The offset-cropped NF1 images do not contain red dots."
+
+
+def test_repr_html_offset_bounding_box_without_center_columns_warns(
+    cytotable_NF1_data_parquet_shrunken: str,
+    caplog: pytest.LogCaptureFixture,
+):
+    """
+    Tests that an offset_bounding_box with no bounding box and no compartment
+    center columns logs a warning and produces no cropped images.
+
+    See https://github.com/cytomining/CytoDataFrame/issues/215.
+    """
+
+    image_dir = (
+        f"{pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent}/Plate_2_images"
+    )
+    image_cols = ["Image_FileName_DAPI", "Image_FileName_GFP", "Image_FileName_RFP"]
+
+    nf1_data = pd.read_parquet(path=cytotable_NF1_data_parquet_shrunken)
+    data_without_bbox_or_center = nf1_data.drop(
+        columns=[
+            col
+            for col in nf1_data.columns
+            if "BoundingBox" in col or "Location_Center" in col
+        ],
+    )
+
+    frame = CytoDataFrame(
+        data=data_without_bbox_or_center,
+        data_context_dir=image_dir,
+        display_options={
+            "offset_bounding_box": {
+                "x_min": -20,
+                "y_min": -20,
+                "x_max": 20,
+                "y_max": 20,
+            }
+        },
+    )
+    assert frame._custom_attrs["data_bounding_box"] is None
+    assert frame._custom_attrs["compartment_center_xy"] is None
+
+    with caplog.at_level(logging.WARNING):
+        html_output = frame[image_cols]._repr_html_(debug=True)
+
+    assert "no compartment center xy columns were found" in caplog.text
+    assert re.findall(r"data:image/png;base64,([^\"]+)", html_output) == []
+
+
+def test_repr_html_render_whole_image_without_bounding_box_or_center(
+    cytotable_NF1_data_parquet_shrunken: str,
+):
+    """
+    Tests that the ``render_whole_image`` display option renders full fields of
+    view for image-level inputs that have neither bounding box nor compartment
+    center columns (e.g. whole-FOV quality control metrics).
+
+    See https://github.com/cytomining/CytoDataFrame/issues/202.
+    """
+
+    image_dir = (
+        f"{pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent}/Plate_2_images"
+    )
+    image_cols = ["Image_FileName_DAPI", "Image_FileName_GFP", "Image_FileName_RFP"]
+
+    # Simulate whole-FOV inputs by removing both bounding box and center columns.
+    nf1_data = pd.read_parquet(path=cytotable_NF1_data_parquet_shrunken)
+    fov_data = nf1_data.drop(
+        columns=[
+            col
+            for col in nf1_data.columns
+            if "BoundingBox" in col or "Location_Center" in col
+        ],
+    )
+
+    def displayed_image_sizes(frame: CytoDataFrame) -> list:
+        """Decode every image embedded in the HTML and return its size."""
+        html_output = frame[image_cols]._repr_html_(debug=True)
+        matches = re.findall(r"data:image/png;base64,([^\"]+)", html_output)
+        return [Image.open(BytesIO(base64.b64decode(match))).size for match in matches]
+
+    # Without the flag, there is nothing to crop with so nothing renders.
+    plain_frame = CytoDataFrame(data=fov_data, data_context_dir=image_dir)
+    assert plain_frame._custom_attrs["data_bounding_box"] is None
+    assert plain_frame._custom_attrs["compartment_center_xy"] is None
+    assert displayed_image_sizes(plain_frame) == []
+
+    # With render_whole_image, full fields of view render uncropped.
+    whole_frame = CytoDataFrame(
+        data=fov_data,
+        data_context_dir=image_dir,
+        display_options={"render_whole_image": True},
+    )
+    sizes = displayed_image_sizes(whole_frame)
+    assert len(sizes) == len(whole_frame) * len(image_cols)
+
+    # Each rendered image matches the dimensions of its source field of view.
+    source_image = imageio.imread(
+        next(pathlib.Path(image_dir).rglob(fov_data["Image_FileName_DAPI"].iloc[0]))
+    )
+    expected_height, expected_width = source_image.shape[:2]
+    assert all(size == (expected_width, expected_height) for size in sizes)
+
+
+def test_repr_html_offset_bounding_box_warns_when_centers_missing_with_bbox(
+    cytotable_NF1_data_parquet_shrunken: str,
+    caplog: pytest.LogCaptureFixture,
+):
+    """
+    Tests that an offset_bounding_box with bounding box columns but no
+    compartment center columns warns that the offset is ignored, while still
+    cropping via the bounding box columns.
+
+    See https://github.com/cytomining/CytoDataFrame/issues/215.
+    """
+
+    image_dir = (
+        f"{pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent}/Plate_2_images"
+    )
+    image_cols = ["Image_FileName_DAPI", "Image_FileName_GFP", "Image_FileName_RFP"]
+
+    nf1_data = pd.read_parquet(path=cytotable_NF1_data_parquet_shrunken)
+    data_without_center = nf1_data.drop(
+        columns=[col for col in nf1_data.columns if "Location_Center" in col],
+    )
+
+    frame = CytoDataFrame(
+        data=data_without_center,
+        data_context_dir=image_dir,
+        display_options={
+            "offset_bounding_box": {
+                "x_min": -20,
+                "y_min": -20,
+                "x_max": 20,
+                "y_max": 20,
+            }
+        },
+    )
+    assert frame._custom_attrs["data_bounding_box"] is not None
+    assert frame._custom_attrs["compartment_center_xy"] is None
+
+    with caplog.at_level(logging.WARNING):
+        html_output = frame[image_cols]._repr_html_(debug=True)
+
+    assert "no compartment center xy columns were found" in caplog.text
+    assert "offset_bounding_box will be ignored" in caplog.text
+    # the bounding box columns are still used to crop the images.
+    assert re.findall(r"data:image/png;base64,([^\"]+)", html_output) != []
+
+
+def test_repr_html_offset_bounding_box_with_missing_key_raises_value_error(
+    cytotable_NF1_data_parquet_shrunken: str,
+):
+    """
+    Tests that a misspelled/missing offset_bounding_box key raises a clear
+    ValueError instead of a raw KeyError.
+
+    See https://github.com/cytomining/CytoDataFrame/issues/215.
+    """
+
+    image_dir = (
+        f"{pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent}/Plate_2_images"
+    )
+    image_cols = ["Image_FileName_DAPI", "Image_FileName_GFP", "Image_FileName_RFP"]
+
+    frame = CytoDataFrame(
+        data=cytotable_NF1_data_parquet_shrunken,
+        data_context_dir=image_dir,
+        display_options={
+            # "ymin" is a typo for "y_min".
+            "offset_bounding_box": {
+                "x_min": -20,
+                "ymin": -20,
+                "x_max": 20,
+                "y_max": 20,
+            }
+        },
+    )
+
+    with pytest.raises(
+        ValueError, match=r"offset_bounding_box.*missing a required key"
+    ):
+        frame[image_cols]._repr_html_(debug=True)
 
 
 def test_return_cytodataframe(cytotable_NF1_data_parquet_shrunken: str):

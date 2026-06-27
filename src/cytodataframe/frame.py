@@ -182,12 +182,21 @@ class CytoDataFrame(pd.DataFrame):
                 None will default to display a center dot.
                 e.g. {'center_dot': True} to draw a red dot at the compartment center.
                 - 'offset_bounding_box': declare a relative bounding box using
-                the nuclei center xy coordinates to dynamically crop all images
-                by offsets from the center of the bounding box.
-                (overriding the bounding box data from the dataframe).
-                e.g. {'bounding_box':
+                the compartment center xy coordinates to dynamically crop all
+                images by offsets from the center. This overrides any bounding
+                box columns found in the dataframe and also enables cropping for
+                inputs that do not include AreaShape bounding box columns (e.g.
+                older CellProfiler outputs such as LINCS), as long as compartment
+                center xy columns are available.
+                e.g. {'offset_bounding_box':
                 {'x_min': -100, 'y_min': -100, 'x_max': 100, 'y_max': 100}
                 }
+                - 'render_whole_image': When True, render the full field of view
+                without cropping. This supports image-level inputs that have
+                neither bounding box nor compartment center columns (e.g.
+                whole-FOV quality control metrics) and takes precedence over any
+                bounding box columns.
+                e.g. {'render_whole_image': True}
                 - 'scale_bar': Adds a physical scale bar to each displayed crop.
                   note: um / pixel details can often be found within the metadata
                   of the images themselves or within the experiment documentation.
@@ -2623,43 +2632,27 @@ class CytoDataFrame(pd.DataFrame):
                 )
                 mask_source_array = None
 
-        if (
-            compartment_center_xy is not None
-            and self._custom_attrs.get("display_options", None) is None
-        ) or (
-            self._custom_attrs.get("display_options", None) is not None
-            and self._custom_attrs["display_options"].get("center_dot", True)
-        ):
-            center_x, center_y = map(int, compartment_center_xy)
-
-            if len(prepared_image.shape) == 2:  # noqa: PLR2004
-                prepared_image = skimage.color.gray2rgb(prepared_image)
-
-            if (
-                0 <= center_y < prepared_image.shape[0]
-                and 0 <= center_x < prepared_image.shape[1]
-            ):
-                x_min, y_min, x_max, y_max = map(int, bounding_box)
-                box_width = x_max - x_min
-                box_height = y_max - y_min
-                radius = max(1, int(min(box_width, box_height) * 0.03))
-
-                rr, cc = skimage.draw.disk(
-                    (center_y, center_x), radius=radius, shape=prepared_image.shape[:2]
-                )
-                prepared_image[rr, cc] = [255, 0, 0]
-
+        # Resolve the effective bounding box used for cropping. When an
+        # ``offset_bounding_box`` display option is provided together with
+        # compartment center coordinates, derive the crop region from the
+        # center and the offsets (overriding any bounding box columns). This
+        # also supports inputs that lack AreaShape bounding box columns (e.g.
+        # older CellProfiler outputs such as LINCS), where ``bounding_box`` is
+        # None. See https://github.com/cytomining/CytoDataFrame/issues/215.
+        display_options = self._custom_attrs.get("display_options", None) or {}
+        offset_bounding_box = display_options.get("offset_bounding_box", None)
+        render_whole_image = bool(display_options.get("render_whole_image", False))
         try:
-            x_min, y_min, x_max, y_max = map(int, bounding_box)
-
-            if self._custom_attrs.get("display_options", None) and self._custom_attrs[
-                "display_options"
-            ].get("offset_bounding_box", None):
+            if render_whole_image:
+                # Render the full field of view without cropping. Supports
+                # image-level inputs that have neither bounding box nor
+                # compartment center columns (e.g. whole-FOV quality control
+                # metrics), and takes precedence over any bounding box columns.
+                # See https://github.com/cytomining/CytoDataFrame/issues/202.
+                image_height, image_width = prepared_image.shape[:2]
+                x_min, y_min, x_max, y_max = 0, 0, image_width, image_height
+            elif offset_bounding_box is not None and compartment_center_xy is not None:
                 center_x, center_y = map(int, compartment_center_xy)
-
-                offset_bounding_box = self._custom_attrs["display_options"].get(
-                    "offset_bounding_box"
-                )
                 x_min, y_min, x_max, y_max = get_pixel_bbox_from_offsets(
                     center_x=center_x,
                     center_y=center_y,
@@ -2670,7 +2663,52 @@ class CytoDataFrame(pd.DataFrame):
                         offset_bounding_box["y_max"],
                     ),
                 )
+            elif bounding_box is not None:
+                x_min, y_min, x_max, y_max = map(int, bounding_box)
+            else:
+                # Without a bounding box (or an offset + center to derive one)
+                # we cannot crop, so return the requested layers uncropped.
+                logger.debug(
+                    "No bounding box or offset_bounding_box available to crop "
+                    "image; returning layers without a cropped image."
+                )
+                return layers
+        except KeyError as exc:
+            # the only dict access above is offset_bounding_box[...], so a
+            # KeyError here means a required offset key is missing or misspelled.
+            raise ValueError(
+                "The 'offset_bounding_box' display option is missing a required "
+                f"key: {exc}. Expected keys are 'x_min', 'y_min', 'x_max', and "
+                "'y_max'."
+            ) from exc
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Bounding box contains invalid values: {bounding_box}"
+            ) from exc
 
+        if compartment_center_xy is not None and (
+            self._custom_attrs.get("display_options", None) is None
+            or display_options.get("center_dot", True)
+        ):
+            center_x, center_y = map(int, compartment_center_xy)
+
+            if len(prepared_image.shape) == 2:  # noqa: PLR2004
+                prepared_image = skimage.color.gray2rgb(prepared_image)
+
+            if (
+                0 <= center_y < prepared_image.shape[0]
+                and 0 <= center_x < prepared_image.shape[1]
+            ):
+                box_width = x_max - x_min
+                box_height = y_max - y_min
+                radius = max(1, int(min(box_width, box_height) * 0.03))
+
+                rr, cc = skimage.draw.disk(
+                    (center_y, center_x), radius=radius, shape=prepared_image.shape[:2]
+                )
+                prepared_image[rr, cc] = [255, 0, 0]
+
+        try:
             cropped_img_array = prepared_image[y_min:y_max, x_min:x_max]
 
             cropped_original = (
@@ -2862,6 +2900,33 @@ class CytoDataFrame(pd.DataFrame):
             return self._image_array_to_html(array)
         except Exception:
             return str(data_value)
+
+    @staticmethod
+    def _row_bounding_box(
+        row: Any, bounding_box_cols: Sequence[Any]
+    ) -> Tuple[Any, Any, Any, Any]:
+        """
+        Build a ``(x_min, y_min, x_max, y_max)`` bounding box tuple from a row.
+
+        Bounding box columns are matched by substring so the underlying column
+        order does not matter.
+
+        Args:
+            row (Any):
+                A row (mapping of column name to value) to read values from.
+            bounding_box_cols (Sequence[Any]):
+                The bounding box column names to match against.
+
+        Returns:
+            Tuple[Any, Any, Any, Any]:
+                The ``(x_min, y_min, x_max, y_max)`` bounding box values.
+        """
+        return (
+            row[next(col for col in bounding_box_cols if "Minimum_X" in str(col))],
+            row[next(col for col in bounding_box_cols if "Minimum_Y" in str(col))],
+            row[next(col for col in bounding_box_cols if "Maximum_X" in str(col))],
+            row[next(col for col in bounding_box_cols if "Maximum_Y" in str(col))],
+        )
 
     def process_image_data_as_html_display(
         self: CytoDataFrame_type,
@@ -4507,14 +4572,51 @@ class CytoDataFrame(pd.DataFrame):
                     display_indices=display_indices,
                 )
 
-            # gather bounding box columns for use below
-            if self._custom_attrs["data_bounding_box"] is not None:
-                bounding_box_cols = self._custom_attrs[
-                    "data_bounding_box"
-                ].columns.tolist()
+            # Gather bounding box columns for use below. Images are cropped
+            # using either explicit bounding box columns or, when those are
+            # unavailable, an ``offset_bounding_box`` display option applied to
+            # the compartment center coordinates. The latter lets inputs without
+            # AreaShape bounding box columns (e.g. older CellProfiler outputs
+            # such as LINCS) still display cropped images.
+            # See https://github.com/cytomining/CytoDataFrame/issues/215.
+            has_bounding_box = self._custom_attrs["data_bounding_box"] is not None
+            has_compartment_center = (
+                self._custom_attrs["compartment_center_xy"] is not None
+            )
+            offset_crop_without_bbox = (
+                not has_bounding_box
+                and has_compartment_center
+                and display_options.get("offset_bounding_box") is not None
+            )
+            # The render_whole_image display option renders full fields of view
+            # without cropping, supporting image-level inputs that have neither
+            # bounding box nor compartment center columns (e.g. whole-FOV quality
+            # control metrics).
+            # See https://github.com/cytomining/CytoDataFrame/issues/202.
+            render_whole_image = bool(display_options.get("render_whole_image", False))
+
+            if (
+                display_options.get("offset_bounding_box") is not None
+                and not has_compartment_center
+                and not render_whole_image
+            ):
+                logger.warning(
+                    "An 'offset_bounding_box' display option was provided but no "
+                    "compartment center xy columns were found to apply it to; the "
+                    "offset_bounding_box will be ignored. Provide compartment "
+                    "center columns (e.g. Nuclei_Location_Center_X/Y) or pass "
+                    "compartment_center_xy explicitly."
+                )
+
+            if has_bounding_box or offset_crop_without_bbox or render_whole_image:
+                bounding_box_cols = (
+                    self._custom_attrs["data_bounding_box"].columns.tolist()
+                    if has_bounding_box
+                    else None
+                )
 
                 # gather compartment_xy columns for use below
-                if self._custom_attrs["compartment_center_xy"] is not None:
+                if has_compartment_center:
                     compartment_center_xy_cols = self._custom_attrs[
                         "compartment_center_xy"
                     ].columns.tolist()
@@ -4525,39 +4627,14 @@ class CytoDataFrame(pd.DataFrame):
                     ].apply(
                         lambda row: self.process_image_data_as_html_display(
                             data_value=row[image_col],
+                            # use explicit bounding box columns when present;
+                            # otherwise fall back to the offset_bounding_box
+                            # applied to the compartment center within
+                            # process_image_data_as_html_display.
                             bounding_box=(
-                                # rows below are specified using the column name to
-                                # determine which part of the bounding box the columns
-                                # relate to (the list of column names could be in
-                                # various order).
-                                row[
-                                    next(
-                                        col
-                                        for col in bounding_box_cols
-                                        if "Minimum_X" in col
-                                    )
-                                ],
-                                row[
-                                    next(
-                                        col
-                                        for col in bounding_box_cols
-                                        if "Minimum_Y" in col
-                                    )
-                                ],
-                                row[
-                                    next(
-                                        col
-                                        for col in bounding_box_cols
-                                        if "Maximum_X" in col
-                                    )
-                                ],
-                                row[
-                                    next(
-                                        col
-                                        for col in bounding_box_cols
-                                        if "Maximum_Y" in col
-                                    )
-                                ],
+                                self._row_bounding_box(row, bounding_box_cols)
+                                if bounding_box_cols is not None
+                                else None
                             ),
                             compartment_center_xy=(
                                 (

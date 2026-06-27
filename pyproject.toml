@@ -65,14 +65,14 @@ docs = [
 ]
 
 [tool.setuptools]
-package-dir = { "" = "src" }
 packages.find.where = [ "src" ]
+package-dir = { "" = "src" }
 
 [tool.setuptools_scm]
-root = "."
+version_file = "src/cytodataframe/_version.py"
 version_scheme = "no-guess-dev"
 local_scheme = "no-local-version"
-version_file = "src/cytodataframe/_version.py"
+root = "."
 
 [tool.uv]
 default-groups = [

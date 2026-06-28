@@ -15,6 +15,42 @@ from skimage import draw as skdraw
 from skimage.util import img_as_ubyte
 
 
+def image_array_to_grayscale(img_array: np.ndarray) -> np.ndarray:
+    """
+    Convert an image array to a 2D grayscale array.
+
+    Supports single-channel grayscale (2D or ``(H, W, 1)``), RGB
+    (``(H, W, 3)``), and RGBA (``(H, W, 4)``) inputs. Microscopy images are
+    frequently single-channel, so handling those without error is important
+    for real-world stability.
+
+    Args:
+        img_array (np.ndarray):
+            The input image array.
+
+    Returns:
+        np.ndarray:
+            A 2D grayscale array.
+
+    Raises:
+        ValueError: If the array does not have a supported channel layout.
+    """
+    if img_array.ndim == 2:
+        return img_array
+    if img_array.ndim == 3:
+        channels = img_array.shape[2]
+        if channels == 1:
+            return img_array[:, :, 0]
+        if channels == 3:
+            return cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+        if channels == 4:
+            return cv2.cvtColor(img_array, cv2.COLOR_RGBA2GRAY)
+    raise ValueError(
+        "Unsupported image format for grayscale conversion; "
+        "expected grayscale, RGB, or RGBA."
+    )
+
+
 def is_image_too_dark(
     image: Image.Image, pixel_brightness_threshold: float = 10.0
 ) -> bool:
@@ -34,7 +70,7 @@ def is_image_too_dark(
     """
     # Convert the image to a numpy array and then to grayscale
     img_array = np.array(image)
-    gray_image = cv2.cvtColor(img_array, cv2.COLOR_RGBA2GRAY)
+    gray_image = image_array_to_grayscale(img_array)
 
     # Calculate the mean brightness
     mean_brightness = np.mean(gray_image)
@@ -56,18 +92,26 @@ def adjust_image_brightness(image: Image.Image) -> Image.Image:
     """
     # Convert the image to numpy array and then to grayscale
     img_array = np.array(image)
-    gray_image = cv2.cvtColor(img_array, cv2.COLOR_RGBA2GRAY)
+    gray_image = image_array_to_grayscale(img_array)
+
+    # cv2.equalizeHist requires a single-channel 8-bit image.
+    if gray_image.dtype != np.uint8:
+        gray_image = img_as_ubyte(gray_image)
 
     # Apply histogram equalization to improve the contrast
     equalized_image = cv2.equalizeHist(gray_image)
 
-    # Convert back to RGBA
-    img_array[:, :, 0] = equalized_image  # Update only the R channel
-    img_array[:, :, 1] = equalized_image  # Update only the G channel
-    img_array[:, :, 2] = equalized_image  # Update only the B channel
-
-    # Convert back to PIL Image
-    enhanced_image = Image.fromarray(img_array)
+    # Equalization produces a single grayscale channel; broadcast it back into
+    # an RGB image so the three color channels share the equalized values. This
+    # works for grayscale, RGB, and RGBA inputs alike (rather than assuming the
+    # source already has R/G/B channels to overwrite). For RGBA input we keep
+    # the original alpha channel.
+    equalized_rgb = np.stack([equalized_image] * 3, axis=-1).astype(np.uint8)
+    if img_array.ndim == 3 and img_array.shape[2] == 4:  # RGBA source
+        alpha_channel = img_array[:, :, 3]
+        enhanced_image = Image.fromarray(np.dstack([equalized_rgb, alpha_channel]))
+    else:
+        enhanced_image = Image.fromarray(equalized_rgb)
 
     # Slightly reduce the brightness
     enhancer = ImageEnhance.Brightness(enhanced_image)

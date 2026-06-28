@@ -1627,6 +1627,26 @@ def test_find_image_columns_accepts_pathlike_values(tmp_path: pathlib.Path) -> N
     assert "NotImage" not in cdf.find_image_columns()
 
 
+def test_find_image_columns_skips_numeric_and_finds_strings() -> None:
+    """Numeric feature columns are skipped; string image columns are found.
+
+    This guards the dtype-based fast path in ``find_image_columns`` so that
+    optimizing away the scan of numeric columns never hides a real image column.
+    """
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "Feature_X": [1.0, 2.0, 3.0],
+                "Feature_Count": [1, 2, 3],
+                "Image_FileName_DNA": ["a.tiff", "b.tif", "c.TIFF"],
+                "Metadata_Note": ["nuc", "cyto", "cell"],
+            }
+        )
+    )
+    found = cdf.find_image_columns()
+    assert found == ["Image_FileName_DNA"]
+
+
 def test_get_3d_volume_from_cell_uses_image_pathname_column(
     tmp_path: pathlib.Path,
 ) -> None:

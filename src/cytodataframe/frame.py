@@ -1880,29 +1880,44 @@ class CytoDataFrame(pd.DataFrame):
         that contain image file names with extensions .tif
         or .tiff (case insensitive).
 
+        Performance note:
+            Single-cell profiles typically have thousands of numeric feature
+            columns and only a handful of image-name columns. Scanning every
+            value of every column on each render is expensive, so columns whose
+            dtype cannot hold a filename string (numeric, boolean, datetime)
+            are skipped before the per-value regex check.
+
         Returns:
             List[str]:
                 A list of column names that contain
                 image file names.
 
         """
-        # build a pattern to match image file names
-        pattern = r".*\.(tif|tiff)$"
+        # Image file names end in ``.tif``/``.tiff`` (case insensitive).
+        compiled_pattern = re.compile(r".*\.(tif|tiff)$", flags=re.IGNORECASE)
 
-        # search for columns containing image file names
-        # based on pattern above.
-        image_cols = [
-            column
-            for column in self.columns
-            if self[column]
-            .apply(
-                lambda value: (
-                    isinstance(value, (str, os.PathLike))
-                    and re.match(pattern, str(value), flags=re.IGNORECASE)
-                )
+        def _value_is_image_name(value: Any) -> bool:
+            return (
+                isinstance(value, (str, os.PathLike))
+                and compiled_pattern.match(str(value)) is not None
             )
-            .any()
-        ]
+
+        image_cols: List[str] = []
+        for column in self.columns:
+            series = self[column]
+            # Fast path: a column whose dtype cannot contain filename strings
+            # (e.g. numeric feature columns) can never be an image column, so
+            # skip the costly per-value scan. ``dtype`` is absent only for
+            # duplicate column labels (where ``self[column]`` is a DataFrame);
+            # those fall through to the scan to preserve prior behavior.
+            if hasattr(series, "dtype") and (
+                pd.api.types.is_numeric_dtype(series)
+                or pd.api.types.is_bool_dtype(series)
+                or pd.api.types.is_datetime64_any_dtype(series)
+            ):
+                continue
+            if series.apply(_value_is_image_name).any():
+                image_cols.append(column)
 
         logger.debug("Found image columns: %s", image_cols)
 
@@ -4499,16 +4514,25 @@ class CytoDataFrame(pd.DataFrame):
                     else self.copy()
                 )
 
-            # determine if we have image_cols to display
-            image_cols = CytoDataFrame(data).find_image_columns() or []
+            # ``data`` is already a DataFrame here (a CytoDataFrame from
+            # copy()/join(), or a plain DataFrame from the transpose path).
+            # ``find_image_columns``/``find_image_path_columns``/
+            # ``get_displayed_rows`` only read DataFrame structure (columns,
+            # index, values) and not any CytoDataFrame state, so we call them
+            # unbound on ``data`` instead of constructing a fresh CytoDataFrame.
+            # Constructing one per render would needlessly re-run bounding-box /
+            # center / image-path detection and method wrapping over every
+            # column. (If these helpers ever start reading ``_custom_attrs``,
+            # revisit this.)
+            image_cols = CytoDataFrame.find_image_columns(data) or []
             # normalize both the set of image cols and the pool of all cols to strings
             all_cols_str, all_cols_back = self._normalize_labels(data.columns)
             image_cols_str = [str(c) for c in image_cols]
 
             # If your helper expects strings, pass strings; then map the result back
             image_path_cols_str = (
-                CytoDataFrame(data).find_image_path_columns(
-                    image_cols=image_cols_str, all_cols=all_cols_str
+                CytoDataFrame.find_image_path_columns(
+                    data, image_cols=image_cols_str, all_cols=all_cols_str
                 )
                 or {}
             )
@@ -4534,7 +4558,7 @@ class CytoDataFrame(pd.DataFrame):
             logger.debug("Image columns found: %s", image_cols)
 
             # gather indices which will be displayed based on pandas configuration
-            display_indices = CytoDataFrame(data).get_displayed_rows()
+            display_indices = CytoDataFrame.get_displayed_rows(data)
             active_filter_columns = (
                 self._custom_attrs["_widget_state"].get("filter_columns") or []
             )
@@ -4565,7 +4589,7 @@ class CytoDataFrame(pd.DataFrame):
                     display_indices=data.index.tolist(),
                 )
                 data = data.loc[full_filtered_indices]
-                display_indices = CytoDataFrame(data).get_displayed_rows()
+                display_indices = CytoDataFrame.get_displayed_rows(data)
             else:
                 display_indices = self._filter_display_indices_by_widget_range(
                     data=data,

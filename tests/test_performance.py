@@ -17,10 +17,13 @@ wall-clock budget is included as a coarse guard against catastrophic
 
 import re
 import time
+from typing import Any, Callable, List
 
 import numpy as np
 import pandas as pd
+import pytest
 
+import cytodataframe.frame as cdf_frame
 from cytodataframe import CytoDataFrame
 
 
@@ -33,8 +36,7 @@ def _wide_numeric_frame(n_numeric: int = 2000, n_rows: int = 50) -> pd.DataFrame
     """
     rng = np.random.default_rng(0)
     data = {
-        f"Feature_{i}": rng.random(n_rows).astype(np.float64)
-        for i in range(n_numeric)
+        f"Feature_{i}": rng.random(n_rows).astype(np.float64) for i in range(n_numeric)
     }
     data["Metadata_ImageNumber"] = np.arange(n_rows)
     data["Image_FileName_DNA"] = [f"img_{i}.tiff" for i in range(n_rows)]
@@ -42,7 +44,7 @@ def _wide_numeric_frame(n_numeric: int = 2000, n_rows: int = 50) -> pd.DataFrame
     return pd.DataFrame(data)
 
 
-def _best_time(func, repeats: int = 3, warmup: int = 1) -> float:
+def _best_time(func: Callable[[], Any], repeats: int = 3, warmup: int = 1) -> float:
     """Return the fastest wall-clock time over a few runs (least noisy)."""
     for _ in range(warmup):
         func()
@@ -52,6 +54,35 @@ def _best_time(func, repeats: int = 3, warmup: int = 1) -> float:
         func()
         best = min(best, time.perf_counter() - start)
     return best
+
+
+def _render_via_notebook_path(
+    frame: CytoDataFrame, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Render a frame through the real notebook path (``_repr_html_`` with
+    ``debug=False``), stubbing out notebook detection and display side effects.
+
+    This exercises the full path a user hits in Jupyter -- including
+    ``_try_render_trame_widget_table``/``_find_3d_columns_for_display`` and the
+    static-snapshot + interactive renders -- rather than the lighter
+    ``debug=True`` shortcut. That path drives ``find_image_columns`` and
+    ``process_image_data_as_html_display`` more times per display, so it is the
+    one worth guarding.
+    """
+    real_get_option = cdf_frame.get_option
+    # Make the code believe it is running in a notebook, but leave every other
+    # pandas display option untouched.
+    monkeypatch.setattr(
+        cdf_frame,
+        "get_option",
+        lambda name: (
+            True if name == "display.notebook_repr_html" else real_get_option(name)
+        ),
+    )
+    # Swallow IPython display side effects (widgets, HTML, javascript).
+    monkeypatch.setattr(cdf_frame, "display", lambda *args, **kwargs: None)
+
+    frame._repr_html_(debug=False)
 
 
 def test_find_image_columns_skips_numeric_columns_and_is_faster():
@@ -73,8 +104,9 @@ def test_find_image_columns_skips_numeric_columns_and_is_faster():
             for column in frame.columns
             if frame[column]
             .apply(
-                lambda value: isinstance(value, str)
-                and pattern.match(str(value)) is not None
+                lambda value: (
+                    isinstance(value, str) and pattern.match(str(value)) is not None
+                )
             )
             .any()
         ]
@@ -95,15 +127,17 @@ def test_find_image_columns_skips_numeric_columns_and_is_faster():
     )
 
 
-def test_render_scans_for_image_columns_at_most_once(monkeypatch):
-    """A single render must not repeatedly re-scan for image columns.
+def test_render_does_not_repeatedly_rescan_image_columns(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A notebook render must not re-scan for image columns per helper.
 
     Earlier, the HTML render reconstructed a fresh ``CytoDataFrame`` for each
-    helper it needed, re-running image-column detection several times per
-    render (measured at 4x). Calling the helpers on the existing frame instead
-    brings this to a single scan. This structural check fails if the
-    per-helper-reconstruction pattern is reintroduced, independent of hardware
-    speed.
+    helper it needed, re-running image-column detection several times. Calling
+    the helpers on the existing frame instead roughly halved the scans through
+    the real notebook path (12 -> 6 for this frame). This structural check fails
+    if the per-helper-reconstruction pattern is reintroduced, independent of
+    hardware speed.
 
     The frame includes an ``Image_PathName_*`` column so it mirrors real
     CellProfiler/cytomining output (where image-path metadata is captured once
@@ -122,7 +156,7 @@ def test_render_scans_for_image_columns_at_most_once(monkeypatch):
     calls = {"count": 0}
     original = CytoDataFrame.find_image_columns
 
-    def counting_find_image_columns(self):
+    def counting_find_image_columns(self: CytoDataFrame) -> List[str]:
         calls["count"] += 1
         return original(self)
 
@@ -130,24 +164,31 @@ def test_render_scans_for_image_columns_at_most_once(monkeypatch):
         CytoDataFrame, "find_image_columns", counting_find_image_columns
     )
 
-    frame._repr_html_(debug=True)
+    _render_via_notebook_path(frame, monkeypatch)
 
-    # One scan per render is expected; allow a small margin for future changes
-    # while still catching a return to per-helper reconstruction (which was 4x).
-    assert calls["count"] <= 2, (
-        f"render scanned for image columns {calls['count']} times (expected <= 2)"
+    # The optimized path scans 6x for this frame; the pre-optimization behavior
+    # was 12x. The bound catches a return to per-helper reconstruction while
+    # leaving headroom, and does not scale with dataframe width.
+    assert calls["count"] <= 8, (
+        f"render scanned for image columns {calls['count']} times (expected <= 8)"
     )
 
 
-def test_render_does_not_process_phantom_image_columns(monkeypatch):
+def test_render_does_not_process_phantom_image_columns(
+    monkeypatch: pytest.MonkeyPatch,
+):
     """Rendering must only process the image columns actually on display.
 
     A frame can carry ``Image_URL_*`` columns (detected as image columns) plus
     matching ``Image_PathName_*`` metadata. A prior bug pulled the URL columns
     into the path metadata, so rendering re-joined and processed them once per
     row before dropping them -- doubling the per-image decode/equalize work.
-    This asserts each displayed row triggers exactly one image-processing call
-    per displayed image column.
+    This asserts the render only processes the displayed image column.
+
+    Exercised through the real notebook path, which builds the table twice (the
+    static snapshot plus the interactive render), so the expected count is
+    2 builds x 2 rows x 1 displayed image column == 4. With the phantom URL
+    column it was 8.
     """
     frame = CytoDataFrame(
         pd.DataFrame(
@@ -166,7 +207,9 @@ def test_render_does_not_process_phantom_image_columns(monkeypatch):
     calls = {"count": 0}
     original = CytoDataFrame.process_image_data_as_html_display
 
-    def counting_process(self, *args, **kwargs):
+    def counting_process(
+        self: CytoDataFrame, *args: object, **kwargs: object
+    ) -> object:
         calls["count"] += 1
         return original(self, *args, **kwargs)
 
@@ -174,12 +217,10 @@ def test_render_does_not_process_phantom_image_columns(monkeypatch):
         CytoDataFrame, "process_image_data_as_html_display", counting_process
     )
 
-    frame._repr_html_(debug=True)
+    _render_via_notebook_path(frame, monkeypatch)
 
-    # 2 rows x 1 displayed image column == 2 calls (was 4 with the phantom
-    # URL column being processed and then discarded).
-    assert calls["count"] == 2, (
-        f"rendering processed images {calls['count']} times (expected 2)"
+    assert calls["count"] == 4, (
+        f"rendering processed images {calls['count']} times (expected 4)"
     )
 
 

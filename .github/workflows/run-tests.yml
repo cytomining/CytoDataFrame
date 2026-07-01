@@ -16,7 +16,7 @@ jobs:
     if: github.actor != 'dependabot[bot]'
     steps:
       # checks out the repo
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Python setup
         uses: actions/setup-python@v6
         with:
@@ -39,7 +39,7 @@ jobs:
       OS: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Python setup
         uses: actions/setup-python@v6
         with:

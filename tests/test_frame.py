@@ -1627,6 +1627,29 @@ def test_find_image_columns_accepts_pathlike_values(tmp_path: pathlib.Path) -> N
     assert "NotImage" not in cdf.find_image_columns()
 
 
+def test_get_image_paths_excludes_non_filename_image_columns() -> None:
+    """Only FileName->PathName columns become image-path metadata.
+
+    ``Image_URL_*`` columns are legitimately detected as image columns (their
+    values are ``file:...tiff`` URLs), but they do not follow the
+    FileName->PathName convention. They must not be pulled into
+    ``data_image_paths``; otherwise they get re-joined and re-decoded during
+    rendering only to be dropped again.
+    """
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "Image_FileName_DNA": ["a.tiff"],
+                "Image_PathName_DNA": ["/imgs"],
+                "Image_URL_DNA": ["file:/imgs/a.tiff"],
+            }
+        )
+    )
+    paths = cdf._custom_attrs["data_image_paths"]
+    assert paths is not None
+    assert list(paths.columns) == ["Image_PathName_DNA"]
+
+
 def test_find_image_columns_skips_numeric_and_finds_strings() -> None:
     """Numeric feature columns are skipped; string image columns are found.
 

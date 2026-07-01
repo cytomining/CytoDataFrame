@@ -1393,19 +1393,24 @@ class CytoDataFrame(pd.DataFrame):
             ],
         }
 
+        # Membership is checked against a set built once (O(1) lookups) rather
+        # than rebuilding ``self.columns.tolist()`` for every column checked,
+        # which is O(n) per check and adds up on wide feature tables.
+        column_set = set(self.columns)
+
         # Determine which group of columns to select based on availability in self.data
         selected_group = None
         ordered_groups = ("cyto", "nuclei", "cells", "generic")
         for group in ordered_groups:
             cols = column_groups[group]
-            if all(col in self.columns.tolist() for col in cols):
+            if all(col in column_set for col in cols):
                 selected_group = group
                 break
 
         # Assign the selected columns to self.bounding_box_df
         if selected_group:
             z_cols = column_groups_z.get(selected_group, [])
-            if z_cols and all(col in self.columns.tolist() for col in z_cols):
+            if z_cols and all(col in column_set for col in z_cols):
                 column_groups[selected_group] = column_groups[selected_group] + z_cols
             logger.debug(
                 "Bounding box columns found: %s",
@@ -1467,10 +1472,14 @@ class CytoDataFrame(pd.DataFrame):
             ],
         }
 
+        # Build the column set once for O(1) membership checks (see the note in
+        # get_bounding_box_from_data) rather than rebuilding a list per check.
+        column_set = set(self.columns)
+
         # Determine which group of columns to select based on availability in self.data
         selected_group = None
         for group, cols in column_groups.items():
-            if all(col in self.columns.tolist() for col in cols):
+            if all(col in column_set for col in cols):
                 selected_group = group
                 break
 
@@ -1903,20 +1912,21 @@ class CytoDataFrame(pd.DataFrame):
             )
 
         image_cols: List[str] = []
-        for column in self.columns:
-            series = self[column]
-            # Fast path: a column whose dtype cannot contain filename strings
-            # (e.g. numeric feature columns) can never be an image column, so
-            # skip the costly per-value scan. ``dtype`` is absent only for
-            # duplicate column labels (where ``self[column]`` is a DataFrame);
-            # those fall through to the scan to preserve prior behavior.
-            if hasattr(series, "dtype") and (
-                pd.api.types.is_numeric_dtype(series)
-                or pd.api.types.is_bool_dtype(series)
-                or pd.api.types.is_datetime64_any_dtype(series)
+        # ``self.dtypes`` reports every column's dtype in one shot without
+        # materializing each column (``self[col]`` is surprisingly costly on a
+        # CytoDataFrame). Columns whose dtype cannot hold a filename string
+        # (numeric, boolean, datetime) can never be image columns, so we skip
+        # them before ever touching their values. Single-cell profiles are
+        # overwhelmingly numeric feature columns, so this keeps the per-value
+        # scan to the handful of string columns that might actually be images.
+        for column, dtype in self.dtypes.items():
+            if (
+                pd.api.types.is_numeric_dtype(dtype)
+                or pd.api.types.is_bool_dtype(dtype)
+                or pd.api.types.is_datetime64_any_dtype(dtype)
             ):
                 continue
-            if series.apply(_value_is_image_name).any():
+            if self[column].apply(_value_is_image_name).any():
                 image_cols.append(column)
 
         logger.debug("Found image columns: %s", image_cols)
@@ -1971,10 +1981,17 @@ class CytoDataFrame(pd.DataFrame):
 
         """
 
+        # Only map columns that actually follow the FileName -> PathName naming
+        # convention. Requiring "FileName" in the name is important: image
+        # detection can also match columns like ``Image_URL_*`` (whose values are
+        # ``file:...tiff`` URLs), and for those ``replace`` is a no-op that would
+        # wrongly pull the column into the path set -- causing it to be re-joined
+        # and re-decoded during rendering only to be dropped again.
         image_path_columns = [
             col.replace("FileName", "PathName")
             for col in image_cols
-            if col.replace("FileName", "PathName") in self.columns
+            if "FileName" in str(col)
+            and col.replace("FileName", "PathName") in self.columns
         ]
 
         logger.debug("Found image path columns: %s", image_path_columns)
@@ -2004,10 +2021,14 @@ class CytoDataFrame(pd.DataFrame):
 
         """
 
+        # Require the FileName -> PathName convention so non-FileName image
+        # columns (e.g. ``Image_URL_*``) are not mapped to themselves. See the
+        # note in get_image_paths_from_data.
         return {
             str(col): str(col).replace("FileName", "PathName")
             for col in image_cols
-            if str(col).replace("FileName", "PathName") in all_cols
+            if "FileName" in str(col)
+            and str(col).replace("FileName", "PathName") in all_cols
         }
 
     def search_for_mask_or_outline(  # noqa: PLR0913, PLR0911, C901

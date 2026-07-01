@@ -269,6 +269,10 @@ class CytoDataFrame(pd.DataFrame):
             },
             "_snapshot_cache": {},
             "_volume_cache": {},
+            # Caches decoded + contrast-enhanced 2D field-of-view images keyed by
+            # (resolved path, brightness) so images shared across displayed
+            # objects, and repeat renders, are not re-decoded/re-equalized.
+            "_image_cache": {},
             "_scale_slider": widgets.IntSlider(
                 value=initial_brightness,
                 min=0,
@@ -2459,6 +2463,154 @@ class CytoDataFrame(pd.DataFrame):
         looks_like_rgb_2d = aspect_ratio <= MAX_RGB_ASPECT_RATIO
         return not looks_like_rgb_2d
 
+    def _get_image_display_cache(
+        self: CytoDataFrame_type,
+    ) -> Tuple["OrderedDict[Tuple[str, int], np.ndarray]", bool, int]:
+        """Return the 2D image cache plus its disabled flag and size limit.
+
+        The cache stores decoded + contrast-enhanced full field-of-view images.
+        It can be turned off with the ``image_disable_cache`` display option and
+        bounded with ``image_cache_max_entries`` (default 32).
+        """
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        cache_disabled = bool(display_options.get("image_disable_cache"))
+        try:
+            cache_max_entries = max(
+                1, int(display_options.get("image_cache_max_entries", 32))
+            )
+        except (TypeError, ValueError):
+            cache_max_entries = 32
+
+        raw_cache = self._custom_attrs.get("_image_cache")
+        if isinstance(raw_cache, OrderedDict):
+            cache = raw_cache
+        else:
+            cache = OrderedDict(raw_cache or {})
+            self._custom_attrs["_image_cache"] = cache
+        return cache, cache_disabled, cache_max_entries
+
+    def _load_enhanced_image_for_display(  # noqa: C901
+        self: CytoDataFrame_type,
+        candidate_path: pathlib.Path,
+        data_value: str,
+        pattern_map: Optional[dict],
+        layers: Dict[str, Optional[np.ndarray]],
+    ) -> Optional[np.ndarray]:
+        """Load and contrast-enhance a 2D field-of-view image, with caching.
+
+        Reading a TIFF and running adaptive histogram equalization are the most
+        expensive steps in rendering, and the same field-of-view image is often
+        shared by many displayed objects (and re-processed on every re-render,
+        e.g. brightness/filter changes). Results are therefore cached by
+        (resolved path, brightness) so that work happens once per unique image.
+
+        The returned array is always a private copy that the caller may mutate
+        freely (e.g. drawing a center dot) without corrupting the cache.
+
+        For 3D inputs, this populates ``layers`` with the appropriate 3D HTML
+        view/stub and returns ``None``. It also returns ``None`` when decoding
+        fails. In both cases the caller should stop and return ``layers``.
+        """
+        brightness = int(self._custom_attrs["_widget_state"]["scale"])
+        cache, cache_disabled, cache_max_entries = self._get_image_display_cache()
+        cache_key = (str(candidate_path), brightness) if not cache_disabled else None
+
+        if cache_key is not None:
+            cached = cache.get(cache_key)
+            if cached is not None:
+                cache.move_to_end(cache_key)  # mark as most-recently-used
+                return cached.copy()
+
+        try:
+            orig_image_array = imageio.imread(candidate_path)
+        except (FileNotFoundError, ValueError) as exc:
+            logger.error(exc)
+            return None
+
+        if self._is_3d_image_array(orig_image_array):
+            logger.debug(
+                "Detected 3D image at %s; returning HTML view.", candidate_path
+            )
+            html_view = None
+            volume_array = np.asarray(orig_image_array)
+            if (
+                volume_array.ndim > MIN_VOLUME_NDIM
+                and volume_array.shape[-1] in RGB_LIKE_CHANNEL_COUNTS
+            ):
+                volume_array = volume_array[..., 0]
+
+            if volume_array.ndim == MIN_VOLUME_NDIM:
+                label_overlay = None
+                segmentation_path = self._find_matching_segmentation_in_dirs(
+                    data_value=data_value,
+                    pattern_map=pattern_map,
+                    candidate_path=candidate_path,
+                    file_dirs=(
+                        self._custom_attrs.get("data_mask_context_dir"),
+                        self._custom_attrs.get("data_outline_context_dir"),
+                    ),
+                )
+                if segmentation_path is not None:
+                    label_overlay = self._prepare_3d_label_overlay(
+                        segmentation_path=segmentation_path,
+                        expected_shape=volume_array.shape,
+                    )
+                with contextlib.suppress(Exception):
+                    volume = self._ensure_uint8(volume_array)
+                    dims = (volume.shape[2], volume.shape[1], volume.shape[0])
+                    html_view = build_3d_image_html_view(
+                        volume=volume,
+                        dims=dims,
+                        data_value=data_value,
+                        candidate_path=candidate_path,
+                        display_options=self._custom_attrs.get("display_options"),
+                        label_volume=label_overlay,
+                    )
+
+            if html_view is None:
+                html_view = build_3d_html_from_path(
+                    data_value=data_value,
+                    candidate_path=candidate_path,
+                    display_options=self._custom_attrs.get("display_options"),
+                    ensure_uint8=self._ensure_uint8,
+                    is_ome_arrow_value=self._is_ome_arrow_value,
+                    logger=logger,
+                )
+            layers[self._HTML_3D_STUB_KEY] = (
+                html_view
+                if html_view is not None
+                else build_3d_image_html_stub(
+                    data_value=data_value,
+                    candidate_path=candidate_path,
+                    display_options=self._custom_attrs.get("display_options"),
+                )
+            )
+            return None
+
+        if self._custom_attrs["image_adjustment"] is not None:
+            logger.debug("Adjusting image with custom image adjustment function.")
+            orig_image_array = self._custom_attrs["image_adjustment"](
+                orig_image_array, brightness
+            )
+        else:
+            logger.debug("Adjusting image with adaptive histogram equalization.")
+            orig_image_array = adjust_with_adaptive_histogram_equalization(
+                image=orig_image_array,
+                brightness=brightness,
+            )
+
+        orig_image_array = self._ensure_uint8(orig_image_array)
+
+        if cache_key is not None:
+            # Store the pristine enhanced image; hand back a copy so downstream
+            # per-cell edits never mutate the cached array.
+            cache[cache_key] = orig_image_array
+            while len(cache) > cache_max_entries:
+                cache.popitem(last=False)
+            return orig_image_array.copy()
+
+        return orig_image_array
+
     def _prepare_cropped_image_layers(  # noqa: C901, PLR0915, PLR0912, PLR0913
         self: CytoDataFrame_type,
         data_value: Any,
@@ -2546,85 +2698,16 @@ class CytoDataFrame(pd.DataFrame):
             logger.debug("No candidate file found for: %s", data_value)
             return layers
 
-        try:
-            orig_image_array = imageio.imread(candidate_path)
-        except (FileNotFoundError, ValueError) as exc:
-            logger.error(exc)
+        orig_image_array = self._load_enhanced_image_for_display(
+            candidate_path=candidate_path,
+            data_value=data_value,
+            pattern_map=pattern_map,
+            layers=layers,
+        )
+        if orig_image_array is None:
+            # Either decoding failed or the cell was handled as a 3D image
+            # (``layers`` populated with a 3D HTML view/stub by the helper).
             return layers
-
-        if self._is_3d_image_array(orig_image_array):
-            logger.debug(
-                "Detected 3D image at %s; returning HTML view.", candidate_path
-            )
-            html_view = None
-            volume_array = np.asarray(orig_image_array)
-            if (
-                volume_array.ndim > MIN_VOLUME_NDIM
-                and volume_array.shape[-1] in RGB_LIKE_CHANNEL_COUNTS
-            ):
-                volume_array = volume_array[..., 0]
-
-            if volume_array.ndim == MIN_VOLUME_NDIM:
-                label_overlay = None
-                segmentation_path = self._find_matching_segmentation_in_dirs(
-                    data_value=data_value,
-                    pattern_map=pattern_map,
-                    candidate_path=candidate_path,
-                    file_dirs=(
-                        self._custom_attrs.get("data_mask_context_dir"),
-                        self._custom_attrs.get("data_outline_context_dir"),
-                    ),
-                )
-                if segmentation_path is not None:
-                    label_overlay = self._prepare_3d_label_overlay(
-                        segmentation_path=segmentation_path,
-                        expected_shape=volume_array.shape,
-                    )
-                with contextlib.suppress(Exception):
-                    volume = self._ensure_uint8(volume_array)
-                    dims = (volume.shape[2], volume.shape[1], volume.shape[0])
-                    html_view = build_3d_image_html_view(
-                        volume=volume,
-                        dims=dims,
-                        data_value=data_value,
-                        candidate_path=candidate_path,
-                        display_options=self._custom_attrs.get("display_options"),
-                        label_volume=label_overlay,
-                    )
-
-            if html_view is None:
-                html_view = build_3d_html_from_path(
-                    data_value=data_value,
-                    candidate_path=candidate_path,
-                    display_options=self._custom_attrs.get("display_options"),
-                    ensure_uint8=self._ensure_uint8,
-                    is_ome_arrow_value=self._is_ome_arrow_value,
-                    logger=logger,
-                )
-            layers[self._HTML_3D_STUB_KEY] = (
-                html_view
-                if html_view is not None
-                else build_3d_image_html_stub(
-                    data_value=data_value,
-                    candidate_path=candidate_path,
-                    display_options=self._custom_attrs.get("display_options"),
-                )
-            )
-            return layers
-
-        if self._custom_attrs["image_adjustment"] is not None:
-            logger.debug("Adjusting image with custom image adjustment function.")
-            orig_image_array = self._custom_attrs["image_adjustment"](
-                orig_image_array, self._custom_attrs["_widget_state"]["scale"]
-            )
-        else:
-            logger.debug("Adjusting image with adaptive histogram equalization.")
-            orig_image_array = adjust_with_adaptive_histogram_equalization(
-                image=orig_image_array,
-                brightness=self._custom_attrs["_widget_state"]["scale"],
-            )
-
-        orig_image_array = self._ensure_uint8(orig_image_array)
 
         original_image_copy = orig_image_array.copy() if include_original else None
 

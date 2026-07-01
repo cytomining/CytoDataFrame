@@ -15,10 +15,12 @@ wall-clock budget is included as a coarse guard against catastrophic
 (e.g. accidentally quadratic) regressions.
 """
 
+import pathlib
 import re
 import time
 from typing import Any, Callable, List
 
+import imageio.v2 as imageio
 import numpy as np
 import pandas as pd
 import pytest
@@ -222,6 +224,84 @@ def test_render_does_not_process_phantom_image_columns(
     assert calls["count"] == 4, (
         f"rendering processed images {calls['count']} times (expected 4)"
     )
+
+
+def _frame_sharing_one_image(tmp_path: pathlib.Path) -> CytoDataFrame:
+    """Two displayed rows that reference the same field-of-view image on disk."""
+    image = np.linspace(0, 255, 40 * 40, dtype=np.uint8).reshape(40, 40)
+    imageio.imwrite(tmp_path / "img.tiff", image)
+    return CytoDataFrame(
+        pd.DataFrame(
+            {
+                "Image_FileName_DNA": ["img.tiff", "img.tiff"],
+                "Nuclei_AreaShape_BoundingBoxMinimum_X": [0, 0],
+                "Nuclei_AreaShape_BoundingBoxMinimum_Y": [0, 0],
+                "Nuclei_AreaShape_BoundingBoxMaximum_X": [20, 20],
+                "Nuclei_AreaShape_BoundingBoxMaximum_Y": [20, 20],
+            }
+        ),
+        data_context_dir=str(tmp_path),
+    )[["Image_FileName_DNA"]]
+
+
+def _count_decodes(monkeypatch: pytest.MonkeyPatch) -> dict:
+    """Patch image decoding to count calls; returns a mutable ``{"n": int}``."""
+    calls = {"n": 0}
+    real_imread = cdf_frame.imageio.imread
+
+    def counting_imread(path: object, *args: object, **kwargs: object) -> object:
+        calls["n"] += 1
+        return real_imread(path, *args, **kwargs)
+
+    monkeypatch.setattr(cdf_frame.imageio, "imread", counting_imread)
+    return calls
+
+
+def test_repeat_renders_reuse_cached_images(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The decode + equalize step is cached across cells and re-renders.
+
+    Reading and contrast-enhancing an image is the dominant render cost, and the
+    same field-of-view image is frequently shared by multiple displayed objects
+    and re-processed on each re-render (e.g. brightness/filter changes). The
+    cache must decode each unique image once and reuse it thereafter.
+    """
+    frame = _frame_sharing_one_image(tmp_path)
+    calls = _count_decodes(monkeypatch)
+
+    html_first = frame._repr_html_(debug=True)
+    first_render_decodes = calls["n"]
+
+    calls["n"] = 0
+    html_second = frame._repr_html_(debug=True)
+    second_render_decodes = calls["n"]
+
+    # Two rows share one image -> a single decode on the first render...
+    assert first_render_decodes == 1, (
+        f"expected 1 decode across shared cells, got {first_render_decodes}"
+    )
+    # ...and re-rendering the same frame decodes nothing (fully cached).
+    assert second_render_decodes == 0, (
+        f"expected 0 decodes on re-render, got {second_render_decodes}"
+    )
+    # The cache must not change what is rendered.
+    assert html_first == html_second
+
+
+def test_image_cache_can_be_disabled(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The ``image_disable_cache`` display option turns caching off."""
+    frame = _frame_sharing_one_image(tmp_path)
+    frame._custom_attrs["display_options"] = {"image_disable_cache": True}
+    calls = _count_decodes(monkeypatch)
+
+    frame._repr_html_(debug=True)
+    frame._repr_html_(debug=True)
+
+    # With caching disabled, both cells in both renders decode: 2 rows x 2 renders.
+    assert calls["n"] == 4, f"expected 4 decodes with cache disabled, got {calls['n']}"
 
 
 def test_wide_frame_construction_stays_within_budget():

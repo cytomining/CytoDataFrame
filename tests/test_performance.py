@@ -33,8 +33,7 @@ def _wide_numeric_frame(n_numeric: int = 2000, n_rows: int = 50) -> pd.DataFrame
     """
     rng = np.random.default_rng(0)
     data = {
-        f"Feature_{i}": rng.random(n_rows).astype(np.float64)
-        for i in range(n_numeric)
+        f"Feature_{i}": rng.random(n_rows).astype(np.float64) for i in range(n_numeric)
     }
     data["Metadata_ImageNumber"] = np.arange(n_rows)
     data["Image_FileName_DNA"] = [f"img_{i}.tiff" for i in range(n_rows)]
@@ -73,8 +72,9 @@ def test_find_image_columns_skips_numeric_columns_and_is_faster():
             for column in frame.columns
             if frame[column]
             .apply(
-                lambda value: isinstance(value, str)
-                and pattern.match(str(value)) is not None
+                lambda value: (
+                    isinstance(value, str) and pattern.match(str(value)) is not None
+                )
             )
             .any()
         ]

@@ -3,6 +3,7 @@ Tests cosmicqc CytoDataFrame module
 """
 
 import base64
+import importlib.metadata
 import logging
 import pathlib
 import re
@@ -24,6 +25,7 @@ from _pytest.monkeypatch import MonkeyPatch
 from PIL import Image
 from pyarrow import parquet
 
+import cytodataframe
 from cytodataframe.frame import (
     FILTER_SLIDER_LABEL_WIDTH_PX,
     FILTER_SLIDER_READOUT_WIDTH_PX,
@@ -34,6 +36,23 @@ from cytodataframe.frame import (
 from tests.utils import (
     cytodataframe_image_display_contains_pixels,
 )
+
+
+def test_package_exposes_resolved_version() -> None:
+    """``cytodataframe.__version__`` reports the real version, not a placeholder.
+
+    The version is resolved from the setuptools-scm ``_version.py`` (or the
+    installed package metadata as a fallback). ``"0.0.0"`` is only used when
+    resolution fails entirely, so seeing it here would mean the version display
+    is broken.
+    """
+    version = cytodataframe.__version__
+    assert isinstance(version, str) and version
+    assert version != "0.0.0"
+    # setuptools-scm versions start with the numeric release (e.g. "0.3.1...").
+    assert version[0].isdigit()
+    # It should agree with the installed distribution metadata.
+    assert version == importlib.metadata.version("cytodataframe")
 
 
 def test_to_ome_parquet_adds_arrow_column(

@@ -413,6 +413,45 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">skimage.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">img_as_ubyte</span>
 
 
+<div class="viewcode-block" id="image_array_to_grayscale">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.image.image_array_to_grayscale">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">image_array_to_grayscale</span><span class="p">(</span><span class="n">img_array</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Convert an image array to a 2D grayscale array.</span>
+
+<span class="sd">    Supports single-channel grayscale (2D or ``(H, W, 1)``), RGB</span>
+<span class="sd">    (``(H, W, 3)``), and RGBA (``(H, W, 4)``) inputs. Microscopy images are</span>
+<span class="sd">    frequently single-channel, so handling those without error is important</span>
+<span class="sd">    for real-world stability.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        img_array (np.ndarray):</span>
+<span class="sd">            The input image array.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        np.ndarray:</span>
+<span class="sd">            A 2D grayscale array.</span>
+
+<span class="sd">    Raises:</span>
+<span class="sd">        ValueError: If the array does not have a supported channel layout.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">img_array</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">img_array</span>
+    <span class="k">if</span> <span class="n">img_array</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+        <span class="n">channels</span> <span class="o">=</span> <span class="n">img_array</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">channels</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">img_array</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">channels</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">cv2</span><span class="o">.</span><span class="n">cvtColor</span><span class="p">(</span><span class="n">img_array</span><span class="p">,</span> <span class="n">cv2</span><span class="o">.</span><span class="n">COLOR_RGB2GRAY</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">channels</span> <span class="o">==</span> <span class="mi">4</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">cv2</span><span class="o">.</span><span class="n">cvtColor</span><span class="p">(</span><span class="n">img_array</span><span class="p">,</span> <span class="n">cv2</span><span class="o">.</span><span class="n">COLOR_RGBA2GRAY</span><span class="p">)</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+        <span class="s2">&quot;Unsupported image format for grayscale conversion; &quot;</span>
+        <span class="s2">&quot;expected grayscale, RGB, or RGBA.&quot;</span>
+    <span class="p">)</span></div>
+
+
+
 <div class="viewcode-block" id="is_image_too_dark">
 <a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.image.is_image_too_dark">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">is_image_too_dark</span><span class="p">(</span>
@@ -434,7 +473,7 @@
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Convert the image to a numpy array and then to grayscale</span>
     <span class="n">img_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">image</span><span class="p">)</span>
-    <span class="n">gray_image</span> <span class="o">=</span> <span class="n">cv2</span><span class="o">.</span><span class="n">cvtColor</span><span class="p">(</span><span class="n">img_array</span><span class="p">,</span> <span class="n">cv2</span><span class="o">.</span><span class="n">COLOR_RGBA2GRAY</span><span class="p">)</span>
+    <span class="n">gray_image</span> <span class="o">=</span> <span class="n">image_array_to_grayscale</span><span class="p">(</span><span class="n">img_array</span><span class="p">)</span>
 
     <span class="c1"># Calculate the mean brightness</span>
     <span class="n">mean_brightness</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">gray_image</span><span class="p">)</span>
@@ -459,18 +498,26 @@
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Convert the image to numpy array and then to grayscale</span>
     <span class="n">img_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">image</span><span class="p">)</span>
-    <span class="n">gray_image</span> <span class="o">=</span> <span class="n">cv2</span><span class="o">.</span><span class="n">cvtColor</span><span class="p">(</span><span class="n">img_array</span><span class="p">,</span> <span class="n">cv2</span><span class="o">.</span><span class="n">COLOR_RGBA2GRAY</span><span class="p">)</span>
+    <span class="n">gray_image</span> <span class="o">=</span> <span class="n">image_array_to_grayscale</span><span class="p">(</span><span class="n">img_array</span><span class="p">)</span>
+
+    <span class="c1"># cv2.equalizeHist requires a single-channel 8-bit image.</span>
+    <span class="k">if</span> <span class="n">gray_image</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">:</span>
+        <span class="n">gray_image</span> <span class="o">=</span> <span class="n">img_as_ubyte</span><span class="p">(</span><span class="n">gray_image</span><span class="p">)</span>
 
     <span class="c1"># Apply histogram equalization to improve the contrast</span>
     <span class="n">equalized_image</span> <span class="o">=</span> <span class="n">cv2</span><span class="o">.</span><span class="n">equalizeHist</span><span class="p">(</span><span class="n">gray_image</span><span class="p">)</span>
 
-    <span class="c1"># Convert back to RGBA</span>
-    <span class="n">img_array</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">equalized_image</span>  <span class="c1"># Update only the R channel</span>
-    <span class="n">img_array</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">equalized_image</span>  <span class="c1"># Update only the G channel</span>
-    <span class="n">img_array</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">equalized_image</span>  <span class="c1"># Update only the B channel</span>
-
-    <span class="c1"># Convert back to PIL Image</span>
-    <span class="n">enhanced_image</span> <span class="o">=</span> <span class="n">Image</span><span class="o">.</span><span class="n">fromarray</span><span class="p">(</span><span class="n">img_array</span><span class="p">)</span>
+    <span class="c1"># Equalization produces a single grayscale channel; broadcast it back into</span>
+    <span class="c1"># an RGB image so the three color channels share the equalized values. This</span>
+    <span class="c1"># works for grayscale, RGB, and RGBA inputs alike (rather than assuming the</span>
+    <span class="c1"># source already has R/G/B channels to overwrite). For RGBA input we keep</span>
+    <span class="c1"># the original alpha channel.</span>
+    <span class="n">equalized_rgb</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">equalized_image</span><span class="p">]</span> <span class="o">*</span> <span class="mi">3</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">img_array</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">img_array</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="mi">4</span><span class="p">:</span>  <span class="c1"># RGBA source</span>
+        <span class="n">alpha_channel</span> <span class="o">=</span> <span class="n">img_array</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">3</span><span class="p">]</span>
+        <span class="n">enhanced_image</span> <span class="o">=</span> <span class="n">Image</span><span class="o">.</span><span class="n">fromarray</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">dstack</span><span class="p">([</span><span class="n">equalized_rgb</span><span class="p">,</span> <span class="n">alpha_channel</span><span class="p">]))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">enhanced_image</span> <span class="o">=</span> <span class="n">Image</span><span class="o">.</span><span class="n">fromarray</span><span class="p">(</span><span class="n">equalized_rgb</span><span class="p">)</span>
 
     <span class="c1"># Slightly reduce the brightness</span>
     <span class="n">enhancer</span> <span class="o">=</span> <span class="n">ImageEnhance</span><span class="o">.</span><span class="n">Brightness</span><span class="p">(</span><span class="n">enhanced_image</span><span class="p">)</span>

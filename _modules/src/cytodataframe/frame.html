@@ -669,6 +669,10 @@
             <span class="p">},</span>
             <span class="s2">&quot;_snapshot_cache&quot;</span><span class="p">:</span> <span class="p">{},</span>
             <span class="s2">&quot;_volume_cache&quot;</span><span class="p">:</span> <span class="p">{},</span>
+            <span class="c1"># Caches decoded + contrast-enhanced 2D field-of-view images keyed by</span>
+            <span class="c1"># (resolved path, brightness) so images shared across displayed</span>
+            <span class="c1"># objects, and repeat renders, are not re-decoded/re-equalized.</span>
+            <span class="s2">&quot;_image_cache&quot;</span><span class="p">:</span> <span class="p">{},</span>
             <span class="s2">&quot;_scale_slider&quot;</span><span class="p">:</span> <span class="n">widgets</span><span class="o">.</span><span class="n">IntSlider</span><span class="p">(</span>
                 <span class="n">value</span><span class="o">=</span><span class="n">initial_brightness</span><span class="p">,</span>
                 <span class="nb">min</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
@@ -1846,19 +1850,24 @@
             <span class="p">],</span>
         <span class="p">}</span>
 
+        <span class="c1"># Membership is checked against a set built once (O(1) lookups) rather</span>
+        <span class="c1"># than rebuilding ``self.columns.tolist()`` for every column checked,</span>
+        <span class="c1"># which is O(n) per check and adds up on wide feature tables.</span>
+        <span class="n">column_set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span>
+
         <span class="c1"># Determine which group of columns to select based on availability in self.data</span>
         <span class="n">selected_group</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="n">ordered_groups</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;cyto&quot;</span><span class="p">,</span> <span class="s2">&quot;nuclei&quot;</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="s2">&quot;generic&quot;</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">ordered_groups</span><span class="p">:</span>
             <span class="n">cols</span> <span class="o">=</span> <span class="n">column_groups</span><span class="p">[</span><span class="n">group</span><span class="p">]</span>
-            <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">col</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">cols</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">col</span> <span class="ow">in</span> <span class="n">column_set</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">cols</span><span class="p">):</span>
                 <span class="n">selected_group</span> <span class="o">=</span> <span class="n">group</span>
                 <span class="k">break</span>
 
         <span class="c1"># Assign the selected columns to self.bounding_box_df</span>
         <span class="k">if</span> <span class="n">selected_group</span><span class="p">:</span>
             <span class="n">z_cols</span> <span class="o">=</span> <span class="n">column_groups_z</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">selected_group</span><span class="p">,</span> <span class="p">[])</span>
-            <span class="k">if</span> <span class="n">z_cols</span> <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="n">col</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">z_cols</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">z_cols</span> <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="n">col</span> <span class="ow">in</span> <span class="n">column_set</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">z_cols</span><span class="p">):</span>
                 <span class="n">column_groups</span><span class="p">[</span><span class="n">selected_group</span><span class="p">]</span> <span class="o">=</span> <span class="n">column_groups</span><span class="p">[</span><span class="n">selected_group</span><span class="p">]</span> <span class="o">+</span> <span class="n">z_cols</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
                 <span class="s2">&quot;Bounding box columns found: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
@@ -1923,10 +1932,14 @@
             <span class="p">],</span>
         <span class="p">}</span>
 
+        <span class="c1"># Build the column set once for O(1) membership checks (see the note in</span>
+        <span class="c1"># get_bounding_box_from_data) rather than rebuilding a list per check.</span>
+        <span class="n">column_set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span>
+
         <span class="c1"># Determine which group of columns to select based on availability in self.data</span>
         <span class="n">selected_group</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">for</span> <span class="n">group</span><span class="p">,</span> <span class="n">cols</span> <span class="ow">in</span> <span class="n">column_groups</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">col</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">cols</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">col</span> <span class="ow">in</span> <span class="n">column_set</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">cols</span><span class="p">):</span>
                 <span class="n">selected_group</span> <span class="o">=</span> <span class="n">group</span>
                 <span class="k">break</span>
 
@@ -2348,29 +2361,45 @@
 <span class="sd">        that contain image file names with extensions .tif</span>
 <span class="sd">        or .tiff (case insensitive).</span>
 
+<span class="sd">        Performance note:</span>
+<span class="sd">            Single-cell profiles typically have thousands of numeric feature</span>
+<span class="sd">            columns and only a handful of image-name columns. Scanning every</span>
+<span class="sd">            value of every column on each render is expensive, so columns whose</span>
+<span class="sd">            dtype cannot hold a filename string (numeric, boolean, datetime)</span>
+<span class="sd">            are skipped before the per-value regex check.</span>
+
 <span class="sd">        Returns:</span>
 <span class="sd">            List[str]:</span>
 <span class="sd">                A list of column names that contain</span>
 <span class="sd">                image file names.</span>
 
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># build a pattern to match image file names</span>
-        <span class="n">pattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s2">&quot;.*\.(tif|tiff)$&quot;</span>
+        <span class="c1"># Image file names end in ``.tif``/``.tiff`` (case insensitive).</span>
+        <span class="n">compiled_pattern</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;.*\.(tif|tiff)$&quot;</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span>
 
-        <span class="c1"># search for columns containing image file names</span>
-        <span class="c1"># based on pattern above.</span>
-        <span class="n">image_cols</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">column</span>
-            <span class="k">for</span> <span class="n">column</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">columns</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="p">[</span><span class="n">column</span><span class="p">]</span>
-            <span class="o">.</span><span class="n">apply</span><span class="p">(</span>
-                <span class="k">lambda</span> <span class="n">value</span><span class="p">:</span> <span class="p">(</span>
-                    <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">))</span>
-                    <span class="ow">and</span> <span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">),</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span>
-                <span class="p">)</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">_value_is_image_name</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">))</span>
+                <span class="ow">and</span> <span class="n">compiled_pattern</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">))</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="p">)</span>
-            <span class="o">.</span><span class="n">any</span><span class="p">()</span>
-        <span class="p">]</span>
+
+        <span class="n">image_cols</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="c1"># ``self.dtypes`` reports every column&#39;s dtype in one shot without</span>
+        <span class="c1"># materializing each column (``self[col]`` is surprisingly costly on a</span>
+        <span class="c1"># CytoDataFrame). Columns whose dtype cannot hold a filename string</span>
+        <span class="c1"># (numeric, boolean, datetime) can never be image columns, so we skip</span>
+        <span class="c1"># them before ever touching their values. Single-cell profiles are</span>
+        <span class="c1"># overwhelmingly numeric feature columns, so this keeps the per-value</span>
+        <span class="c1"># scan to the handful of string columns that might actually be images.</span>
+        <span class="k">for</span> <span class="n">column</span><span class="p">,</span> <span class="n">dtype</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">dtypes</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="n">pd</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">types</span><span class="o">.</span><span class="n">is_numeric_dtype</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span>
+                <span class="ow">or</span> <span class="n">pd</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">types</span><span class="o">.</span><span class="n">is_bool_dtype</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span>
+                <span class="ow">or</span> <span class="n">pd</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">types</span><span class="o">.</span><span class="n">is_datetime64_any_dtype</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span>
+            <span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="p">[</span><span class="n">column</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">_value_is_image_name</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+                <span class="n">image_cols</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">column</span><span class="p">)</span>
 
         <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Found image columns: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">image_cols</span><span class="p">)</span>
 
@@ -2433,10 +2462,17 @@
 
 <span class="sd">        &quot;&quot;&quot;</span>
 
+        <span class="c1"># Only map columns that actually follow the FileName -&gt; PathName naming</span>
+        <span class="c1"># convention. Requiring &quot;FileName&quot; in the name is important: image</span>
+        <span class="c1"># detection can also match columns like ``Image_URL_*`` (whose values are</span>
+        <span class="c1"># ``file:...tiff`` URLs), and for those ``replace`` is a no-op that would</span>
+        <span class="c1"># wrongly pull the column into the path set -- causing it to be re-joined</span>
+        <span class="c1"># and re-decoded during rendering only to be dropped again.</span>
         <span class="n">image_path_columns</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">col</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;FileName&quot;</span><span class="p">,</span> <span class="s2">&quot;PathName&quot;</span><span class="p">)</span>
             <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">image_cols</span>
-            <span class="k">if</span> <span class="n">col</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;FileName&quot;</span><span class="p">,</span> <span class="s2">&quot;PathName&quot;</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">columns</span>
+            <span class="k">if</span> <span class="s2">&quot;FileName&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">col</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;FileName&quot;</span><span class="p">,</span> <span class="s2">&quot;PathName&quot;</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">columns</span>
         <span class="p">]</span>
 
         <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Found image path columns: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">image_path_columns</span><span class="p">)</span>
@@ -2469,10 +2505,14 @@
 
 <span class="sd">        &quot;&quot;&quot;</span>
 
+        <span class="c1"># Require the FileName -&gt; PathName convention so non-FileName image</span>
+        <span class="c1"># columns (e.g. ``Image_URL_*``) are not mapped to themselves. See the</span>
+        <span class="c1"># note in get_image_paths_from_data.</span>
         <span class="k">return</span> <span class="p">{</span>
             <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">):</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;FileName&quot;</span><span class="p">,</span> <span class="s2">&quot;PathName&quot;</span><span class="p">)</span>
             <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">image_cols</span>
-            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;FileName&quot;</span><span class="p">,</span> <span class="s2">&quot;PathName&quot;</span><span class="p">)</span> <span class="ow">in</span> <span class="n">all_cols</span>
+            <span class="k">if</span> <span class="s2">&quot;FileName&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;FileName&quot;</span><span class="p">,</span> <span class="s2">&quot;PathName&quot;</span><span class="p">)</span> <span class="ow">in</span> <span class="n">all_cols</span>
         <span class="p">}</span></div>
 
 
@@ -2928,6 +2968,196 @@
         <span class="k">return</span> <span class="ow">not</span> <span class="n">looks_like_rgb_2d</span></div>
 
 
+<div class="viewcode-block" id="CytoDataFrame._resolve_cache_settings">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._resolve_cache_settings">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_cache_settings</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
+        <span class="n">cache_attr</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">disable_option</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">max_entries_option</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">default_max_entries</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="s2">&quot;OrderedDict[Any, Any]&quot;</span><span class="p">,</span> <span class="nb">bool</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve a display cache and its disabled flag / size limit.</span>
+
+<span class="sd">        Shared by the 2D image cache and the 3D volume cache so both read their</span>
+<span class="sd">        display options, normalize the max-entries value, and wrap any existing</span>
+<span class="sd">        cache into an ``OrderedDict`` the same way.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            cache_attr: ``_custom_attrs`` key holding the cache mapping.</span>
+<span class="sd">            disable_option: display option that disables the cache when truthy.</span>
+<span class="sd">            max_entries_option: display option overriding the LRU size limit.</span>
+<span class="sd">            default_max_entries: size limit used when the option is unset/invalid.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ``(cache, disabled, max_entries)``. When disabled, a throwaway empty</span>
+<span class="sd">            ``OrderedDict`` is returned and ``_custom_attrs`` is left untouched;</span>
+<span class="sd">            callers guard all cache access with ``disabled``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">disabled</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">disable_option</span><span class="p">))</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">max_entries</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+                <span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">max_entries_option</span><span class="p">,</span> <span class="n">default_max_entries</span><span class="p">))</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="n">max_entries</span> <span class="o">=</span> <span class="n">default_max_entries</span>
+
+        <span class="k">if</span> <span class="n">disabled</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">OrderedDict</span><span class="p">(),</span> <span class="kc">True</span><span class="p">,</span> <span class="n">max_entries</span>
+
+        <span class="n">raw_cache</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cache_attr</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">raw_cache</span><span class="p">,</span> <span class="n">OrderedDict</span><span class="p">):</span>
+            <span class="n">cache</span> <span class="o">=</span> <span class="n">raw_cache</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cache</span> <span class="o">=</span> <span class="n">OrderedDict</span><span class="p">(</span><span class="n">raw_cache</span> <span class="ow">or</span> <span class="p">{})</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="n">cache_attr</span><span class="p">]</span> <span class="o">=</span> <span class="n">cache</span>
+        <span class="k">return</span> <span class="n">cache</span><span class="p">,</span> <span class="n">disabled</span><span class="p">,</span> <span class="n">max_entries</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._get_image_display_cache">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._get_image_display_cache">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_image_display_cache</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="s2">&quot;OrderedDict[Tuple[str, int], np.ndarray]&quot;</span><span class="p">,</span> <span class="nb">bool</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the 2D image cache plus its disabled flag and size limit.</span>
+
+<span class="sd">        The cache stores decoded + contrast-enhanced full field-of-view images.</span>
+<span class="sd">        It can be turned off with the ``image_disable_cache`` display option and</span>
+<span class="sd">        bounded with ``image_cache_max_entries`` (default 32).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_cache_settings</span><span class="p">(</span>
+            <span class="n">cache_attr</span><span class="o">=</span><span class="s2">&quot;_image_cache&quot;</span><span class="p">,</span>
+            <span class="n">disable_option</span><span class="o">=</span><span class="s2">&quot;image_disable_cache&quot;</span><span class="p">,</span>
+            <span class="n">max_entries_option</span><span class="o">=</span><span class="s2">&quot;image_cache_max_entries&quot;</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._load_enhanced_image_for_display">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._load_enhanced_image_for_display">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_load_enhanced_image_for_display</span><span class="p">(</span>  <span class="c1"># noqa: C901</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
+        <span class="n">candidate_path</span><span class="p">:</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">,</span>
+        <span class="n">data_value</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">pattern_map</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">],</span>
+        <span class="n">layers</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load and contrast-enhance a 2D field-of-view image, with caching.</span>
+
+<span class="sd">        Reading a TIFF and running adaptive histogram equalization are the most</span>
+<span class="sd">        expensive steps in rendering, and the same field-of-view image is often</span>
+<span class="sd">        shared by many displayed objects (and re-processed on every re-render,</span>
+<span class="sd">        e.g. brightness/filter changes). Results are therefore cached by</span>
+<span class="sd">        (resolved path, brightness) so that work happens once per unique image.</span>
+
+<span class="sd">        The returned array is always a private copy that the caller may mutate</span>
+<span class="sd">        freely (e.g. drawing a center dot) without corrupting the cache.</span>
+
+<span class="sd">        For 3D inputs, this populates ``layers`` with the appropriate 3D HTML</span>
+<span class="sd">        view/stub and returns ``None``. It also returns ``None`` when decoding</span>
+<span class="sd">        fails. In both cases the caller should stop and return ``layers``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">brightness</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;scale&quot;</span><span class="p">])</span>
+        <span class="n">cache</span><span class="p">,</span> <span class="n">cache_disabled</span><span class="p">,</span> <span class="n">cache_max_entries</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_image_display_cache</span><span class="p">()</span>
+        <span class="n">cache_key</span> <span class="o">=</span> <span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">candidate_path</span><span class="p">),</span> <span class="n">brightness</span><span class="p">)</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">cache_disabled</span> <span class="k">else</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="n">cache_key</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">cached</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">cached</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">cache</span><span class="o">.</span><span class="n">move_to_end</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>  <span class="c1"># mark as most-recently-used</span>
+                <span class="k">return</span> <span class="n">cached</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">orig_image_array</span> <span class="o">=</span> <span class="n">imageio</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">candidate_path</span><span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">FileNotFoundError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_3d_image_array</span><span class="p">(</span><span class="n">orig_image_array</span><span class="p">):</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">&quot;Detected 3D image at </span><span class="si">%s</span><span class="s2">; returning HTML view.&quot;</span><span class="p">,</span> <span class="n">candidate_path</span>
+            <span class="p">)</span>
+            <span class="n">html_view</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">volume_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">orig_image_array</span><span class="p">)</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="n">volume_array</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&gt;</span> <span class="n">MIN_VOLUME_NDIM</span>
+                <span class="ow">and</span> <span class="n">volume_array</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">in</span> <span class="n">RGB_LIKE_CHANNEL_COUNTS</span>
+            <span class="p">):</span>
+                <span class="n">volume_array</span> <span class="o">=</span> <span class="n">volume_array</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+
+            <span class="k">if</span> <span class="n">volume_array</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="n">MIN_VOLUME_NDIM</span><span class="p">:</span>
+                <span class="n">label_overlay</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="n">segmentation_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_matching_segmentation_in_dirs</span><span class="p">(</span>
+                    <span class="n">data_value</span><span class="o">=</span><span class="n">data_value</span><span class="p">,</span>
+                    <span class="n">pattern_map</span><span class="o">=</span><span class="n">pattern_map</span><span class="p">,</span>
+                    <span class="n">candidate_path</span><span class="o">=</span><span class="n">candidate_path</span><span class="p">,</span>
+                    <span class="n">file_dirs</span><span class="o">=</span><span class="p">(</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data_mask_context_dir&quot;</span><span class="p">),</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data_outline_context_dir&quot;</span><span class="p">),</span>
+                    <span class="p">),</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="n">segmentation_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">label_overlay</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_3d_label_overlay</span><span class="p">(</span>
+                        <span class="n">segmentation_path</span><span class="o">=</span><span class="n">segmentation_path</span><span class="p">,</span>
+                        <span class="n">expected_shape</span><span class="o">=</span><span class="n">volume_array</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">suppress</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+                    <span class="n">volume</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_uint8</span><span class="p">(</span><span class="n">volume_array</span><span class="p">)</span>
+                    <span class="n">dims</span> <span class="o">=</span> <span class="p">(</span><span class="n">volume</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">volume</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">volume</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                    <span class="n">html_view</span> <span class="o">=</span> <span class="n">build_3d_image_html_view</span><span class="p">(</span>
+                        <span class="n">volume</span><span class="o">=</span><span class="n">volume</span><span class="p">,</span>
+                        <span class="n">dims</span><span class="o">=</span><span class="n">dims</span><span class="p">,</span>
+                        <span class="n">data_value</span><span class="o">=</span><span class="n">data_value</span><span class="p">,</span>
+                        <span class="n">candidate_path</span><span class="o">=</span><span class="n">candidate_path</span><span class="p">,</span>
+                        <span class="n">display_options</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">),</span>
+                        <span class="n">label_volume</span><span class="o">=</span><span class="n">label_overlay</span><span class="p">,</span>
+                    <span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">html_view</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">html_view</span> <span class="o">=</span> <span class="n">build_3d_html_from_path</span><span class="p">(</span>
+                    <span class="n">data_value</span><span class="o">=</span><span class="n">data_value</span><span class="p">,</span>
+                    <span class="n">candidate_path</span><span class="o">=</span><span class="n">candidate_path</span><span class="p">,</span>
+                    <span class="n">display_options</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">),</span>
+                    <span class="n">ensure_uint8</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_ensure_uint8</span><span class="p">,</span>
+                    <span class="n">is_ome_arrow_value</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_is_ome_arrow_value</span><span class="p">,</span>
+                    <span class="n">logger</span><span class="o">=</span><span class="n">logger</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="n">layers</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_HTML_3D_STUB_KEY</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">html_view</span>
+                <span class="k">if</span> <span class="n">html_view</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="k">else</span> <span class="n">build_3d_image_html_stub</span><span class="p">(</span>
+                    <span class="n">data_value</span><span class="o">=</span><span class="n">data_value</span><span class="p">,</span>
+                    <span class="n">candidate_path</span><span class="o">=</span><span class="n">candidate_path</span><span class="p">,</span>
+                    <span class="n">display_options</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">),</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;image_adjustment&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Adjusting image with custom image adjustment function.&quot;</span><span class="p">)</span>
+            <span class="n">orig_image_array</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;image_adjustment&quot;</span><span class="p">](</span>
+                <span class="n">orig_image_array</span><span class="p">,</span> <span class="n">brightness</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Adjusting image with adaptive histogram equalization.&quot;</span><span class="p">)</span>
+            <span class="n">orig_image_array</span> <span class="o">=</span> <span class="n">adjust_with_adaptive_histogram_equalization</span><span class="p">(</span>
+                <span class="n">image</span><span class="o">=</span><span class="n">orig_image_array</span><span class="p">,</span>
+                <span class="n">brightness</span><span class="o">=</span><span class="n">brightness</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="n">orig_image_array</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_uint8</span><span class="p">(</span><span class="n">orig_image_array</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">cache_key</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Store the pristine enhanced image; hand back a copy so downstream</span>
+            <span class="c1"># per-cell edits never mutate the cached array.</span>
+            <span class="n">cache</span><span class="p">[</span><span class="n">cache_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">orig_image_array</span>
+            <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">cache</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">cache_max_entries</span><span class="p">:</span>
+                <span class="n">cache</span><span class="o">.</span><span class="n">popitem</span><span class="p">(</span><span class="n">last</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">orig_image_array</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">orig_image_array</span></div>
+
+
 <div class="viewcode-block" id="CytoDataFrame._prepare_cropped_image_layers">
 <a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._prepare_cropped_image_layers">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">_prepare_cropped_image_layers</span><span class="p">(</span>  <span class="c1"># noqa: C901, PLR0915, PLR0912, PLR0913</span>
@@ -3017,85 +3247,16 @@
             <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;No candidate file found for: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">data_value</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">layers</span>
 
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">orig_image_array</span> <span class="o">=</span> <span class="n">imageio</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">candidate_path</span><span class="p">)</span>
-        <span class="k">except</span> <span class="p">(</span><span class="ne">FileNotFoundError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
+        <span class="n">orig_image_array</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_load_enhanced_image_for_display</span><span class="p">(</span>
+            <span class="n">candidate_path</span><span class="o">=</span><span class="n">candidate_path</span><span class="p">,</span>
+            <span class="n">data_value</span><span class="o">=</span><span class="n">data_value</span><span class="p">,</span>
+            <span class="n">pattern_map</span><span class="o">=</span><span class="n">pattern_map</span><span class="p">,</span>
+            <span class="n">layers</span><span class="o">=</span><span class="n">layers</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">orig_image_array</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Either decoding failed or the cell was handled as a 3D image</span>
+            <span class="c1"># (``layers`` populated with a 3D HTML view/stub by the helper).</span>
             <span class="k">return</span> <span class="n">layers</span>
-
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_3d_image_array</span><span class="p">(</span><span class="n">orig_image_array</span><span class="p">):</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
-                <span class="s2">&quot;Detected 3D image at </span><span class="si">%s</span><span class="s2">; returning HTML view.&quot;</span><span class="p">,</span> <span class="n">candidate_path</span>
-            <span class="p">)</span>
-            <span class="n">html_view</span> <span class="o">=</span> <span class="kc">None</span>
-            <span class="n">volume_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">orig_image_array</span><span class="p">)</span>
-            <span class="k">if</span> <span class="p">(</span>
-                <span class="n">volume_array</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&gt;</span> <span class="n">MIN_VOLUME_NDIM</span>
-                <span class="ow">and</span> <span class="n">volume_array</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">in</span> <span class="n">RGB_LIKE_CHANNEL_COUNTS</span>
-            <span class="p">):</span>
-                <span class="n">volume_array</span> <span class="o">=</span> <span class="n">volume_array</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
-
-            <span class="k">if</span> <span class="n">volume_array</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="n">MIN_VOLUME_NDIM</span><span class="p">:</span>
-                <span class="n">label_overlay</span> <span class="o">=</span> <span class="kc">None</span>
-                <span class="n">segmentation_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_matching_segmentation_in_dirs</span><span class="p">(</span>
-                    <span class="n">data_value</span><span class="o">=</span><span class="n">data_value</span><span class="p">,</span>
-                    <span class="n">pattern_map</span><span class="o">=</span><span class="n">pattern_map</span><span class="p">,</span>
-                    <span class="n">candidate_path</span><span class="o">=</span><span class="n">candidate_path</span><span class="p">,</span>
-                    <span class="n">file_dirs</span><span class="o">=</span><span class="p">(</span>
-                        <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data_mask_context_dir&quot;</span><span class="p">),</span>
-                        <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data_outline_context_dir&quot;</span><span class="p">),</span>
-                    <span class="p">),</span>
-                <span class="p">)</span>
-                <span class="k">if</span> <span class="n">segmentation_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="n">label_overlay</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_3d_label_overlay</span><span class="p">(</span>
-                        <span class="n">segmentation_path</span><span class="o">=</span><span class="n">segmentation_path</span><span class="p">,</span>
-                        <span class="n">expected_shape</span><span class="o">=</span><span class="n">volume_array</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span>
-                    <span class="p">)</span>
-                <span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">suppress</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
-                    <span class="n">volume</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_uint8</span><span class="p">(</span><span class="n">volume_array</span><span class="p">)</span>
-                    <span class="n">dims</span> <span class="o">=</span> <span class="p">(</span><span class="n">volume</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">volume</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">volume</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
-                    <span class="n">html_view</span> <span class="o">=</span> <span class="n">build_3d_image_html_view</span><span class="p">(</span>
-                        <span class="n">volume</span><span class="o">=</span><span class="n">volume</span><span class="p">,</span>
-                        <span class="n">dims</span><span class="o">=</span><span class="n">dims</span><span class="p">,</span>
-                        <span class="n">data_value</span><span class="o">=</span><span class="n">data_value</span><span class="p">,</span>
-                        <span class="n">candidate_path</span><span class="o">=</span><span class="n">candidate_path</span><span class="p">,</span>
-                        <span class="n">display_options</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">),</span>
-                        <span class="n">label_volume</span><span class="o">=</span><span class="n">label_overlay</span><span class="p">,</span>
-                    <span class="p">)</span>
-
-            <span class="k">if</span> <span class="n">html_view</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">html_view</span> <span class="o">=</span> <span class="n">build_3d_html_from_path</span><span class="p">(</span>
-                    <span class="n">data_value</span><span class="o">=</span><span class="n">data_value</span><span class="p">,</span>
-                    <span class="n">candidate_path</span><span class="o">=</span><span class="n">candidate_path</span><span class="p">,</span>
-                    <span class="n">display_options</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">),</span>
-                    <span class="n">ensure_uint8</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_ensure_uint8</span><span class="p">,</span>
-                    <span class="n">is_ome_arrow_value</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_is_ome_arrow_value</span><span class="p">,</span>
-                    <span class="n">logger</span><span class="o">=</span><span class="n">logger</span><span class="p">,</span>
-                <span class="p">)</span>
-            <span class="n">layers</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_HTML_3D_STUB_KEY</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="n">html_view</span>
-                <span class="k">if</span> <span class="n">html_view</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                <span class="k">else</span> <span class="n">build_3d_image_html_stub</span><span class="p">(</span>
-                    <span class="n">data_value</span><span class="o">=</span><span class="n">data_value</span><span class="p">,</span>
-                    <span class="n">candidate_path</span><span class="o">=</span><span class="n">candidate_path</span><span class="p">,</span>
-                    <span class="n">display_options</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">),</span>
-                <span class="p">)</span>
-            <span class="p">)</span>
-            <span class="k">return</span> <span class="n">layers</span>
-
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;image_adjustment&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Adjusting image with custom image adjustment function.&quot;</span><span class="p">)</span>
-            <span class="n">orig_image_array</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;image_adjustment&quot;</span><span class="p">](</span>
-                <span class="n">orig_image_array</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;scale&quot;</span><span class="p">]</span>
-            <span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Adjusting image with adaptive histogram equalization.&quot;</span><span class="p">)</span>
-            <span class="n">orig_image_array</span> <span class="o">=</span> <span class="n">adjust_with_adaptive_histogram_equalization</span><span class="p">(</span>
-                <span class="n">image</span><span class="o">=</span><span class="n">orig_image_array</span><span class="p">,</span>
-                <span class="n">brightness</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;scale&quot;</span><span class="p">],</span>
-            <span class="p">)</span>
-
-        <span class="n">orig_image_array</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_uint8</span><span class="p">(</span><span class="n">orig_image_array</span><span class="p">)</span>
 
         <span class="n">original_image_copy</span> <span class="o">=</span> <span class="n">orig_image_array</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span> <span class="k">if</span> <span class="n">include_original</span> <span class="k">else</span> <span class="kc">None</span>
 
@@ -3520,29 +3681,24 @@
         <span class="n">row</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">column</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
-        <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
-        <span class="n">cache_disabled</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;volume_disable_cache&quot;</span><span class="p">))</span>
-        <span class="n">cache_max_entries_raw</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;volume_cache_max_entries&quot;</span><span class="p">,</span> <span class="mi">32</span><span class="p">)</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">cache_max_entries</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">cache_max_entries_raw</span><span class="p">))</span>
-        <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
-            <span class="n">cache_max_entries</span> <span class="o">=</span> <span class="mi">32</span>
-
-        <span class="n">cache</span><span class="p">:</span> <span class="s2">&quot;OrderedDict[str, Tuple[np.ndarray, Tuple[int, int, int]]]&quot;</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">OrderedDict</span><span class="p">()</span>
+        <span class="n">cache</span><span class="p">,</span> <span class="n">cache_disabled</span><span class="p">,</span> <span class="n">cache_max_entries</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_cache_settings</span><span class="p">(</span>
+            <span class="n">cache_attr</span><span class="o">=</span><span class="s2">&quot;_volume_cache&quot;</span><span class="p">,</span>
+            <span class="n">disable_option</span><span class="o">=</span><span class="s2">&quot;volume_disable_cache&quot;</span><span class="p">,</span>
+            <span class="n">max_entries_option</span><span class="o">=</span><span class="s2">&quot;volume_cache_max_entries&quot;</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">cache_disabled</span><span class="p">:</span>
-            <span class="n">raw_cache</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;_volume_cache&quot;</span><span class="p">,</span> <span class="p">{})</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">raw_cache</span><span class="p">,</span> <span class="n">OrderedDict</span><span class="p">):</span>
-                <span class="n">cache</span> <span class="o">=</span> <span class="n">raw_cache</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="n">cache</span> <span class="o">=</span> <span class="n">OrderedDict</span><span class="p">(</span><span class="n">raw_cache</span> <span class="ow">or</span> <span class="p">{})</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_volume_cache&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">cache</span>
         <span class="n">cache_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">row</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">column</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">cache_disabled</span> <span class="ow">and</span> <span class="n">cache_key</span> <span class="ow">in</span> <span class="n">cache</span><span class="p">:</span>
             <span class="n">cached</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
             <span class="n">cache</span><span class="p">[</span><span class="n">cache_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">cached</span>
             <span class="k">return</span> <span class="n">cached</span>
+
+        <span class="c1"># Negative cache: probing whether a cell is 3D (e.g. from</span>
+        <span class="c1"># _find_3d_columns_for_display on every render) decodes the image. For</span>
+        <span class="c1"># 2D inputs that probe always fails, so remember cells already found to</span>
+        <span class="c1"># be non-3D and short-circuit before re-reading the same .tif/.tiff.</span>
+        <span class="n">not_3d_cache</span><span class="p">:</span> <span class="nb">set</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;_volume_not_3d_cache&quot;</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cache_disabled</span> <span class="ow">and</span> <span class="n">cache_key</span> <span class="ow">in</span> <span class="n">not_3d_cache</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Selected cell does not contain a 3D volume.&quot;</span><span class="p">)</span>
 
         <span class="k">try</span><span class="p">:</span>
             <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">row</span><span class="p">,</span> <span class="n">column</span><span class="p">]</span>
@@ -3663,7 +3819,18 @@
                 <span class="kn">from</span><span class="w"> </span><span class="nn">ome_arrow</span><span class="w"> </span><span class="kn">import</span> <span class="n">OMEArrow</span>  <span class="c1"># type: ignore</span>
 
                 <span class="k">if</span> <span class="n">volume</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="n">decode_candidates</span> <span class="o">=</span> <span class="n">candidate_paths</span> <span class="ow">or</span> <span class="p">[</span><span class="n">data_path</span><span class="p">]</span>
+                    <span class="c1"># Only attempt an OME-Arrow decode on paths that exist on</span>
+                    <span class="c1"># disk. ``candidate_paths`` already holds resolved files;</span>
+                    <span class="c1"># falling back to ``data_path`` when it does not exist makes</span>
+                    <span class="c1"># OMEArrow/bioio try to open a missing file and emit noisy</span>
+                    <span class="c1"># &quot;Exclusive reader attempt failed&quot; errors during the routine</span>
+                    <span class="c1"># 3D-detection probe (e.g. bare filename columns read back</span>
+                    <span class="c1"># from an .ome.parquet without a data_context_dir).</span>
+                    <span class="n">decode_candidates</span> <span class="o">=</span> <span class="n">candidate_paths</span> <span class="ow">or</span> <span class="p">(</span>
+                        <span class="p">[</span><span class="n">data_path</span><span class="p">]</span>
+                        <span class="k">if</span> <span class="n">data_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">data_path</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span>
+                        <span class="k">else</span> <span class="p">[]</span>
+                    <span class="p">)</span>
                     <span class="k">for</span> <span class="n">decode_path</span> <span class="ow">in</span> <span class="n">decode_candidates</span><span class="p">:</span>
                         <span class="n">ome_struct</span> <span class="o">=</span> <span class="n">OMEArrow</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">decode_path</span><span class="p">))</span><span class="o">.</span><span class="n">data</span>
                         <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">ome_struct</span><span class="p">,</span> <span class="s2">&quot;as_py&quot;</span><span class="p">):</span>
@@ -3691,6 +3858,8 @@
                 <span class="p">)</span>
 
         <span class="k">if</span> <span class="n">volume</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">dims</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">cache_disabled</span><span class="p">:</span>
+                <span class="n">not_3d_cache</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Selected cell does not contain a 3D volume.&quot;</span><span class="p">)</span>
 
         <span class="c1"># Apply per-row bounding box cropping when available (XYZ).</span>
@@ -5081,16 +5250,25 @@
                     <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
                 <span class="p">)</span>
 
-            <span class="c1"># determine if we have image_cols to display</span>
-            <span class="n">image_cols</span> <span class="o">=</span> <span class="n">CytoDataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">find_image_columns</span><span class="p">()</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="c1"># ``data`` is already a DataFrame here (a CytoDataFrame from</span>
+            <span class="c1"># copy()/join(), or a plain DataFrame from the transpose path).</span>
+            <span class="c1"># ``find_image_columns``/``find_image_path_columns``/</span>
+            <span class="c1"># ``get_displayed_rows`` only read DataFrame structure (columns,</span>
+            <span class="c1"># index, values) and not any CytoDataFrame state, so we call them</span>
+            <span class="c1"># unbound on ``data`` instead of constructing a fresh CytoDataFrame.</span>
+            <span class="c1"># Constructing one per render would needlessly re-run bounding-box /</span>
+            <span class="c1"># center / image-path detection and method wrapping over every</span>
+            <span class="c1"># column. (If these helpers ever start reading ``_custom_attrs``,</span>
+            <span class="c1"># revisit this.)</span>
+            <span class="n">image_cols</span> <span class="o">=</span> <span class="n">CytoDataFrame</span><span class="o">.</span><span class="n">find_image_columns</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
             <span class="c1"># normalize both the set of image cols and the pool of all cols to strings</span>
             <span class="n">all_cols_str</span><span class="p">,</span> <span class="n">all_cols_back</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_labels</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span>
             <span class="n">image_cols_str</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">image_cols</span><span class="p">]</span>
 
             <span class="c1"># If your helper expects strings, pass strings; then map the result back</span>
             <span class="n">image_path_cols_str</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="n">CytoDataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">find_image_path_columns</span><span class="p">(</span>
-                    <span class="n">image_cols</span><span class="o">=</span><span class="n">image_cols_str</span><span class="p">,</span> <span class="n">all_cols</span><span class="o">=</span><span class="n">all_cols_str</span>
+                <span class="n">CytoDataFrame</span><span class="o">.</span><span class="n">find_image_path_columns</span><span class="p">(</span>
+                    <span class="n">data</span><span class="p">,</span> <span class="n">image_cols</span><span class="o">=</span><span class="n">image_cols_str</span><span class="p">,</span> <span class="n">all_cols</span><span class="o">=</span><span class="n">all_cols_str</span>
                 <span class="p">)</span>
                 <span class="ow">or</span> <span class="p">{}</span>
             <span class="p">)</span>
@@ -5116,7 +5294,7 @@
             <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Image columns found: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">image_cols</span><span class="p">)</span>
 
             <span class="c1"># gather indices which will be displayed based on pandas configuration</span>
-            <span class="n">display_indices</span> <span class="o">=</span> <span class="n">CytoDataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">get_displayed_rows</span><span class="p">()</span>
+            <span class="n">display_indices</span> <span class="o">=</span> <span class="n">CytoDataFrame</span><span class="o">.</span><span class="n">get_displayed_rows</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
             <span class="n">active_filter_columns</span> <span class="o">=</span> <span class="p">(</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filter_columns&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
             <span class="p">)</span>
@@ -5147,7 +5325,7 @@
                     <span class="n">display_indices</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span>
                 <span class="p">)</span>
                 <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">full_filtered_indices</span><span class="p">]</span>
-                <span class="n">display_indices</span> <span class="o">=</span> <span class="n">CytoDataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">get_displayed_rows</span><span class="p">()</span>
+                <span class="n">display_indices</span> <span class="o">=</span> <span class="n">CytoDataFrame</span><span class="o">.</span><span class="n">get_displayed_rows</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">display_indices</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filter_display_indices_by_widget_range</span><span class="p">(</span>
                     <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span>

@@ -712,6 +712,15 @@ compatible mask/outline can be found; otherwise <code class="docutils literal no
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._get_image_display_cache">
+<span class="sig-name descname"><span class="pre">_get_image_display_cache</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">OrderedDict</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">ndarray</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">bool</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._get_image_display_cache"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._get_image_display_cache" title="Link to this definition">#</a></dt>
+<dd><p>Return the 2D image cache plus its disabled flag and size limit.</p>
+<p>The cache stores decoded + contrast-enhanced full field-of-view images.
+It can be turned off with the <code class="docutils literal notranslate"><span class="pre">image_disable_cache</span></code> display option and
+bounded with <code class="docutils literal notranslate"><span class="pre">image_cache_max_entries</span></code> (default 32).</p>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._get_raw_filter_plot_threshold">
 <span class="sig-name descname"><span class="pre">_get_raw_filter_plot_threshold</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filter_col</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">bool</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._get_raw_filter_plot_threshold"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._get_raw_filter_plot_threshold" title="Link to this definition">#</a></dt>
 <dd><p>Return whether threshold was configured and its raw value.</p>
@@ -732,6 +741,22 @@ compatible mask/outline can be found; otherwise <code class="docutils literal no
 <dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._is_ome_arrow_value">
 <span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">_is_ome_arrow_value</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._is_ome_arrow_value"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._is_ome_arrow_value" title="Link to this definition">#</a></dt>
 <dd><p>Check whether a value looks like an OME-Arrow struct.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._load_enhanced_image_for_display">
+<span class="sig-name descname"><span class="pre">_load_enhanced_image_for_display</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">candidate_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pattern_map</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">layers</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._load_enhanced_image_for_display"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._load_enhanced_image_for_display" title="Link to this definition">#</a></dt>
+<dd><p>Load and contrast-enhance a 2D field-of-view image, with caching.</p>
+<p>Reading a TIFF and running adaptive histogram equalization are the most
+expensive steps in rendering, and the same field-of-view image is often
+shared by many displayed objects (and re-processed on every re-render,
+e.g. brightness/filter changes). Results are therefore cached by
+(resolved path, brightness) so that work happens once per unique image.</p>
+<p>The returned array is always a private copy that the caller may mutate
+freely (e.g. drawing a center dot) without corrupting the cache.</p>
+<p>For 3D inputs, this populates <code class="docutils literal notranslate"><span class="pre">layers</span></code> with the appropriate 3D HTML
+view/stub and returns <code class="docutils literal notranslate"><span class="pre">None</span></code>. It also returns <code class="docutils literal notranslate"><span class="pre">None</span></code> when decoding
+fails. In both cases the caller should stop and return <code class="docutils literal notranslate"><span class="pre">layers</span></code>.</p>
 </dd></dl>
 
 <dl class="py attribute">
@@ -865,6 +890,30 @@ within Jupyter environments.</p>
 <dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._resolve_bbox_columns_from_custom_map">
 <span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">_resolve_bbox_columns_from_custom_map</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bbox_cols</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">custom_map</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._resolve_bbox_columns_from_custom_map"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._resolve_bbox_columns_from_custom_map" title="Link to this definition">#</a></dt>
 <dd><p>Resolve bbox columns from display_options custom mapping.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._resolve_cache_settings">
+<span class="sig-name descname"><span class="pre">_resolve_cache_settings</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cache_attr</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">disable_option</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_entries_option</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">default_max_entries</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">32</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">OrderedDict</span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">bool</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._resolve_cache_settings"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._resolve_cache_settings" title="Link to this definition">#</a></dt>
+<dd><p>Resolve a display cache and its disabled flag / size limit.</p>
+<p>Shared by the 2D image cache and the 3D volume cache so both read their
+display options, normalize the max-entries value, and wrap any existing
+cache into an <code class="docutils literal notranslate"><span class="pre">OrderedDict</span></code> the same way.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>cache_attr</strong> – <code class="docutils literal notranslate"><span class="pre">_custom_attrs</span></code> key holding the cache mapping.</p></li>
+<li><p><strong>disable_option</strong> – display option that disables the cache when truthy.</p></li>
+<li><p><strong>max_entries_option</strong> – display option overriding the LRU size limit.</p></li>
+<li><p><strong>default_max_entries</strong> – size limit used when the option is unset/invalid.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><code class="docutils literal notranslate"><span class="pre">(cache,</span> <span class="pre">disabled,</span> <span class="pre">max_entries)</span></code>. When disabled, a throwaway empty
+<code class="docutils literal notranslate"><span class="pre">OrderedDict</span></code> is returned and <code class="docutils literal notranslate"><span class="pre">_custom_attrs</span></code> is left untouched;
+callers guard all cache access with <code class="docutils literal notranslate"><span class="pre">disabled</span></code>.</p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
@@ -1035,6 +1084,14 @@ Pandas DataFrame.</p>
 <p>This method searches for columns in the DataFrame
 that contain image file names with extensions .tif
 or .tiff (case insensitive).</p>
+<dl class="simple">
+<dt>Performance note:</dt><dd><p>Single-cell profiles typically have thousands of numeric feature
+columns and only a handful of image-name columns. Scanning every
+value of every column on each render is expensive, so columns whose
+dtype cannot hold a filename string (numeric, boolean, datetime)
+are skipped before the per-value regex check.</p>
+</dd>
+</dl>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
 <dd class="field-odd"><p>A list of column names that contain
@@ -1450,6 +1507,30 @@ the outline image. The result is returned as an RGB image with shape
 <dt class="field-even">Returns<span class="colon">:</span></dt>
 <dd class="field-even"><p>A 4-tuple (x_min, x_max, y_min, y_max), where x_min and y_min
 are clamped to be ≥ 0.  x_max and y_max are returned as-is.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.cytodataframe.image.image_array_to_grayscale">
+<span class="sig-prename descclassname"><span class="pre">src.cytodataframe.image.</span></span><span class="sig-name descname"><span class="pre">image_array_to_grayscale</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">img_array</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/image.html#image_array_to_grayscale"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.image.image_array_to_grayscale" title="Link to this definition">#</a></dt>
+<dd><p>Convert an image array to a 2D grayscale array.</p>
+<p>Supports single-channel grayscale (2D or <code class="docutils literal notranslate"><span class="pre">(H,</span> <span class="pre">W,</span> <span class="pre">1)</span></code>), RGB
+(<code class="docutils literal notranslate"><span class="pre">(H,</span> <span class="pre">W,</span> <span class="pre">3)</span></code>), and RGBA (<code class="docutils literal notranslate"><span class="pre">(H,</span> <span class="pre">W,</span> <span class="pre">4)</span></code>) inputs. Microscopy images are
+frequently single-channel, so handling those without error is important
+for real-world stability.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>img_array</strong> (<em>np.ndarray</em>) – The input image array.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A 2D grayscale array.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError</strong> – If the array does not have a supported channel layout.</p>
 </dd>
 </dl>
 </dd></dl>

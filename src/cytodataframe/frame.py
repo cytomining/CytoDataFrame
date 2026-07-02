@@ -2463,6 +2463,50 @@ class CytoDataFrame(pd.DataFrame):
         looks_like_rgb_2d = aspect_ratio <= MAX_RGB_ASPECT_RATIO
         return not looks_like_rgb_2d
 
+    def _resolve_cache_settings(
+        self: CytoDataFrame_type,
+        cache_attr: str,
+        disable_option: str,
+        max_entries_option: str,
+        default_max_entries: int = 32,
+    ) -> Tuple["OrderedDict[Any, Any]", bool, int]:
+        """Resolve a display cache and its disabled flag / size limit.
+
+        Shared by the 2D image cache and the 3D volume cache so both read their
+        display options, normalize the max-entries value, and wrap any existing
+        cache into an ``OrderedDict`` the same way.
+
+        Args:
+            cache_attr: ``_custom_attrs`` key holding the cache mapping.
+            disable_option: display option that disables the cache when truthy.
+            max_entries_option: display option overriding the LRU size limit.
+            default_max_entries: size limit used when the option is unset/invalid.
+
+        Returns:
+            ``(cache, disabled, max_entries)``. When disabled, a throwaway empty
+            ``OrderedDict`` is returned and ``_custom_attrs`` is left untouched;
+            callers guard all cache access with ``disabled``.
+        """
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        disabled = bool(display_options.get(disable_option))
+        try:
+            max_entries = max(
+                1, int(display_options.get(max_entries_option, default_max_entries))
+            )
+        except (TypeError, ValueError):
+            max_entries = default_max_entries
+
+        if disabled:
+            return OrderedDict(), True, max_entries
+
+        raw_cache = self._custom_attrs.get(cache_attr)
+        if isinstance(raw_cache, OrderedDict):
+            cache = raw_cache
+        else:
+            cache = OrderedDict(raw_cache or {})
+            self._custom_attrs[cache_attr] = cache
+        return cache, disabled, max_entries
+
     def _get_image_display_cache(
         self: CytoDataFrame_type,
     ) -> Tuple["OrderedDict[Tuple[str, int], np.ndarray]", bool, int]:
@@ -2472,22 +2516,11 @@ class CytoDataFrame(pd.DataFrame):
         It can be turned off with the ``image_disable_cache`` display option and
         bounded with ``image_cache_max_entries`` (default 32).
         """
-        display_options = self._custom_attrs.get("display_options", {}) or {}
-        cache_disabled = bool(display_options.get("image_disable_cache"))
-        try:
-            cache_max_entries = max(
-                1, int(display_options.get("image_cache_max_entries", 32))
-            )
-        except (TypeError, ValueError):
-            cache_max_entries = 32
-
-        raw_cache = self._custom_attrs.get("_image_cache")
-        if isinstance(raw_cache, OrderedDict):
-            cache = raw_cache
-        else:
-            cache = OrderedDict(raw_cache or {})
-            self._custom_attrs["_image_cache"] = cache
-        return cache, cache_disabled, cache_max_entries
+        return self._resolve_cache_settings(
+            cache_attr="_image_cache",
+            disable_option="image_disable_cache",
+            max_entries_option="image_cache_max_entries",
+        )
 
     def _load_enhanced_image_for_display(  # noqa: C901
         self: CytoDataFrame_type,
@@ -3114,29 +3147,24 @@ class CytoDataFrame(pd.DataFrame):
         row: Any,
         column: Any,
     ) -> Tuple[np.ndarray, Tuple[int, int, int]]:
-        display_options = self._custom_attrs.get("display_options", {}) or {}
-        cache_disabled = bool(display_options.get("volume_disable_cache"))
-        cache_max_entries_raw = display_options.get("volume_cache_max_entries", 32)
-        try:
-            cache_max_entries = max(1, int(cache_max_entries_raw))
-        except (TypeError, ValueError):
-            cache_max_entries = 32
-
-        cache: "OrderedDict[str, Tuple[np.ndarray, Tuple[int, int, int]]]" = (
-            OrderedDict()
+        cache, cache_disabled, cache_max_entries = self._resolve_cache_settings(
+            cache_attr="_volume_cache",
+            disable_option="volume_disable_cache",
+            max_entries_option="volume_cache_max_entries",
         )
-        if not cache_disabled:
-            raw_cache = self._custom_attrs.get("_volume_cache", {})
-            if isinstance(raw_cache, OrderedDict):
-                cache = raw_cache
-            else:
-                cache = OrderedDict(raw_cache or {})
-                self._custom_attrs["_volume_cache"] = cache
         cache_key = f"{row}::{column}"
         if not cache_disabled and cache_key in cache:
             cached = cache.pop(cache_key)
             cache[cache_key] = cached
             return cached
+
+        # Negative cache: probing whether a cell is 3D (e.g. from
+        # _find_3d_columns_for_display on every render) decodes the image. For
+        # 2D inputs that probe always fails, so remember cells already found to
+        # be non-3D and short-circuit before re-reading the same .tif/.tiff.
+        not_3d_cache: set = self._custom_attrs.setdefault("_volume_not_3d_cache", set())
+        if not cache_disabled and cache_key in not_3d_cache:
+            raise ValueError("Selected cell does not contain a 3D volume.")
 
         try:
             value = self.loc[row, column]
@@ -3285,6 +3313,8 @@ class CytoDataFrame(pd.DataFrame):
                 )
 
         if volume is None or dims is None:
+            if not cache_disabled:
+                not_3d_cache.add(cache_key)
             raise ValueError("Selected cell does not contain a 3D volume.")
 
         # Apply per-row bounding box cropping when available (XYZ).

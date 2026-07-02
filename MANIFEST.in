@@ -1,0 +1,22 @@
+# Controls which files are included in the source distribution (sdist).
+#
+# setuptools-scm seeds the sdist with every git-tracked file, which pulls in the
+# large test fixtures (tests/data: ~130 MB of TIFF/parquet) and documentation
+# assets (notebooks, poster PDFs, images). That pushes the sdist past PyPI's
+# 100 MiB per-file upload limit and breaks the release workflow.
+#
+# Prune everything that is not needed to install and use the package. The wheel
+# already contains only src/cytodataframe; here we keep the sdist lean too.
+prune tests
+prune docs
+prune logo
+prune media
+prune reports
+prune .github
+prune .poetry
+
+# Keep the essentials explicitly.
+include README.md
+include LICENSE
+include CITATION.cff
+include pyproject.toml

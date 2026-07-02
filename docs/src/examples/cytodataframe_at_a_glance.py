@@ -7,7 +7,7 @@
 #       format_version: '1.5'
 #       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: cytodataframe-shAZamSV-py3.12
+#     display_name: CytoDataFrame (3.13.5)
 #     language: python
 #     name: python3
 # ---

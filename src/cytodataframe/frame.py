@@ -3285,7 +3285,18 @@ class CytoDataFrame(pd.DataFrame):
                 from ome_arrow import OMEArrow  # type: ignore
 
                 if volume is None:
-                    decode_candidates = candidate_paths or [data_path]
+                    # Only attempt an OME-Arrow decode on paths that exist on
+                    # disk. ``candidate_paths`` already holds resolved files;
+                    # falling back to ``data_path`` when it does not exist makes
+                    # OMEArrow/bioio try to open a missing file and emit noisy
+                    # "Exclusive reader attempt failed" errors during the routine
+                    # 3D-detection probe (e.g. bare filename columns read back
+                    # from an .ome.parquet without a data_context_dir).
+                    decode_candidates = candidate_paths or (
+                        [data_path]
+                        if data_path is not None and data_path.exists()
+                        else []
+                    )
                     for decode_path in decode_candidates:
                         ome_struct = OMEArrow(data=str(decode_path)).data
                         if hasattr(ome_struct, "as_py"):

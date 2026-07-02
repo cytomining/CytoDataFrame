@@ -55,6 +55,50 @@ def test_package_exposes_resolved_version() -> None:
     assert version == importlib.metadata.version("cytodataframe")
 
 
+def test_3d_probe_skips_ome_decode_for_missing_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """3D detection must not OME-decode image files that do not exist.
+
+    When image filename columns cannot be resolved to files on disk (e.g. bare
+    filenames read back from an ``.ome.parquet`` without a ``data_context_dir``),
+    the routine 3D-detection probe used to call ``OMEArrow`` on the missing path,
+    making bioio emit noisy "Exclusive reader attempt failed" errors. The probe
+    must skip OME decoding entirely when there is no file to read.
+    """
+    ome_arrow = pytest.importorskip("ome_arrow")
+
+    attempted_paths: list[str] = []
+
+    class SpyOMEArrow:
+        def __init__(self, data: object) -> None:
+            attempted_paths.append(str(data))
+
+        @property
+        def data(self) -> None:
+            return None
+
+    monkeypatch.setattr(ome_arrow, "OMEArrow", SpyOMEArrow)
+
+    frame = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "Image_FileName_GFP": ["missing_a.tif", "missing_b.tif"],
+                "Nuclei_AreaShape_BoundingBoxMinimum_X": [0, 0],
+                "Nuclei_AreaShape_BoundingBoxMinimum_Y": [0, 0],
+                "Nuclei_AreaShape_BoundingBoxMaximum_X": [5, 5],
+                "Nuclei_AreaShape_BoundingBoxMaximum_Y": [5, 5],
+            }
+        )
+    )
+
+    # Running 3D detection must not attempt to OME-decode the missing files.
+    assert frame._find_3d_columns_for_display() == []
+    assert attempted_paths == [], (
+        f"OME-Arrow was attempted on missing files: {attempted_paths}"
+    )
+
+
 def test_to_ome_parquet_adds_arrow_column(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

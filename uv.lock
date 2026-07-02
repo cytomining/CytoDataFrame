@@ -782,7 +782,7 @@ dependencies = [
     { name = "ipyvolume" },
     { name = "ipywidgets" },
     { name = "matplotlib" },
-    { name = "nest-asyncio" },
+    { name = "nest-asyncio2" },
     { name = "ome-arrow" },
     { name = "opencv-python" },
     { name = "pandas" },
@@ -828,8 +828,8 @@ requires-dist = [
     { name = "ipyvolume", specifier = ">=0.6.3,<0.7" },
     { name = "ipywidgets", specifier = ">=8.1.7,<9" },
     { name = "matplotlib", specifier = ">=3.9.3,<4" },
-    { name = "nest-asyncio", specifier = ">=1.6,<2" },
-    { name = "ome-arrow", specifier = ">=0.0.3,<0.0.9" },
+    { name = "nest-asyncio2", specifier = ">=1.7,<2" },
+    { name = "ome-arrow", specifier = ">=0.0.3,<0.0.12" },
     { name = "opencv-python", specifier = ">=4.10.0.84,<5" },
     { name = "pandas", specifier = ">=2.2.2,<4" },
     { name = "pyarrow", specifier = ">=16" },
@@ -852,7 +852,7 @@ dev = [
     { name = "jupyterlab", specifier = ">=4.3,<5" },
     { name = "jupyterlab-code-formatter", specifier = ">=3.0.2,<4" },
     { name = "jupytext", specifier = ">=1.16.4,<2" },
-    { name = "poethepoet", specifier = ">=0.37,<0.43" },
+    { name = "poethepoet", specifier = ">=0.37,<0.48" },
     { name = "pytest", specifier = ">=8.3.3,<10" },
     { name = "pytest-cov", specifier = ">=5,<8" },
     { name = "sqlalchemy", specifier = ">=1.3.6,<3" },
@@ -861,7 +861,7 @@ docs = [
     { name = "dunamai", specifier = ">=1.22,<2" },
     { name = "myst-nb", specifier = ">=1.1.2,<2" },
     { name = "myst-parser", specifier = ">=3,<6" },
-    { name = "pydata-sphinx-theme", specifier = ">=0.16,<0.17" },
+    { name = "pydata-sphinx-theme", specifier = ">=0.16,<0.20" },
     { name = "sphinx", specifier = ">=9,<9.1" },
     { name = "sphinx-multiversion", git = "https://github.com/J-RN/sphinx-multiversion?rev=a77f0c862dace3a62c18fc866da60ef7dde3873d" },
 ]
@@ -2441,6 +2441,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/83/f8/51569ac65d696c8ecbee95938f89d4abf00f47d58d48f6fbabfe8f0baefe/nest_asyncio-1.6.0.tar.gz", hash = "sha256:6f172d5449aca15afd6c646851f4e31e02c598d553a667e38cafa997cfec55fe", size = 7418, upload-time = "2024-01-21T14:25:19.227Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a0/c4/c2971a3ba4c6103a3d10c4b0f24f461ddc027f0f09763220cf35ca1401b3/nest_asyncio-1.6.0-py3-none-any.whl", hash = "sha256:87af6efd6b5e897c81050477ef65c62e2b2f35d51703cae01aff2905b1852e1c", size = 5195, upload-time = "2024-01-21T14:25:17.223Z" },
+]
+
+[[package]]
+name = "nest-asyncio2"
+version = "1.7.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b4/73/731debf26e27e0a0323d7bda270dc2f634b398e38f040a09da1f4351d0aa/nest_asyncio2-1.7.2.tar.gz", hash = "sha256:1921d70b92cc4612c374928d081552efb59b83d91b2b789d935c665fa01729a8", size = 14743, upload-time = "2026-02-13T00:34:04.386Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c5/3c/3179b85b0e1c3659f0369940200cd6d0fa900e6cefcc7ea0bc6dd0e29ffb/nest_asyncio2-1.7.2-py3-none-any.whl", hash = "sha256:f5dfa702f3f81f6a03857e9a19e2ba578c0946a4ad417b4c50a24d7ba641fe01", size = 7843, upload-time = "2026-02-13T00:34:02.691Z" },
 ]
 
 [[package]]

@@ -269,6 +269,10 @@ class CytoDataFrame(pd.DataFrame):
             },
             "_snapshot_cache": {},
             "_volume_cache": {},
+            # Caches decoded + contrast-enhanced 2D field-of-view images keyed by
+            # (resolved path, brightness) so images shared across displayed
+            # objects, and repeat renders, are not re-decoded/re-equalized.
+            "_image_cache": {},
             "_scale_slider": widgets.IntSlider(
                 value=initial_brightness,
                 min=0,
@@ -1393,19 +1397,24 @@ class CytoDataFrame(pd.DataFrame):
             ],
         }
 
+        # Membership is checked against a set built once (O(1) lookups) rather
+        # than rebuilding ``self.columns.tolist()`` for every column checked,
+        # which is O(n) per check and adds up on wide feature tables.
+        column_set = set(self.columns)
+
         # Determine which group of columns to select based on availability in self.data
         selected_group = None
         ordered_groups = ("cyto", "nuclei", "cells", "generic")
         for group in ordered_groups:
             cols = column_groups[group]
-            if all(col in self.columns.tolist() for col in cols):
+            if all(col in column_set for col in cols):
                 selected_group = group
                 break
 
         # Assign the selected columns to self.bounding_box_df
         if selected_group:
             z_cols = column_groups_z.get(selected_group, [])
-            if z_cols and all(col in self.columns.tolist() for col in z_cols):
+            if z_cols and all(col in column_set for col in z_cols):
                 column_groups[selected_group] = column_groups[selected_group] + z_cols
             logger.debug(
                 "Bounding box columns found: %s",
@@ -1467,10 +1476,14 @@ class CytoDataFrame(pd.DataFrame):
             ],
         }
 
+        # Build the column set once for O(1) membership checks (see the note in
+        # get_bounding_box_from_data) rather than rebuilding a list per check.
+        column_set = set(self.columns)
+
         # Determine which group of columns to select based on availability in self.data
         selected_group = None
         for group, cols in column_groups.items():
-            if all(col in self.columns.tolist() for col in cols):
+            if all(col in column_set for col in cols):
                 selected_group = group
                 break
 
@@ -1880,29 +1893,45 @@ class CytoDataFrame(pd.DataFrame):
         that contain image file names with extensions .tif
         or .tiff (case insensitive).
 
+        Performance note:
+            Single-cell profiles typically have thousands of numeric feature
+            columns and only a handful of image-name columns. Scanning every
+            value of every column on each render is expensive, so columns whose
+            dtype cannot hold a filename string (numeric, boolean, datetime)
+            are skipped before the per-value regex check.
+
         Returns:
             List[str]:
                 A list of column names that contain
                 image file names.
 
         """
-        # build a pattern to match image file names
-        pattern = r".*\.(tif|tiff)$"
+        # Image file names end in ``.tif``/``.tiff`` (case insensitive).
+        compiled_pattern = re.compile(r".*\.(tif|tiff)$", flags=re.IGNORECASE)
 
-        # search for columns containing image file names
-        # based on pattern above.
-        image_cols = [
-            column
-            for column in self.columns
-            if self[column]
-            .apply(
-                lambda value: (
-                    isinstance(value, (str, os.PathLike))
-                    and re.match(pattern, str(value), flags=re.IGNORECASE)
-                )
+        def _value_is_image_name(value: Any) -> bool:
+            return (
+                isinstance(value, (str, os.PathLike))
+                and compiled_pattern.match(str(value)) is not None
             )
-            .any()
-        ]
+
+        image_cols: List[str] = []
+        # ``self.dtypes`` reports every column's dtype in one shot without
+        # materializing each column (``self[col]`` is surprisingly costly on a
+        # CytoDataFrame). Columns whose dtype cannot hold a filename string
+        # (numeric, boolean, datetime) can never be image columns, so we skip
+        # them before ever touching their values. Single-cell profiles are
+        # overwhelmingly numeric feature columns, so this keeps the per-value
+        # scan to the handful of string columns that might actually be images.
+        for column, dtype in self.dtypes.items():
+            if (
+                pd.api.types.is_numeric_dtype(dtype)
+                or pd.api.types.is_bool_dtype(dtype)
+                or pd.api.types.is_datetime64_any_dtype(dtype)
+            ):
+                continue
+            if self[column].apply(_value_is_image_name).any():
+                image_cols.append(column)
 
         logger.debug("Found image columns: %s", image_cols)
 
@@ -1956,10 +1985,17 @@ class CytoDataFrame(pd.DataFrame):
 
         """
 
+        # Only map columns that actually follow the FileName -> PathName naming
+        # convention. Requiring "FileName" in the name is important: image
+        # detection can also match columns like ``Image_URL_*`` (whose values are
+        # ``file:...tiff`` URLs), and for those ``replace`` is a no-op that would
+        # wrongly pull the column into the path set -- causing it to be re-joined
+        # and re-decoded during rendering only to be dropped again.
         image_path_columns = [
             col.replace("FileName", "PathName")
             for col in image_cols
-            if col.replace("FileName", "PathName") in self.columns
+            if "FileName" in str(col)
+            and col.replace("FileName", "PathName") in self.columns
         ]
 
         logger.debug("Found image path columns: %s", image_path_columns)
@@ -1989,10 +2025,14 @@ class CytoDataFrame(pd.DataFrame):
 
         """
 
+        # Require the FileName -> PathName convention so non-FileName image
+        # columns (e.g. ``Image_URL_*``) are not mapped to themselves. See the
+        # note in get_image_paths_from_data.
         return {
             str(col): str(col).replace("FileName", "PathName")
             for col in image_cols
-            if str(col).replace("FileName", "PathName") in all_cols
+            if "FileName" in str(col)
+            and str(col).replace("FileName", "PathName") in all_cols
         }
 
     def search_for_mask_or_outline(  # noqa: PLR0913, PLR0911, C901
@@ -2423,6 +2463,187 @@ class CytoDataFrame(pd.DataFrame):
         looks_like_rgb_2d = aspect_ratio <= MAX_RGB_ASPECT_RATIO
         return not looks_like_rgb_2d
 
+    def _resolve_cache_settings(
+        self: CytoDataFrame_type,
+        cache_attr: str,
+        disable_option: str,
+        max_entries_option: str,
+        default_max_entries: int = 32,
+    ) -> Tuple["OrderedDict[Any, Any]", bool, int]:
+        """Resolve a display cache and its disabled flag / size limit.
+
+        Shared by the 2D image cache and the 3D volume cache so both read their
+        display options, normalize the max-entries value, and wrap any existing
+        cache into an ``OrderedDict`` the same way.
+
+        Args:
+            cache_attr: ``_custom_attrs`` key holding the cache mapping.
+            disable_option: display option that disables the cache when truthy.
+            max_entries_option: display option overriding the LRU size limit.
+            default_max_entries: size limit used when the option is unset/invalid.
+
+        Returns:
+            ``(cache, disabled, max_entries)``. When disabled, a throwaway empty
+            ``OrderedDict`` is returned and ``_custom_attrs`` is left untouched;
+            callers guard all cache access with ``disabled``.
+        """
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        disabled = bool(display_options.get(disable_option))
+        try:
+            max_entries = max(
+                1, int(display_options.get(max_entries_option, default_max_entries))
+            )
+        except (TypeError, ValueError):
+            max_entries = default_max_entries
+
+        if disabled:
+            return OrderedDict(), True, max_entries
+
+        raw_cache = self._custom_attrs.get(cache_attr)
+        if isinstance(raw_cache, OrderedDict):
+            cache = raw_cache
+        else:
+            cache = OrderedDict(raw_cache or {})
+            self._custom_attrs[cache_attr] = cache
+        return cache, disabled, max_entries
+
+    def _get_image_display_cache(
+        self: CytoDataFrame_type,
+    ) -> Tuple["OrderedDict[Tuple[str, int], np.ndarray]", bool, int]:
+        """Return the 2D image cache plus its disabled flag and size limit.
+
+        The cache stores decoded + contrast-enhanced full field-of-view images.
+        It can be turned off with the ``image_disable_cache`` display option and
+        bounded with ``image_cache_max_entries`` (default 32).
+        """
+        return self._resolve_cache_settings(
+            cache_attr="_image_cache",
+            disable_option="image_disable_cache",
+            max_entries_option="image_cache_max_entries",
+        )
+
+    def _load_enhanced_image_for_display(  # noqa: C901
+        self: CytoDataFrame_type,
+        candidate_path: pathlib.Path,
+        data_value: str,
+        pattern_map: Optional[dict],
+        layers: Dict[str, Optional[np.ndarray]],
+    ) -> Optional[np.ndarray]:
+        """Load and contrast-enhance a 2D field-of-view image, with caching.
+
+        Reading a TIFF and running adaptive histogram equalization are the most
+        expensive steps in rendering, and the same field-of-view image is often
+        shared by many displayed objects (and re-processed on every re-render,
+        e.g. brightness/filter changes). Results are therefore cached by
+        (resolved path, brightness) so that work happens once per unique image.
+
+        The returned array is always a private copy that the caller may mutate
+        freely (e.g. drawing a center dot) without corrupting the cache.
+
+        For 3D inputs, this populates ``layers`` with the appropriate 3D HTML
+        view/stub and returns ``None``. It also returns ``None`` when decoding
+        fails. In both cases the caller should stop and return ``layers``.
+        """
+        brightness = int(self._custom_attrs["_widget_state"]["scale"])
+        cache, cache_disabled, cache_max_entries = self._get_image_display_cache()
+        cache_key = (str(candidate_path), brightness) if not cache_disabled else None
+
+        if cache_key is not None:
+            cached = cache.get(cache_key)
+            if cached is not None:
+                cache.move_to_end(cache_key)  # mark as most-recently-used
+                return cached.copy()
+
+        try:
+            orig_image_array = imageio.imread(candidate_path)
+        except (FileNotFoundError, ValueError) as exc:
+            logger.error(exc)
+            return None
+
+        if self._is_3d_image_array(orig_image_array):
+            logger.debug(
+                "Detected 3D image at %s; returning HTML view.", candidate_path
+            )
+            html_view = None
+            volume_array = np.asarray(orig_image_array)
+            if (
+                volume_array.ndim > MIN_VOLUME_NDIM
+                and volume_array.shape[-1] in RGB_LIKE_CHANNEL_COUNTS
+            ):
+                volume_array = volume_array[..., 0]
+
+            if volume_array.ndim == MIN_VOLUME_NDIM:
+                label_overlay = None
+                segmentation_path = self._find_matching_segmentation_in_dirs(
+                    data_value=data_value,
+                    pattern_map=pattern_map,
+                    candidate_path=candidate_path,
+                    file_dirs=(
+                        self._custom_attrs.get("data_mask_context_dir"),
+                        self._custom_attrs.get("data_outline_context_dir"),
+                    ),
+                )
+                if segmentation_path is not None:
+                    label_overlay = self._prepare_3d_label_overlay(
+                        segmentation_path=segmentation_path,
+                        expected_shape=volume_array.shape,
+                    )
+                with contextlib.suppress(Exception):
+                    volume = self._ensure_uint8(volume_array)
+                    dims = (volume.shape[2], volume.shape[1], volume.shape[0])
+                    html_view = build_3d_image_html_view(
+                        volume=volume,
+                        dims=dims,
+                        data_value=data_value,
+                        candidate_path=candidate_path,
+                        display_options=self._custom_attrs.get("display_options"),
+                        label_volume=label_overlay,
+                    )
+
+            if html_view is None:
+                html_view = build_3d_html_from_path(
+                    data_value=data_value,
+                    candidate_path=candidate_path,
+                    display_options=self._custom_attrs.get("display_options"),
+                    ensure_uint8=self._ensure_uint8,
+                    is_ome_arrow_value=self._is_ome_arrow_value,
+                    logger=logger,
+                )
+            layers[self._HTML_3D_STUB_KEY] = (
+                html_view
+                if html_view is not None
+                else build_3d_image_html_stub(
+                    data_value=data_value,
+                    candidate_path=candidate_path,
+                    display_options=self._custom_attrs.get("display_options"),
+                )
+            )
+            return None
+
+        if self._custom_attrs["image_adjustment"] is not None:
+            logger.debug("Adjusting image with custom image adjustment function.")
+            orig_image_array = self._custom_attrs["image_adjustment"](
+                orig_image_array, brightness
+            )
+        else:
+            logger.debug("Adjusting image with adaptive histogram equalization.")
+            orig_image_array = adjust_with_adaptive_histogram_equalization(
+                image=orig_image_array,
+                brightness=brightness,
+            )
+
+        orig_image_array = self._ensure_uint8(orig_image_array)
+
+        if cache_key is not None:
+            # Store the pristine enhanced image; hand back a copy so downstream
+            # per-cell edits never mutate the cached array.
+            cache[cache_key] = orig_image_array
+            while len(cache) > cache_max_entries:
+                cache.popitem(last=False)
+            return orig_image_array.copy()
+
+        return orig_image_array
+
     def _prepare_cropped_image_layers(  # noqa: C901, PLR0915, PLR0912, PLR0913
         self: CytoDataFrame_type,
         data_value: Any,
@@ -2510,85 +2731,16 @@ class CytoDataFrame(pd.DataFrame):
             logger.debug("No candidate file found for: %s", data_value)
             return layers
 
-        try:
-            orig_image_array = imageio.imread(candidate_path)
-        except (FileNotFoundError, ValueError) as exc:
-            logger.error(exc)
+        orig_image_array = self._load_enhanced_image_for_display(
+            candidate_path=candidate_path,
+            data_value=data_value,
+            pattern_map=pattern_map,
+            layers=layers,
+        )
+        if orig_image_array is None:
+            # Either decoding failed or the cell was handled as a 3D image
+            # (``layers`` populated with a 3D HTML view/stub by the helper).
             return layers
-
-        if self._is_3d_image_array(orig_image_array):
-            logger.debug(
-                "Detected 3D image at %s; returning HTML view.", candidate_path
-            )
-            html_view = None
-            volume_array = np.asarray(orig_image_array)
-            if (
-                volume_array.ndim > MIN_VOLUME_NDIM
-                and volume_array.shape[-1] in RGB_LIKE_CHANNEL_COUNTS
-            ):
-                volume_array = volume_array[..., 0]
-
-            if volume_array.ndim == MIN_VOLUME_NDIM:
-                label_overlay = None
-                segmentation_path = self._find_matching_segmentation_in_dirs(
-                    data_value=data_value,
-                    pattern_map=pattern_map,
-                    candidate_path=candidate_path,
-                    file_dirs=(
-                        self._custom_attrs.get("data_mask_context_dir"),
-                        self._custom_attrs.get("data_outline_context_dir"),
-                    ),
-                )
-                if segmentation_path is not None:
-                    label_overlay = self._prepare_3d_label_overlay(
-                        segmentation_path=segmentation_path,
-                        expected_shape=volume_array.shape,
-                    )
-                with contextlib.suppress(Exception):
-                    volume = self._ensure_uint8(volume_array)
-                    dims = (volume.shape[2], volume.shape[1], volume.shape[0])
-                    html_view = build_3d_image_html_view(
-                        volume=volume,
-                        dims=dims,
-                        data_value=data_value,
-                        candidate_path=candidate_path,
-                        display_options=self._custom_attrs.get("display_options"),
-                        label_volume=label_overlay,
-                    )
-
-            if html_view is None:
-                html_view = build_3d_html_from_path(
-                    data_value=data_value,
-                    candidate_path=candidate_path,
-                    display_options=self._custom_attrs.get("display_options"),
-                    ensure_uint8=self._ensure_uint8,
-                    is_ome_arrow_value=self._is_ome_arrow_value,
-                    logger=logger,
-                )
-            layers[self._HTML_3D_STUB_KEY] = (
-                html_view
-                if html_view is not None
-                else build_3d_image_html_stub(
-                    data_value=data_value,
-                    candidate_path=candidate_path,
-                    display_options=self._custom_attrs.get("display_options"),
-                )
-            )
-            return layers
-
-        if self._custom_attrs["image_adjustment"] is not None:
-            logger.debug("Adjusting image with custom image adjustment function.")
-            orig_image_array = self._custom_attrs["image_adjustment"](
-                orig_image_array, self._custom_attrs["_widget_state"]["scale"]
-            )
-        else:
-            logger.debug("Adjusting image with adaptive histogram equalization.")
-            orig_image_array = adjust_with_adaptive_histogram_equalization(
-                image=orig_image_array,
-                brightness=self._custom_attrs["_widget_state"]["scale"],
-            )
-
-        orig_image_array = self._ensure_uint8(orig_image_array)
 
         original_image_copy = orig_image_array.copy() if include_original else None
 
@@ -2995,29 +3147,24 @@ class CytoDataFrame(pd.DataFrame):
         row: Any,
         column: Any,
     ) -> Tuple[np.ndarray, Tuple[int, int, int]]:
-        display_options = self._custom_attrs.get("display_options", {}) or {}
-        cache_disabled = bool(display_options.get("volume_disable_cache"))
-        cache_max_entries_raw = display_options.get("volume_cache_max_entries", 32)
-        try:
-            cache_max_entries = max(1, int(cache_max_entries_raw))
-        except (TypeError, ValueError):
-            cache_max_entries = 32
-
-        cache: "OrderedDict[str, Tuple[np.ndarray, Tuple[int, int, int]]]" = (
-            OrderedDict()
+        cache, cache_disabled, cache_max_entries = self._resolve_cache_settings(
+            cache_attr="_volume_cache",
+            disable_option="volume_disable_cache",
+            max_entries_option="volume_cache_max_entries",
         )
-        if not cache_disabled:
-            raw_cache = self._custom_attrs.get("_volume_cache", {})
-            if isinstance(raw_cache, OrderedDict):
-                cache = raw_cache
-            else:
-                cache = OrderedDict(raw_cache or {})
-                self._custom_attrs["_volume_cache"] = cache
         cache_key = f"{row}::{column}"
         if not cache_disabled and cache_key in cache:
             cached = cache.pop(cache_key)
             cache[cache_key] = cached
             return cached
+
+        # Negative cache: probing whether a cell is 3D (e.g. from
+        # _find_3d_columns_for_display on every render) decodes the image. For
+        # 2D inputs that probe always fails, so remember cells already found to
+        # be non-3D and short-circuit before re-reading the same .tif/.tiff.
+        not_3d_cache: set = self._custom_attrs.setdefault("_volume_not_3d_cache", set())
+        if not cache_disabled and cache_key in not_3d_cache:
+            raise ValueError("Selected cell does not contain a 3D volume.")
 
         try:
             value = self.loc[row, column]
@@ -3138,7 +3285,18 @@ class CytoDataFrame(pd.DataFrame):
                 from ome_arrow import OMEArrow  # type: ignore
 
                 if volume is None:
-                    decode_candidates = candidate_paths or [data_path]
+                    # Only attempt an OME-Arrow decode on paths that exist on
+                    # disk. ``candidate_paths`` already holds resolved files;
+                    # falling back to ``data_path`` when it does not exist makes
+                    # OMEArrow/bioio try to open a missing file and emit noisy
+                    # "Exclusive reader attempt failed" errors during the routine
+                    # 3D-detection probe (e.g. bare filename columns read back
+                    # from an .ome.parquet without a data_context_dir).
+                    decode_candidates = candidate_paths or (
+                        [data_path]
+                        if data_path is not None and data_path.exists()
+                        else []
+                    )
                     for decode_path in decode_candidates:
                         ome_struct = OMEArrow(data=str(decode_path)).data
                         if hasattr(ome_struct, "as_py"):
@@ -3166,6 +3324,8 @@ class CytoDataFrame(pd.DataFrame):
                 )
 
         if volume is None or dims is None:
+            if not cache_disabled:
+                not_3d_cache.add(cache_key)
             raise ValueError("Selected cell does not contain a 3D volume.")
 
         # Apply per-row bounding box cropping when available (XYZ).
@@ -4499,16 +4659,25 @@ class CytoDataFrame(pd.DataFrame):
                     else self.copy()
                 )
 
-            # determine if we have image_cols to display
-            image_cols = CytoDataFrame(data).find_image_columns() or []
+            # ``data`` is already a DataFrame here (a CytoDataFrame from
+            # copy()/join(), or a plain DataFrame from the transpose path).
+            # ``find_image_columns``/``find_image_path_columns``/
+            # ``get_displayed_rows`` only read DataFrame structure (columns,
+            # index, values) and not any CytoDataFrame state, so we call them
+            # unbound on ``data`` instead of constructing a fresh CytoDataFrame.
+            # Constructing one per render would needlessly re-run bounding-box /
+            # center / image-path detection and method wrapping over every
+            # column. (If these helpers ever start reading ``_custom_attrs``,
+            # revisit this.)
+            image_cols = CytoDataFrame.find_image_columns(data) or []
             # normalize both the set of image cols and the pool of all cols to strings
             all_cols_str, all_cols_back = self._normalize_labels(data.columns)
             image_cols_str = [str(c) for c in image_cols]
 
             # If your helper expects strings, pass strings; then map the result back
             image_path_cols_str = (
-                CytoDataFrame(data).find_image_path_columns(
-                    image_cols=image_cols_str, all_cols=all_cols_str
+                CytoDataFrame.find_image_path_columns(
+                    data, image_cols=image_cols_str, all_cols=all_cols_str
                 )
                 or {}
             )
@@ -4534,7 +4703,7 @@ class CytoDataFrame(pd.DataFrame):
             logger.debug("Image columns found: %s", image_cols)
 
             # gather indices which will be displayed based on pandas configuration
-            display_indices = CytoDataFrame(data).get_displayed_rows()
+            display_indices = CytoDataFrame.get_displayed_rows(data)
             active_filter_columns = (
                 self._custom_attrs["_widget_state"].get("filter_columns") or []
             )
@@ -4565,7 +4734,7 @@ class CytoDataFrame(pd.DataFrame):
                     display_indices=data.index.tolist(),
                 )
                 data = data.loc[full_filtered_indices]
-                display_indices = CytoDataFrame(data).get_displayed_rows()
+                display_indices = CytoDataFrame.get_displayed_rows(data)
             else:
                 display_indices = self._filter_display_indices_by_widget_range(
                     data=data,

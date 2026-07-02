@@ -20,6 +20,7 @@ from cytodataframe.image import (
     draw_outline_on_image_from_mask,
     draw_outline_on_image_from_outline,
     get_pixel_bbox_from_offsets,
+    image_array_to_grayscale,
     is_image_too_dark,
 )
 
@@ -544,3 +545,142 @@ def test_add_image_scale_bar_accepts_rgba_input():
         margin_px=0,
     )
     assert out.shape == (6, 6, 3)
+
+
+def test_image_array_to_grayscale_supports_channel_layouts():
+    """Grayscale conversion supports 2D, single-channel, RGB, and RGBA."""
+    gray = np.full((4, 5), 7, dtype=np.uint8)
+    assert image_array_to_grayscale(gray) is gray
+
+    single = np.full((4, 5, 1), 9, dtype=np.uint8)
+    out_single = image_array_to_grayscale(single)
+    assert out_single.shape == (4, 5)
+    assert np.all(out_single == 9)
+
+    rgb = np.full((4, 5, 3), 100, dtype=np.uint8)
+    assert image_array_to_grayscale(rgb).shape == (4, 5)
+
+    rgba = np.full((4, 5, 4), 100, dtype=np.uint8)
+    assert image_array_to_grayscale(rgba).shape == (4, 5)
+
+
+def test_image_array_to_grayscale_raises_on_unsupported_shape():
+    with pytest.raises(ValueError, match="Unsupported image format"):
+        image_array_to_grayscale(np.zeros((4, 5, 5), dtype=np.uint8))
+
+
+def test_is_image_too_dark_handles_grayscale_image():
+    """Single-channel grayscale images are common in microscopy and must work."""
+    dark = Image.fromarray(np.zeros((10, 10), dtype=np.uint8))
+    bright = Image.fromarray(np.full((10, 10), 255, dtype=np.uint8))
+    assert is_image_too_dark(dark)
+    assert not is_image_too_dark(bright)
+
+
+def test_adjust_image_brightness_handles_grayscale_image():
+    """Brightness adjustment should not crash on single-channel grayscale input."""
+    gray = Image.fromarray(np.full((20, 20), 5, dtype=np.uint8))
+    adjusted = adjust_image_brightness(gray)
+    # output is rebuilt as an RGB image
+    assert np.array(adjusted).shape == (20, 20, 3)
+
+
+def test_adjust_image_brightness_preserves_rgba_alpha():
+    arr = np.full((10, 10, 4), 5, dtype=np.uint8)
+    arr[..., 3] = 123  # distinct alpha
+    adjusted = np.array(adjust_image_brightness(Image.fromarray(arr)))
+    assert adjusted.shape == (10, 10, 4)
+    # alpha channel is preserved through the adjustment
+    assert np.all(adjusted[..., 3] == 123)
+
+
+def test_adjust_with_adaptive_histogram_equalization_brightness_affects_output():
+    """The brightness parameter must measurably change output intensities.
+
+    Existing tests only checked output shape; this guards the brightness/gamma
+    math so regressions in the tuning curve are caught.
+    """
+    ramp = np.tile(np.linspace(0, 255, 64, dtype=np.uint8), (64, 1))
+    dark = adjust_with_adaptive_histogram_equalization(ramp, brightness=10)
+    bright = adjust_with_adaptive_histogram_equalization(ramp, brightness=90)
+    # A higher brightness setting yields a brighter (higher mean) image.
+    assert float(np.mean(bright)) > float(np.mean(dark))
+    # The default (50) should land between the two extremes.
+    neutral = adjust_with_adaptive_histogram_equalization(ramp, brightness=50)
+    assert float(np.mean(dark)) <= float(np.mean(neutral)) <= float(np.mean(bright))
+
+
+def test_draw_outline_on_image_from_outline_scales_float_values_correctly(
+    tmp_path: pathlib.Path,
+):
+    """A non-zero float image must be scaled by 255 (not 256) into uint8."""
+    path = tmp_path / "outline.png"
+    # outline image with no bright pixels so the original is preserved
+    imageio.imwrite(path, np.zeros((4, 4), dtype=np.uint8))
+    orig = np.full((4, 4, 3), 0.5, dtype=np.float32)
+    out = draw_outline_on_image_from_outline(orig, str(path))
+    assert out.dtype == np.uint8
+    # 0.5 * 255 -> 127 (truncated). 0.5 * 256 would give 128.
+    assert int(out[0, 0, 0]) == 127
+
+
+def test_draw_outline_on_image_from_mask_preserves_non_outline_pixels(
+    tmp_path: pathlib.Path,
+):
+    """Pixels outside the drawn outline must retain their original values."""
+    mask = np.zeros((20, 20), dtype=np.uint8)
+    rr, cc = disk((10, 10), 4)
+    mask[rr, cc] = 255
+    mask_path = tmp_path / "mask.png"
+    imageio.imwrite(mask_path, mask)
+
+    orig = np.full((20, 20, 3), 80, dtype=np.uint8)
+    out = draw_outline_on_image_from_mask(orig, str(mask_path))
+
+    outline_mask = (out == [0, 255, 0]).all(axis=-1)
+    assert outline_mask.any(), "Expected an outline to be drawn."
+    # corner pixel is far from the central circle outline; must be unchanged
+    assert tuple(int(v) for v in out[0, 0]) == (80, 80, 80)
+    # every non-outline pixel keeps the original intensity
+    assert np.all(out[~outline_mask] == 80)
+
+
+def test_add_image_scale_bar_preserves_float_unit_range_values():
+    """A 0..1 float image must be scaled up by 255, not divided by 255."""
+    img = np.full((10, 10), 0.5, dtype=np.float32)
+    out = add_image_scale_bar(img, um_per_pixel=0.5, length_um=2.0, margin_px=0)
+    assert out.dtype == np.uint8
+    # background (non-bar) pixels should reflect 0.5 * 255 ~= 127, not ~0.
+    assert int(out[0, 0, 0]) == 127
+
+
+def test_add_image_scale_bar_upper_left_placement():
+    """The scale bar honors an 'upper left' location request."""
+    H, W = 60, 60
+    out = add_image_scale_bar(
+        np.zeros((H, W), dtype=np.uint8),
+        um_per_pixel=0.5,
+        length_um=5.0,
+        thickness_px=3,
+        location="upper left",
+        margin_px=5,
+    )
+    bar = np.argwhere((out >= 250).all(axis=-1))
+    assert bar.size > 0
+    ys, xs = bar[:, 0], bar[:, 1]
+    # bar sits near the top-left, not the bottom-right
+    assert ys.min() < H // 2
+    assert xs.min() < W // 2
+
+
+def test_get_pixel_bbox_from_offsets_clamps_negative_lower_bounds_to_zero():
+    """Compartments near an image edge must clamp lower bounds to 0, not 1."""
+    # center near the top-left with offsets that push x_min/y_min negative
+    bbox = get_pixel_bbox_from_offsets(
+        center_x=0, center_y=0, rel_bbox=(-50, -50, 50, 50)
+    )
+    x_min, y_min, x_max, y_max = bbox
+    assert x_min == 0
+    assert y_min == 0
+    assert x_max == 50
+    assert y_max == 50

@@ -3,6 +3,7 @@ Tests cosmicqc CytoDataFrame module
 """
 
 import base64
+import importlib.metadata
 import logging
 import pathlib
 import re
@@ -24,6 +25,7 @@ from _pytest.monkeypatch import MonkeyPatch
 from PIL import Image
 from pyarrow import parquet
 
+import cytodataframe
 from cytodataframe.frame import (
     FILTER_SLIDER_LABEL_WIDTH_PX,
     FILTER_SLIDER_READOUT_WIDTH_PX,
@@ -34,6 +36,72 @@ from cytodataframe.frame import (
 from tests.utils import (
     cytodataframe_image_display_contains_pixels,
 )
+
+
+def test_package_exposes_resolved_version() -> None:
+    """``cytodataframe.__version__`` reports the real version, not a placeholder.
+
+    The version is resolved from the setuptools-scm ``_version.py`` (or the
+    installed package metadata as a fallback). ``"0.0.0"`` is only used when
+    resolution fails entirely, so seeing it here would mean the version display
+    is broken.
+    """
+    version = cytodataframe.__version__
+    assert isinstance(version, str) and version
+    assert version != "0.0.0"
+    # setuptools-scm versions start with the numeric release (e.g. "0.3.1...").
+    assert version[0].isdigit()
+    # Version resolution must succeed via one of the real sources (the
+    # setuptools-scm ``_version.py`` or the installed distribution metadata).
+    # We deliberately do not require these two to be byte-equal: in an
+    # actively-developed editable install ``_version.py`` is regenerated on each
+    # build while the installed distribution metadata reflects the last full
+    # install, so the two can legitimately drift.
+    assert importlib.metadata.version("cytodataframe")
+
+
+def test_3d_probe_skips_ome_decode_for_missing_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """3D detection must not OME-decode image files that do not exist.
+
+    When image filename columns cannot be resolved to files on disk (e.g. bare
+    filenames read back from an ``.ome.parquet`` without a ``data_context_dir``),
+    the routine 3D-detection probe used to call ``OMEArrow`` on the missing path,
+    making bioio emit noisy "Exclusive reader attempt failed" errors. The probe
+    must skip OME decoding entirely when there is no file to read.
+    """
+    ome_arrow = pytest.importorskip("ome_arrow")
+
+    attempted_paths: list[str] = []
+
+    class SpyOMEArrow:
+        def __init__(self, data: object) -> None:
+            attempted_paths.append(str(data))
+
+        @property
+        def data(self) -> None:
+            return None
+
+    monkeypatch.setattr(ome_arrow, "OMEArrow", SpyOMEArrow)
+
+    frame = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "Image_FileName_GFP": ["missing_a.tif", "missing_b.tif"],
+                "Nuclei_AreaShape_BoundingBoxMinimum_X": [0, 0],
+                "Nuclei_AreaShape_BoundingBoxMinimum_Y": [0, 0],
+                "Nuclei_AreaShape_BoundingBoxMaximum_X": [5, 5],
+                "Nuclei_AreaShape_BoundingBoxMaximum_Y": [5, 5],
+            }
+        )
+    )
+
+    # Running 3D detection must not attempt to OME-decode the missing files.
+    assert frame._find_3d_columns_for_display() == []
+    assert attempted_paths == [], (
+        f"OME-Arrow was attempted on missing files: {attempted_paths}"
+    )
 
 
 def test_to_ome_parquet_adds_arrow_column(
@@ -1625,6 +1693,49 @@ def test_find_image_columns_accepts_pathlike_values(tmp_path: pathlib.Path) -> N
     )
     assert "PathLikeCol" in cdf.find_image_columns()
     assert "NotImage" not in cdf.find_image_columns()
+
+
+def test_get_image_paths_excludes_non_filename_image_columns() -> None:
+    """Only FileName->PathName columns become image-path metadata.
+
+    ``Image_URL_*`` columns are legitimately detected as image columns (their
+    values are ``file:...tiff`` URLs), but they do not follow the
+    FileName->PathName convention. They must not be pulled into
+    ``data_image_paths``; otherwise they get re-joined and re-decoded during
+    rendering only to be dropped again.
+    """
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "Image_FileName_DNA": ["a.tiff"],
+                "Image_PathName_DNA": ["/imgs"],
+                "Image_URL_DNA": ["file:/imgs/a.tiff"],
+            }
+        )
+    )
+    paths = cdf._custom_attrs["data_image_paths"]
+    assert paths is not None
+    assert list(paths.columns) == ["Image_PathName_DNA"]
+
+
+def test_find_image_columns_skips_numeric_and_finds_strings() -> None:
+    """Numeric feature columns are skipped; string image columns are found.
+
+    This guards the dtype-based fast path in ``find_image_columns`` so that
+    optimizing away the scan of numeric columns never hides a real image column.
+    """
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "Feature_X": [1.0, 2.0, 3.0],
+                "Feature_Count": [1, 2, 3],
+                "Image_FileName_DNA": ["a.tiff", "b.tif", "c.TIFF"],
+                "Metadata_Note": ["nuc", "cyto", "cell"],
+            }
+        )
+    )
+    found = cdf.find_image_columns()
+    assert found == ["Image_FileName_DNA"]
 
 
 def test_get_3d_volume_from_cell_uses_image_pathname_column(

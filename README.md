@@ -21,6 +21,7 @@ With CytoDataFrame you can:
 
 - View image objects alongside their feature data using a Pandas DataFrame-like interface.
 - Highlight image objects using mask or outline files to understand their segmentation.
+- Merge multiple channels into a single single-cell crop composite (similar to a Fiji composite) with `display_options={"composite_channels": "all"}` or a per-channel color mapping such as `display_options={"composite_channels": {"OrigDNA": "blue", "OrigRNA": "green", "OrigAGP": "red"}}`.
 - Adjust image displays on-the-fly using interactive slider widgets.
 - Display image objects even when bounding box columns are missing, by cropping from compartment-center offsets or rendering whole fields of view.
 - Automatically detect 3D image volumes and render interactive [trame](https://github.com/Kitware/trame) views in notebooks when 3D dependencies are installed (with graceful fallback otherwise).

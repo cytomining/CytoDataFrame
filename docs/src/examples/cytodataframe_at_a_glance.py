@@ -117,6 +117,49 @@ CytoDataFrame(
 ][:3]
 
 # %%time
+# view JUMP plate BR00117006 and merge multiple channels into a single
+# single-cell crop composite (similar to a Fiji composite). Each channel is
+# tinted a color and additively blended so colocalization is easy to see.
+# Channels may be named by their column, their channel suffix (e.g. "OrigDNA"),
+# or a substring. The merged image is added as a new "Image_Composite" column.
+CytoDataFrame(
+    data=f"{jump_data_path}/BR00117006_shrunken.parquet",
+    data_context_dir=f"{jump_data_path}/images/orig",
+    display_options={
+        "composite_channels": {
+            "OrigDNA": "blue",
+            "OrigRNA": "green",
+            "OrigAGP": "red",
+        }
+    },
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:3]
+
+# %%time
+# the same composite feature can merge *all* image channels at once using
+# default (Fiji-like) colors by passing "all".
+CytoDataFrame(
+    data=f"{jump_data_path}/BR00117006_shrunken.parquet",
+    data_context_dir=f"{jump_data_path}/images/orig",
+    display_options={"composite_channels": "all"},
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:3]
+
+# %%time
 # view JUMP plate BR00117006 with images and adjust the brightness
 CytoDataFrame(
     data=f"{jump_data_path}/BR00117006_shrunken.parquet",

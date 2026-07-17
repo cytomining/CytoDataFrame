@@ -48,6 +48,7 @@ from .image import (
     draw_outline_on_image_from_mask,
     draw_outline_on_image_from_outline,
     get_pixel_bbox_from_offsets,
+    image_array_to_grayscale,
 )
 from .volume import (
     build_3d_html_from_path,
@@ -82,6 +83,38 @@ FILTER_PLOT_Y_MAX_PERCENTILE_UPPER = 100.0
 FILTER_PLOT_Y_GAMMA_DEFAULT = 0.6
 FILTER_PLOT_Y_TAIL_LOG_SCALE_DEFAULT = 0.35
 FILTER_SLIDER_CSS_CLASS = "cdf-filter-range-slider"
+
+# Named colors that may be used to tint channels within a merged composite
+# (see the ``composite_channels`` display option). Values are RGB tuples.
+COMPOSITE_NAMED_COLORS: Dict[str, Tuple[int, int, int]] = {
+    "red": (255, 0, 0),
+    "green": (0, 255, 0),
+    "blue": (0, 0, 255),
+    "cyan": (0, 255, 255),
+    "magenta": (255, 0, 255),
+    "yellow": (255, 255, 0),
+    "gray": (255, 255, 255),
+    "grey": (255, 255, 255),
+    "white": (255, 255, 255),
+    "orange": (255, 165, 0),
+}
+
+# Default per-channel colors used when a composite is requested without
+# explicit colors. Ordering mirrors Fiji's default composite channel colors
+# (red, green, blue, gray, cyan, magenta, yellow) so results feel familiar to
+# users coming from ImageJ/Fiji. Channels beyond the palette length cycle.
+COMPOSITE_DEFAULT_PALETTE: Tuple[Tuple[int, int, int], ...] = (
+    (255, 0, 0),  # red
+    (0, 255, 0),  # green
+    (0, 0, 255),  # blue
+    (255, 255, 255),  # gray
+    (0, 255, 255),  # cyan
+    (255, 0, 255),  # magenta
+    (255, 255, 0),  # yellow
+)
+
+# Default column name used to hold the merged single-cell channel composite.
+COMPOSITE_DEFAULT_COLUMN_NAME = "Image_Composite"
 
 # provide backwards compatibility for Self type in earlier Python versions.
 # see: https://peps.python.org/pep-0484/#annotating-instance-and-class-methods
@@ -212,6 +245,26 @@ class CytoDataFrame(pd.DataFrame):
                   }
                 - Alternatively, set a global pixel size in 'display_options':
                   {'um_per_pixel': 0.325}  # used if not provided under 'scale_bar'
+                - 'composite_channels': Merge several channels into a single
+                  single-cell crop composite (similar to a Fiji composite),
+                  rendered as an additional column. Channels are cropped to the
+                  same cell, tinted per channel, and additively blended. Accepts:
+                    * "all" to merge every image channel using default colors,
+                      e.g. {'composite_channels': 'all'}
+                    * a list of channel identifiers (full column name, channel
+                      suffix such as "OrigDNA", or a substring),
+                      e.g. {'composite_channels': ['OrigDNA', 'OrigRNA']}
+                    * a mapping of channel identifier to color (a named color
+                      such as "blue" or an (r, g, b) tuple),
+                      e.g. {'composite_channels':
+                      {'OrigDNA': 'blue', 'OrigRNA': 'green', 'OrigAGP': 'red'}}
+                  The composite is the same size as the individual channel
+                  crops and also shows the segmentation outline and red center
+                  dot when those are configured. Individual channel columns
+                  still render as usual.
+                - 'composite_column_name': Name of the column used to hold the
+                  merged composite. Defaults to "Image_Composite".
+                  e.g. {'composite_column_name': 'Image_Merged'}
                 - 'ignore_image_path_columns': When True and a data_context_dir is set,
                   ignore any PathName_* or other image path columns and resolve images
                   only via data_context_dir + filename.
@@ -3142,6 +3195,259 @@ class CytoDataFrame(pd.DataFrame):
         except Exception:
             return data_value
 
+    @staticmethod
+    def _resolve_composite_color(value: Any) -> Optional[Tuple[int, int, int]]:
+        """
+        Resolve a channel color specification to an ``(r, g, b)`` tuple.
+
+        Accepts a named color (e.g. ``"blue"``) or an explicit RGB
+        sequence (e.g. ``(0, 0, 255)`` or ``[0, 0, 255]``). Returns None
+        when the value cannot be understood as a color.
+        """
+        if isinstance(value, str):
+            return COMPOSITE_NAMED_COLORS.get(value.strip().lower())
+        if isinstance(value, (tuple, list)) and len(value) == 3:  # noqa: PLR2004
+            try:
+                return tuple(
+                    int(max(0, min(255, int(component)))) for component in value
+                )
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    @staticmethod
+    def _match_channel_column(identifier: Any, image_cols: Sequence[Any]) -> Any:
+        """
+        Match a user-provided channel identifier to an image column.
+
+        Matching is attempted, in order, by: exact column name, the channel
+        suffix following ``FileName_`` (or the final underscore) and finally a
+        case-insensitive substring. Returns the matched column or None.
+        """
+        identifier_str = str(identifier)
+
+        # exact column-name match
+        for col in image_cols:
+            if str(col) == identifier_str:
+                return col
+
+        # match on the channel suffix (e.g. "OrigDNA" from
+        # "Image_FileName_OrigDNA")
+        for col in image_cols:
+            col_str = str(col)
+            if "FileName_" in col_str:
+                suffix = col_str.split("FileName_", 1)[1]
+            else:
+                suffix = col_str.rsplit("_", 1)[-1]
+            if suffix == identifier_str:
+                return col
+
+        # case-insensitive substring fallback
+        for col in image_cols:
+            if identifier_str.lower() in str(col).lower():
+                return col
+
+        return None
+
+    def _resolve_composite_channels(
+        self: CytoDataFrame_type, image_cols: Sequence[Any]
+    ) -> List[Tuple[Any, Tuple[int, int, int]]]:
+        """
+        Resolve the ``composite_channels`` display option to ordered channel
+        columns paired with the RGB color used to tint each channel.
+
+        The option may be:
+        - ``"all"``: use every image channel column, colored from the default
+          palette in column order.
+        - a list of channel identifiers: use those channels (color from the
+          default palette in the given order).
+        - a mapping of ``{identifier: color}``: use those channels with the
+          specified colors (named color or RGB tuple). ``color`` may be None
+          to fall back to the default palette.
+        """
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        spec = display_options.get("composite_channels")
+        if not spec:
+            return []
+
+        if isinstance(spec, str):
+            if spec.strip().lower() == "all":
+                requested: List[Tuple[Any, Any]] = [(col, None) for col in image_cols]
+            else:
+                requested = [(spec, None)]
+        elif isinstance(spec, dict):
+            requested = list(spec.items())
+        elif isinstance(spec, (list, tuple, set)):
+            requested = [(identifier, None) for identifier in spec]
+        else:
+            logger.warning(
+                "Unrecognized 'composite_channels' display option: %s; "
+                "expected 'all', a list of channels, or a mapping.",
+                spec,
+            )
+            return []
+
+        resolved: List[Tuple[Any, Tuple[int, int, int]]] = []
+        for position, (identifier, color_value) in enumerate(requested):
+            column = self._match_channel_column(identifier, image_cols)
+            if column is None:
+                logger.warning(
+                    "Composite channel '%s' did not match any image column; "
+                    "skipping it.",
+                    identifier,
+                )
+                continue
+            color = self._resolve_composite_color(color_value)
+            if color is None:
+                color = COMPOSITE_DEFAULT_PALETTE[
+                    position % len(COMPOSITE_DEFAULT_PALETTE)
+                ]
+            resolved.append((column, color))
+
+        return resolved
+
+    @staticmethod
+    def _as_rgb(image: np.ndarray) -> np.ndarray:
+        """Return an ``(H, W, 3)`` RGB view of a grayscale/RGB/RGBA array."""
+        array = np.asarray(image)
+        if array.ndim == 2:  # noqa: PLR2004
+            return np.stack([array] * 3, axis=-1)
+        if array.ndim == 3 and array.shape[2] == 4:  # noqa: PLR2004
+            return array[:, :, :3]
+        return array
+
+    def _build_channel_composite_array(  # noqa: C901
+        self: CytoDataFrame_type,
+        row: Any,
+        channel_specs: Sequence[Tuple[Any, Tuple[int, int, int]]],
+        bounding_box: Optional[Tuple[int, int, int, int]],
+        compartment_center_xy: Optional[Tuple[int, int]],
+        image_path_cols: Dict[Any, Any],
+    ) -> Optional[np.ndarray]:
+        """
+        Build a merged, color-tinted composite crop from several channels.
+
+        Each channel is cropped to the same single-cell region using the same
+        pipeline as the individual channel columns, so the composite is always
+        the same size as the other images. The clean (pre-overlay) crop of each
+        channel is converted to a grayscale intensity, tinted by the channel's
+        color, and additively blended (Fiji-style). The segmentation outline and
+        red center dot that appear on the individual channels (when configured)
+        are then laid back on top of the blended result so the composite matches
+        the other images. Returns an ``(H, W, 3)`` uint8 array, or None when no
+        channel could be rendered.
+        """
+        composite: Optional[np.ndarray] = None
+        # Overlay canvas holds the outline/center-dot pixels drawn on the
+        # individual channels, to be applied on top of the blended composite.
+        overlay_rgb: Optional[np.ndarray] = None
+        overlay_mask: Optional[np.ndarray] = None
+
+        for column, color in channel_specs:
+            data_value = row[column]
+            if data_value is None or pd.isna(data_value):
+                continue
+
+            image_path = (
+                row[image_path_cols[column]]
+                if image_path_cols and column in image_path_cols
+                else None
+            )
+
+            # ``original`` is the clean equalized crop (used for the color
+            # blend); ``composite`` is the same crop with the segmentation
+            # outline and center dot applied (per the display configuration),
+            # exactly as the individual channel column is rendered.
+            layers = self._prepare_cropped_image_layers(
+                data_value=data_value,
+                bounding_box=bounding_box,
+                compartment_center_xy=compartment_center_xy,
+                image_path=image_path,
+                include_original=True,
+                include_composite=True,
+            )
+            clean_crop = layers.get("original")
+            if clean_crop is None:
+                continue
+
+            gray = image_array_to_grayscale(np.asarray(clean_crop))
+            if gray.dtype != np.uint8:
+                gray = img_as_ubyte(gray)
+
+            if composite is None:
+                composite = np.zeros((*gray.shape[:2], 3), dtype=np.float32)
+                overlay_rgb = np.zeros((*gray.shape[:2], 3), dtype=np.uint8)
+                overlay_mask = np.zeros(gray.shape[:2], dtype=bool)
+
+            target_h, target_w = composite.shape[:2]
+
+            # Align shapes defensively; crops from the same bounding box should
+            # already match, but tiny off-by-one differences are possible.
+            if gray.shape[:2] != (target_h, target_w):
+                gray = gray[:target_h, :target_w]
+                if gray.shape[:2] != (target_h, target_w):
+                    continue
+
+            tint = np.asarray(color, dtype=np.float32) / 255.0
+            composite += gray[:, :, np.newaxis].astype(np.float32) * tint
+
+            # Capture the outline/center-dot decorations by diffing the
+            # decorated crop against the clean crop; those pixels are laid over
+            # the blended composite so it matches the individual channels.
+            decorated_crop = layers.get("composite")
+            if decorated_crop is not None:
+                target_shape = (target_h, target_w)
+                clean_rgb = self._as_rgb(clean_crop)[:target_h, :target_w]
+                decorated_rgb = self._as_rgb(decorated_crop)[:target_h, :target_w]
+                if (
+                    clean_rgb.shape[:2] == target_shape
+                    and decorated_rgb.shape[:2] == target_shape
+                ):
+                    diff = np.any(
+                        decorated_rgb.astype(np.int16) != clean_rgb.astype(np.int16),
+                        axis=-1,
+                    )
+                    overlay_rgb[diff] = decorated_rgb[diff]
+                    overlay_mask |= diff
+
+        if composite is None:
+            return None
+
+        result = np.clip(composite, 0, 255).astype(np.uint8)
+        if overlay_mask is not None and overlay_mask.any():
+            result[overlay_mask] = overlay_rgb[overlay_mask]
+
+        return result
+
+    def process_channel_composite_as_html_display(
+        self: CytoDataFrame_type,
+        row: Any,
+        channel_specs: Sequence[Tuple[Any, Tuple[int, int, int]]],
+        bounding_box: Optional[Tuple[int, int, int, int]],
+        compartment_center_xy: Optional[Tuple[int, int]],
+        image_path_cols: Dict[Any, Any],
+    ) -> str:
+        """
+        Render a merged multi-channel composite crop for a row as HTML.
+
+        Returns an HTML ``<img>`` string for the blended composite, or an
+        empty string when no channel could be rendered for the row.
+        """
+        composite_array = self._build_channel_composite_array(
+            row=row,
+            channel_specs=channel_specs,
+            bounding_box=bounding_box,
+            compartment_center_xy=compartment_center_xy,
+            image_path_cols=image_path_cols,
+        )
+        if composite_array is None:
+            return ""
+
+        try:
+            return self._image_array_to_html(composite_array)
+        except Exception:
+            return ""
+
     def _get_3d_volume_from_cell(  # noqa: C901, PLR0912, PLR0915
         self: CytoDataFrame_type,
         row: Any,
@@ -4789,6 +5095,65 @@ class CytoDataFrame(pd.DataFrame):
                     compartment_center_xy_cols = self._custom_attrs[
                         "compartment_center_xy"
                     ].columns.tolist()
+
+                def _row_crop_geometry(
+                    row: Any,
+                ) -> Tuple[
+                    Optional[Tuple[Any, Any, Any, Any]], Optional[Tuple[Any, Any]]
+                ]:
+                    """Return the per-row bounding box and compartment center."""
+                    row_bounding_box = (
+                        self._row_bounding_box(row, bounding_box_cols)
+                        if bounding_box_cols is not None
+                        else None
+                    )
+                    row_center = (
+                        (
+                            row[
+                                next(
+                                    col
+                                    for col in compartment_center_xy_cols
+                                    if "X" in col
+                                )
+                            ],
+                            row[
+                                next(
+                                    col
+                                    for col in compartment_center_xy_cols
+                                    if "Y" in col
+                                )
+                            ],
+                        )
+                        if has_compartment_center
+                        else None
+                    )
+                    return row_bounding_box, row_center
+
+                # Build a merged multi-channel composite column when requested
+                # via the ``composite_channels`` display option. This is done
+                # before the per-channel columns are overwritten with rendered
+                # HTML below, since the composite reads the raw image filenames.
+                composite_channel_specs = self._resolve_composite_channels(image_cols)
+                if composite_channel_specs:
+                    composite_column_name = display_options.get(
+                        "composite_column_name", COMPOSITE_DEFAULT_COLUMN_NAME
+                    )
+                    if composite_column_name not in data.columns:
+                        data[composite_column_name] = ""
+
+                    def _render_composite(row: Any) -> str:
+                        row_bounding_box, row_center = _row_crop_geometry(row)
+                        return self.process_channel_composite_as_html_display(
+                            row=row,
+                            channel_specs=composite_channel_specs,
+                            bounding_box=row_bounding_box,
+                            compartment_center_xy=row_center,
+                            image_path_cols=image_path_cols,
+                        )
+
+                    data.loc[display_indices, composite_column_name] = data.loc[
+                        display_indices
+                    ].apply(_render_composite, axis=1)
 
                 for image_col in image_cols:
                     data.loc[display_indices, image_col] = data.loc[

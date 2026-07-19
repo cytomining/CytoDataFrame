@@ -116,6 +116,17 @@ COMPOSITE_DEFAULT_PALETTE: Tuple[Tuple[int, int, int], ...] = (
 # Default column name used to hold the merged single-cell channel composite.
 COMPOSITE_DEFAULT_COLUMN_NAME = "Image_Composite"
 
+# Minimum on-screen width (px) for displayed image cells. Notebook environments
+# apply ``img {max-width:100%}``, so under table width pressure each image column
+# shrinks toward its header width -- which lets a short-headed column (such as
+# the merged "Image_Composite" column) collapse smaller than the longer channel
+# columns, and squeezes rows with many image columns (e.g. OME-Arrow tables that
+# expand each channel into several columns) down to unreadably small thumbnails.
+# Flooring the image width keeps all image cells a consistent, readable size and
+# lets the table scroll instead. Only applied when the configured display width
+# is an explicit pixel value larger than this floor.
+IMAGE_MIN_DISPLAY_WIDTH_PX = 200
+
 # provide backwards compatibility for Self type in earlier Python versions.
 # see: https://peps.python.org/pep-0484/#annotating-instance-and-class-methods
 CytoDataFrame_type = TypeVar("CytoDataFrame_type", bound="CytoDataFrame")
@@ -3047,6 +3058,22 @@ class CytoDataFrame(pd.DataFrame):
         )
         return layers.get("composite"), layers.get(self._HTML_3D_STUB_KEY)
 
+    @staticmethod
+    def _resolve_image_min_width(width: Any) -> Optional[str]:
+        """
+        Return a CSS ``min-width`` floor for a displayed image, or None.
+
+        Only explicit pixel widths larger than ``IMAGE_MIN_DISPLAY_WIDTH_PX``
+        get a floor (so custom small/auto widths stay fully responsive). See
+        ``IMAGE_MIN_DISPLAY_WIDTH_PX`` for why the floor exists.
+        """
+        match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)px\s*", str(width))
+        if match is None:
+            return None
+        if float(match.group(1)) <= IMAGE_MIN_DISPLAY_WIDTH_PX:
+            return None
+        return f"{IMAGE_MIN_DISPLAY_WIDTH_PX}px"
+
     def _image_array_to_html(self: CytoDataFrame_type, image_array: np.ndarray) -> str:
         """Encode an image array as an HTML <img> tag."""
 
@@ -3065,6 +3092,13 @@ class CytoDataFrame(pd.DataFrame):
         height = display_options.get("height")
 
         html_style = [f"width:{width}"]
+        # Floor the on-screen image width so image cells stay a consistent,
+        # readable size instead of collapsing under table width pressure (see
+        # IMAGE_MIN_DISPLAY_WIDTH_PX). Kept below the configured width so it only
+        # bounds shrinking and never enlarges the image past its target.
+        min_width = self._resolve_image_min_width(width)
+        if min_width is not None:
+            html_style.append(f"min-width:{min_width}")
         if height is not None:
             html_style.append(f"height:{height}")
 
@@ -3316,7 +3350,31 @@ class CytoDataFrame(pd.DataFrame):
             return array[:, :, :3]
         return array
 
-    def _build_channel_composite_array(  # noqa: C901
+    @staticmethod
+    def _fit_to_shape(
+        image: np.ndarray, target_shape: Tuple[int, int], smooth: bool
+    ) -> np.ndarray:
+        """Resize ``image`` to ``target_shape`` (height, width) as uint8.
+
+        Used to place each channel of a merged composite onto a shared canvas so
+        the composite is always the same size as the other images. ``smooth``
+        selects bilinear (for intensity) vs. nearest-neighbor (to keep outlines
+        and the center dot crisp) interpolation. Returns the input unchanged when
+        it already matches ``target_shape``.
+        """
+        array = np.asarray(image)
+        if array.shape[:2] == target_shape:
+            return array
+        resized = skimage.transform.resize(
+            array,
+            target_shape,
+            order=1 if smooth else 0,
+            preserve_range=True,
+            anti_aliasing=smooth,
+        )
+        return resized.astype(np.uint8)
+
+    def _build_channel_composite_array(
         self: CytoDataFrame_type,
         row: Any,
         channel_specs: Sequence[Tuple[Any, Tuple[int, int, int]]],
@@ -3375,18 +3433,21 @@ class CytoDataFrame(pd.DataFrame):
                 gray = img_as_ubyte(gray)
 
             if composite is None:
+                # The first rendered channel establishes the composite canvas,
+                # which is exactly the crop size the individual channel columns
+                # display. Every other channel is fit to this canvas so the
+                # composite is always the same size as the other images, even if
+                # a channel's source image has a different resolution.
                 composite = np.zeros((*gray.shape[:2], 3), dtype=np.float32)
                 overlay_rgb = np.zeros((*gray.shape[:2], 3), dtype=np.uint8)
                 overlay_mask = np.zeros(gray.shape[:2], dtype=bool)
 
             target_h, target_w = composite.shape[:2]
+            target_shape = (target_h, target_w)
 
-            # Align shapes defensively; crops from the same bounding box should
-            # already match, but tiny off-by-one differences are possible.
-            if gray.shape[:2] != (target_h, target_w):
-                gray = gray[:target_h, :target_w]
-                if gray.shape[:2] != (target_h, target_w):
-                    continue
+            # Fit this channel to the canvas so the composite is a consistent
+            # size regardless of any per-channel resolution differences.
+            gray = self._fit_to_shape(gray, target_shape, smooth=True)
 
             tint = np.asarray(color, dtype=np.float32) / 255.0
             composite += gray[:, :, np.newaxis].astype(np.float32) * tint
@@ -3396,19 +3457,19 @@ class CytoDataFrame(pd.DataFrame):
             # the blended composite so it matches the individual channels.
             decorated_crop = layers.get("composite")
             if decorated_crop is not None:
-                target_shape = (target_h, target_w)
-                clean_rgb = self._as_rgb(clean_crop)[:target_h, :target_w]
-                decorated_rgb = self._as_rgb(decorated_crop)[:target_h, :target_w]
-                if (
-                    clean_rgb.shape[:2] == target_shape
-                    and decorated_rgb.shape[:2] == target_shape
-                ):
-                    diff = np.any(
-                        decorated_rgb.astype(np.int16) != clean_rgb.astype(np.int16),
-                        axis=-1,
-                    )
-                    overlay_rgb[diff] = decorated_rgb[diff]
-                    overlay_mask |= diff
+                # Nearest-neighbor keeps thin outlines and the center dot crisp.
+                clean_rgb = self._fit_to_shape(
+                    self._as_rgb(clean_crop), target_shape, smooth=False
+                )
+                decorated_rgb = self._fit_to_shape(
+                    self._as_rgb(decorated_crop), target_shape, smooth=False
+                )
+                diff = np.any(
+                    decorated_rgb.astype(np.int16) != clean_rgb.astype(np.int16),
+                    axis=-1,
+                )
+                overlay_rgb[diff] = decorated_rgb[diff]
+                overlay_mask |= diff
 
         if composite is None:
             return None
@@ -5259,7 +5320,13 @@ class CytoDataFrame(pd.DataFrame):
             style = (
                 "<style>"
                 "table.dataframe thead tr {background:#EBEBEB;}"
-                "table.dataframe thead th {background:#EBEBEB;}"
+                # Keep column names on a single line so a column is never
+                # narrower than its header. Notebook environments (e.g.
+                # JupyterLab) constrain the table and can break header words,
+                # scrunching names into tall, unreadable one-character-per-line
+                # strips; ``white-space:nowrap`` gives every column a reasonable
+                # minimum width (its header width) and lets the table scroll.
+                "table.dataframe thead th {background:#EBEBEB;white-space:nowrap;}"
                 "table.dataframe tbody tr {background:#FFFFFF;}"
                 "table.dataframe tbody tr:nth-child(even) {background:#F5F5F5;}"
                 "</style>"

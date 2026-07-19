@@ -953,6 +953,58 @@ def test_composite_channels_match_size_and_show_outline_and_dot(
     assert np.any(red_dot), "Composite is missing the red center dot."
 
 
+def test_fit_to_shape_resizes_and_passes_through() -> None:
+    """``_fit_to_shape`` resizes to the target and no-ops on a match."""
+    same = np.full((8, 8, 3), 5, dtype=np.uint8)
+    # identical shape returns the array unchanged (byte-identical)
+    assert CytoDataFrame._fit_to_shape(same, (8, 8), smooth=True) is same
+
+    smaller = np.full((4, 4), 200, dtype=np.uint8)
+    grown = CytoDataFrame._fit_to_shape(smaller, (8, 8), smooth=False)
+    assert grown.shape == (8, 8)
+    assert grown.dtype == np.uint8
+
+
+def test_composite_resizes_mismatched_channels(
+    monkeypatch: MonkeyPatch,
+    cytotable_NF1_data_parquet_shrunken: str,
+) -> None:
+    """
+    Channels whose crops differ in size (e.g. different source resolutions) are
+    fit to a single canvas so the composite is a consistent size and every
+    channel still contributes to the blend.
+    """
+    frame = CytoDataFrame(data=cytotable_NF1_data_parquet_shrunken)
+
+    def fake_layers(data_value: object, **_: object) -> dict:
+        # channel "a" renders 20x20, channel "b" renders a smaller 10x10 crop
+        if data_value == "a":
+            arr = np.full((20, 20, 3), 120, dtype=np.uint8)
+        else:
+            arr = np.full((10, 10, 3), 200, dtype=np.uint8)
+        return {"original": arr, "composite": arr}
+
+    monkeypatch.setattr(frame, "_prepare_cropped_image_layers", fake_layers)
+
+    row = pd.Series({"Image_FileName_A": "a", "Image_FileName_B": "b"})
+    channel_specs = [
+        ("Image_FileName_A", (255, 0, 0)),  # red
+        ("Image_FileName_B", (0, 0, 255)),  # blue
+    ]
+    composite = frame._build_channel_composite_array(
+        row=row,
+        channel_specs=channel_specs,
+        bounding_box=None,
+        compartment_center_xy=None,
+        image_path_cols={},
+    )
+    # composite matches the first channel's canvas size, not the smaller channel
+    assert composite.shape == (20, 20, 3)
+    # both channels contributed to the blend (red from "a", blue from "b")
+    assert composite[:, :, 0].max() > 0
+    assert composite[:, :, 2].max() > 0
+
+
 def test_composite_channels_all_and_custom_name(
     cytotable_pediatric_cancer_atlas_parquet: str,
 ):
@@ -982,6 +1034,53 @@ def test_composite_channels_all_and_custom_name(
         and np.any(np.abs(img[:, :, 0].astype(int) - img[:, :, 2].astype(int)) > 30)
         for img in _decode_html_images(html_output)
     ), "Expected the merged composite to contain non-grayscale (colored) pixels."
+
+
+def test_image_cells_have_min_width_floor(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    Displayed images carry a ``min-width`` floor so image columns keep a
+    consistent, readable size under table width pressure (applied by notebook
+    environments' ``img {max-width:100%}``) instead of a short-headed column
+    such as the merged composite collapsing, or many image columns (e.g. an
+    OME-Arrow table) shrinking to tiny thumbnails.
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={"composite_channels": "all"},
+    )[["Image_FileName_OrigAGP", "Image_FileName_OrigDNA"]][:2]
+    html_output = frame._repr_html_(debug=True)
+    # every displayed image (channels and composite) carries the floor
+    image_styles = re.findall(
+        r'<img[^>]*style="([^"]*)"',
+        re.sub(r"base64,[A-Za-z0-9+/=]+", "", html_output),
+    )
+    assert image_styles
+    assert all("min-width:200px" in style for style in image_styles)
+    # the fragile header-wrap approach is not used (it mangled text headers and
+    # shrank many-column OME-Arrow tables)
+    assert "overflow-wrap" not in html_output
+    # column headers stay on one line so names are never scrunched narrower than
+    # the header (giving each column a reasonable minimum width)
+    assert "table.dataframe thead th {background:#EBEBEB;white-space:nowrap;}" in (
+        html_output
+    )
+
+
+def test_resolve_image_min_width_only_floors_large_pixel_widths() -> None:
+    """The image min-width floor applies only to explicit px widths above it."""
+    # default width gets floored
+    assert CytoDataFrame._resolve_image_min_width("300px") == "200px"
+    # widths at or below the floor, or non-pixel widths, stay responsive
+    assert CytoDataFrame._resolve_image_min_width("200px") is None
+    assert CytoDataFrame._resolve_image_min_width("120px") is None
+    assert CytoDataFrame._resolve_image_min_width("auto") is None
+    assert CytoDataFrame._resolve_image_min_width("100%") is None
 
 
 def test_composite_channels_no_option_adds_no_column(

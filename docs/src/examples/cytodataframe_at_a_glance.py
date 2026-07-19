@@ -7,7 +7,7 @@
 #       format_version: '1.5'
 #       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: CytoDataFrame (3.13.5)
+#     display_name: CytoDataFrame (3.13.5.final.0)
 #     language: python
 #     name: python3
 # ---
@@ -149,6 +149,32 @@ CytoDataFrame(
     data=f"{jump_data_path}/BR00117006_shrunken.parquet",
     data_context_dir=f"{jump_data_path}/images/orig",
     display_options={"composite_channels": "all"},
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:3]
+
+# %%time
+# composites also keep the segmentation outline and red center dot when those
+# are configured, so a single merged view still shows where each object was
+# segmented. Here we merge channels and overlay outlines from the segmentation
+# directory (channels are colored to avoid the green outline so it stays clear).
+CytoDataFrame(
+    data=f"{jump_data_path}/BR00117006_shrunken.parquet",
+    data_context_dir=f"{jump_data_path}/images/orig",
+    data_outline_context_dir=f"{jump_data_path}/images/outlines",
+    display_options={
+        "composite_channels": {
+            "OrigDNA": "blue",
+            "OrigRNA": "magenta",
+            "OrigAGP": "red",
+        }
+    },
 )[
     [
         "Metadata_ImageNumber",

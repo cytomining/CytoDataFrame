@@ -3059,6 +3059,27 @@ class CytoDataFrame(pd.DataFrame):
         return layers.get("composite"), layers.get(self._HTML_3D_STUB_KEY)
 
     @staticmethod
+    def _normalize_css_width(width: Any) -> Any:
+        """
+        Normalize a bare numeric width to a CSS pixel string.
+
+        Integer/float widths (e.g. ``300``) and pure-numeric strings (e.g.
+        ``"300"``) become ``"300px"`` so they emit valid CSS and participate in
+        the min-width floor. Values already carrying a unit or keyword (e.g.
+        ``"300px"``, ``"100%"``, ``"auto"``) are returned unchanged.
+        """
+        if isinstance(width, bool):
+            return width
+        if isinstance(width, (int, float)):
+            number = int(width) if float(width).is_integer() else width
+            return f"{number}px"
+        if isinstance(width, str) and re.fullmatch(r"\s*\d+(?:\.\d+)?\s*", width):
+            number = float(width)
+            number = int(number) if number.is_integer() else number
+            return f"{number}px"
+        return width
+
+    @staticmethod
     def _resolve_image_min_width(width: Any) -> Optional[str]:
         """
         Return a CSS ``min-width`` floor for a displayed image, or None.
@@ -3088,7 +3109,9 @@ class CytoDataFrame(pd.DataFrame):
             raise
 
         display_options = self._custom_attrs.get("display_options", {}) or {}
-        width = display_options.get("width", "300px")
+        # Normalize bare numeric widths (e.g. 300 or "300") to CSS pixel strings
+        # so they emit valid CSS and feed the min-width floor consistently.
+        width = self._normalize_css_width(display_options.get("width", "300px"))
         height = display_options.get("height")
 
         html_style = [f"width:{width}"]

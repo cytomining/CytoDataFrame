@@ -1083,6 +1083,44 @@ def test_resolve_image_min_width_only_floors_large_pixel_widths() -> None:
     assert CytoDataFrame._resolve_image_min_width("100%") is None
 
 
+def test_normalize_css_width_converts_bare_numbers_to_pixels() -> None:
+    """Bare numeric widths become px strings; unit/keyword widths are kept."""
+    # bare numbers (int, float, numeric string) become pixel strings
+    assert CytoDataFrame._normalize_css_width(300) == "300px"
+    assert CytoDataFrame._normalize_css_width("300") == "300px"
+    assert CytoDataFrame._normalize_css_width(300.0) == "300px"
+    assert CytoDataFrame._normalize_css_width("100") == "100px"
+    # values that already carry a unit or keyword are returned unchanged
+    assert CytoDataFrame._normalize_css_width("300px") == "300px"
+    assert CytoDataFrame._normalize_css_width("100%") == "100%"
+    assert CytoDataFrame._normalize_css_width("auto") == "auto"
+
+
+def test_integer_width_emits_valid_css_and_floors(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    An integer ``width`` (as documented) emits a valid pixel width and still
+    participates in the min-width floor.
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={"width": 300},
+    )[["Image_FileName_OrigDNA"]][:1]
+    html_output = frame._repr_html_(debug=True)
+    image_styles = re.findall(
+        r'<img[^>]*style="([^"]*)"',
+        re.sub(r"base64,[A-Za-z0-9+/=]+", "", html_output),
+    )
+    assert image_styles
+    assert all("width:300px" in style for style in image_styles)
+    assert all("min-width:200px" in style for style in image_styles)
+
+
 def test_composite_channels_no_option_adds_no_column(
     cytotable_pediatric_cancer_atlas_parquet: str,
 ):

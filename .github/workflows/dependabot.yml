@@ -25,7 +25,7 @@ jobs:
       - name: Fetch tags
         run: git fetch --all --tags
       - name: Python setup
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install the latest version of uv

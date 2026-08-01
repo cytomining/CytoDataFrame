@@ -82,7 +82,7 @@ def _resolve_vtk_js_url(display_options: Optional[dict]) -> str:
     return str(configured) if configured else VTK_JS_CDN_URL
 
 
-def build_3d_image_html_view(  # noqa: C901, PLR0912, PLR0913, PLR0915
+def build_3d_image_html_view(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917
     volume: np.ndarray,
     dims: Tuple[int, int, int],
     data_value: str,
@@ -443,7 +443,7 @@ def extract_volume_from_ome_arrow(  # noqa: C901, PLR0912
         return None
 
 
-def build_3d_html_from_path(  # noqa: PLR0913
+def build_3d_html_from_path(  # noqa: PLR0913, PLR0917
     data_value: str,
     candidate_path: pathlib.Path,
     display_options: Optional[dict],

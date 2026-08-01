@@ -530,7 +530,7 @@ def test_find_matching_segmentation_path_prefers_candidate_parent_tree(
     assert matched.parent.name == "plate_a"
 
 
-def test_cytodataframe_input(
+def test_cytodataframe_input(  # noqa: PLR0917
     tmp_path: pathlib.Path,
     basic_outlier_dataframe: pd.DataFrame,
     basic_outlier_csv: str,

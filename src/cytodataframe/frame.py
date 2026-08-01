@@ -112,7 +112,7 @@ class CytoDataFrame(pd.DataFrame):
     # while avoiding oversized outputs in typical Jupyter viewports.
     _DEFAULT_TABLE_MAX_HEIGHT: ClassVar[str] = "700px"
 
-    def __init__(  # noqa: PLR0913
+    def __init__(  # noqa: PLR0913, PLR0917
         self: CytoDataFrame_type,
         data: Union[CytoDataFrame_type, pd.DataFrame, str, pathlib.Path],
         data_context_dir: Optional[str] = None,
@@ -840,7 +840,7 @@ class CytoDataFrame(pd.DataFrame):
         return position
 
     @staticmethod
-    def _build_filter_distribution_html(  # noqa: C901, PLR0912, PLR0913, PLR0915
+    def _build_filter_distribution_html(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917
         values: pd.Series,
         selected_range: Tuple[float, float],
         threshold_x: Optional[float] = None,
@@ -2035,7 +2035,7 @@ class CytoDataFrame(pd.DataFrame):
             and str(col).replace("FileName", "PathName") in all_cols
         }
 
-    def search_for_mask_or_outline(  # noqa: PLR0913, PLR0911, C901
+    def search_for_mask_or_outline(  # noqa: PLR0913, PLR0911, PLR0917, C901
         self: CytoDataFrame_type,
         data_value: str,
         pattern_map: dict,
@@ -2644,7 +2644,7 @@ class CytoDataFrame(pd.DataFrame):
 
         return orig_image_array
 
-    def _prepare_cropped_image_layers(  # noqa: C901, PLR0915, PLR0912, PLR0913
+    def _prepare_cropped_image_layers(  # noqa: C901, PLR0915, PLR0912, PLR0913, PLR0917
         self: CytoDataFrame_type,
         data_value: Any,
         bounding_box: Tuple[int, int, int, int],
@@ -3630,7 +3630,7 @@ class CytoDataFrame(pd.DataFrame):
 
         return columns_3d
 
-    def _add_label_overlay_to_plotter(  # noqa: PLR0913
+    def _add_label_overlay_to_plotter(  # noqa: PLR0913, PLR0917
         self: CytoDataFrame_type,
         plotter: Any,
         volume: np.ndarray,
@@ -3969,7 +3969,7 @@ class CytoDataFrame(pd.DataFrame):
         with contextlib.suppress(Exception):
             plotter.render()
 
-    def _build_pyvista_viewer(  # noqa: C901, PLR0912, PLR0913, PLR0915
+    def _build_pyvista_viewer(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917
         self: CytoDataFrame_type,
         volume: np.ndarray,
         backend: str,

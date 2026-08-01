@@ -512,7 +512,7 @@
     <span class="c1"># while avoiding oversized outputs in typical Jupyter viewports.</span>
     <span class="n">_DEFAULT_TABLE_MAX_HEIGHT</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;700px&quot;</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>  <span class="c1"># noqa: PLR0913</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>  <span class="c1"># noqa: PLR0913, PLR0917</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
         <span class="n">data</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">CytoDataFrame_type</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">],</span>
         <span class="n">data_context_dir</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -1275,7 +1275,7 @@
 <div class="viewcode-block" id="CytoDataFrame._build_filter_distribution_html">
 <a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._build_filter_distribution_html">[docs]</a>
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">_build_filter_distribution_html</span><span class="p">(</span>  <span class="c1"># noqa: C901, PLR0912, PLR0913, PLR0915</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_filter_distribution_html</span><span class="p">(</span>  <span class="c1"># noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917</span>
         <span class="n">values</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">,</span>
         <span class="n">selected_range</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span>
         <span class="n">threshold_x</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -2518,7 +2518,7 @@
 
 <div class="viewcode-block" id="CytoDataFrame.search_for_mask_or_outline">
 <a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame.search_for_mask_or_outline">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">search_for_mask_or_outline</span><span class="p">(</span>  <span class="c1"># noqa: PLR0913, PLR0911, C901</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">search_for_mask_or_outline</span><span class="p">(</span>  <span class="c1"># noqa: PLR0913, PLR0911, PLR0917, C901</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
         <span class="n">data_value</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
         <span class="n">pattern_map</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
@@ -3160,7 +3160,7 @@
 
 <div class="viewcode-block" id="CytoDataFrame._prepare_cropped_image_layers">
 <a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._prepare_cropped_image_layers">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">_prepare_cropped_image_layers</span><span class="p">(</span>  <span class="c1"># noqa: C901, PLR0915, PLR0912, PLR0913</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_prepare_cropped_image_layers</span><span class="p">(</span>  <span class="c1"># noqa: C901, PLR0915, PLR0912, PLR0913, PLR0917</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
         <span class="n">data_value</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">bounding_box</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
@@ -4188,7 +4188,7 @@
 
 <div class="viewcode-block" id="CytoDataFrame._add_label_overlay_to_plotter">
 <a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._add_label_overlay_to_plotter">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">_add_label_overlay_to_plotter</span><span class="p">(</span>  <span class="c1"># noqa: PLR0913</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_add_label_overlay_to_plotter</span><span class="p">(</span>  <span class="c1"># noqa: PLR0913, PLR0917</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
         <span class="n">plotter</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
         <span class="n">volume</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
@@ -4545,7 +4545,7 @@
 
 <div class="viewcode-block" id="CytoDataFrame._build_pyvista_viewer">
 <a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._build_pyvista_viewer">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">_build_pyvista_viewer</span><span class="p">(</span>  <span class="c1"># noqa: C901, PLR0912, PLR0913, PLR0915</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_pyvista_viewer</span><span class="p">(</span>  <span class="c1"># noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
         <span class="n">volume</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">backend</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>

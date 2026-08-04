@@ -25,13 +25,13 @@ jobs:
       - name: Fetch tags
         run: git fetch --all --tags
       - name: Python setup
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@v7
       # run pre-commmit checks using prek for faster execution
-      - uses: j178/prek-action@v2
+      - uses: j178/prek-action@v2.0.6
         id: pre_commit
         continue-on-error: true
       - name: Check for changes

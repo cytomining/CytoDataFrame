@@ -1293,6 +1293,36 @@ def test_equalize_clip_limit_passed_to_equalization() -> None:
     assert not np.array_equal(default, mild)
 
 
+def test_equalize_clip_limit_change_invalidates_image_cache(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    The image cache key includes ``equalize_clip_limit``, so changing it on the
+    same frame produces a cache miss and recomputes the pixels (rather than
+    returning the previously cached, differently-equalized image).
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={"equalize_clip_limit": 0.01},
+    )[["Image_FileName_OrigDNA"]][:1]
+
+    before = _decode_html_images(frame._repr_html_(debug=True))[0]
+    # change the clip limit on the same frame (which shares the image cache)
+    frame._custom_attrs["display_options"]["equalize_clip_limit"] = 0.2
+    after = _decode_html_images(frame._repr_html_(debug=True))[0]
+    assert before.shape == after.shape
+    assert not np.array_equal(before, after)
+
+    # reverting reproduces the original (cache hit on the original key)
+    frame._custom_attrs["display_options"]["equalize_clip_limit"] = 0.01
+    reverted = _decode_html_images(frame._repr_html_(debug=True))[0]
+    assert np.array_equal(before, reverted)
+
+
 def test_repr_html_offset_bounding_box_without_bounding_box_columns(
     cytotable_NF1_data_parquet_shrunken: str,
 ):

@@ -2611,7 +2611,8 @@ class CytoDataFrame(pd.DataFrame):
         expensive steps in rendering, and the same field-of-view image is often
         shared by many displayed objects (and re-processed on every re-render,
         e.g. brightness/filter changes). Results are therefore cached by
-        (resolved path, brightness) so that work happens once per unique image.
+        (resolved path, brightness, equalize clip limit) so that work happens
+        once per unique image and recomputes when any of those inputs change.
 
         The returned array is always a private copy that the caller may mutate
         freely (e.g. drawing a center dot) without corrupting the cache.
@@ -2621,8 +2622,18 @@ class CytoDataFrame(pd.DataFrame):
         fails. In both cases the caller should stop and return ``layers``.
         """
         brightness = int(self._custom_attrs["_widget_state"]["scale"])
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        # The equalize clip limit changes the equalized pixels, so include it in
+        # the cache key (normalized to a float) alongside path and brightness;
+        # otherwise changing it on the same frame would return stale pixels.
+        raw_clip_limit = display_options.get("equalize_clip_limit")
+        clip_limit_key = None if raw_clip_limit is None else float(raw_clip_limit)
         cache, cache_disabled, cache_max_entries = self._get_image_display_cache()
-        cache_key = (str(candidate_path), brightness) if not cache_disabled else None
+        cache_key = (
+            (str(candidate_path), brightness, clip_limit_key)
+            if not cache_disabled
+            else None
+        )
 
         if cache_key is not None:
             cached = cache.get(cache_key)
@@ -2703,11 +2714,10 @@ class CytoDataFrame(pd.DataFrame):
             )
         else:
             logger.debug("Adjusting image with adaptive histogram equalization.")
-            display_options = self._custom_attrs.get("display_options", {}) or {}
             orig_image_array = adjust_with_adaptive_histogram_equalization(
                 image=orig_image_array,
                 brightness=brightness,
-                clip_limit=display_options.get("equalize_clip_limit"),
+                clip_limit=raw_clip_limit,
             )
 
         orig_image_array = self._ensure_uint8(orig_image_array)

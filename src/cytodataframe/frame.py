@@ -266,16 +266,28 @@ class CytoDataFrame(pd.DataFrame):
                       suffix such as "OrigDNA", or a substring),
                       e.g. {'composite_channels': ['OrigDNA', 'OrigRNA']}
                     * a mapping of channel identifier to color (a named color
-                      such as "blue" or an (r, g, b) tuple),
+                      such as "blue", a hex string such as "#0000ff", or an
+                      (r, g, b) tuple),
                       e.g. {'composite_channels':
-                      {'OrigDNA': 'blue', 'OrigRNA': 'green', 'OrigAGP': 'red'}}
+                      {'OrigDNA': 'blue', 'OrigRNA': '#00ff00',
+                      'OrigAGP': (255, 0, 0)}}
                   The composite is the same size as the individual channel
                   crops and also shows the segmentation outline and red center
                   dot when those are configured. Individual channel columns
-                  still render as usual.
+                  still render as usual. A small color legend mapping each
+                  channel to its color is shown with the table so auto-colored
+                  ("all") composites can still be interpreted.
                 - 'composite_column_name': Name of the column used to hold the
                   merged composite. Defaults to "Image_Composite".
                   e.g. {'composite_column_name': 'Image_Merged'}
+                - 'equalize_clip_limit': Contrast clip limit for the adaptive
+                  histogram equalization applied to displayed crops. By default
+                  the clip limit is derived from 'brightness'; provide a small
+                  value (e.g. 0.01) for a milder, less over-saturated result,
+                  which is often preferable for merged channel composites. This
+                  is a simpler alternative to supplying a custom
+                  'image_adjustment' function.
+                  e.g. {'equalize_clip_limit': 0.01}
                 - 'ignore_image_path_columns': When True and a data_context_dir is set,
                   ignore any PathName_* or other image path columns and resolve images
                   only via data_context_dir + filename.
@@ -2691,9 +2703,11 @@ class CytoDataFrame(pd.DataFrame):
             )
         else:
             logger.debug("Adjusting image with adaptive histogram equalization.")
+            display_options = self._custom_attrs.get("display_options", {}) or {}
             orig_image_array = adjust_with_adaptive_histogram_equalization(
                 image=orig_image_array,
                 brightness=brightness,
+                clip_limit=display_options.get("equalize_clip_limit"),
             )
 
         orig_image_array = self._ensure_uint8(orig_image_array)
@@ -3257,12 +3271,16 @@ class CytoDataFrame(pd.DataFrame):
         """
         Resolve a channel color specification to an ``(r, g, b)`` tuple.
 
-        Accepts a named color (e.g. ``"blue"``) or an explicit RGB
-        sequence (e.g. ``(0, 0, 255)`` or ``[0, 0, 255]``). Returns None
-        when the value cannot be understood as a color.
+        Accepts a named color (e.g. ``"blue"``), a hex string (e.g.
+        ``"#0000ff"`` or ``"#00f"``), or an explicit RGB sequence (e.g.
+        ``(0, 0, 255)`` or ``[0, 0, 255]``). Returns None when the value
+        cannot be understood as a color.
         """
         if isinstance(value, str):
-            return COMPOSITE_NAMED_COLORS.get(value.strip().lower())
+            text = value.strip()
+            if text.startswith("#"):
+                return CytoDataFrame._hex_to_rgb(text)
+            return COMPOSITE_NAMED_COLORS.get(text.lower())
         if isinstance(value, (tuple, list)) and len(value) == 3:  # noqa: PLR2004
             try:
                 return tuple(
@@ -3271,6 +3289,28 @@ class CytoDataFrame(pd.DataFrame):
             except (TypeError, ValueError):
                 return None
         return None
+
+    @staticmethod
+    def _hex_to_rgb(value: str) -> Optional[Tuple[int, int, int]]:
+        """
+        Convert a ``#RGB`` or ``#RRGGBB`` hex string to an ``(r, g, b)`` tuple.
+
+        Returns None when the string is not a valid 3- or 6-digit hex color.
+        """
+        digits = value.lstrip("#").strip()
+        if len(digits) == 3:  # noqa: PLR2004
+            # expand shorthand (e.g. "0af" -> "00aaff")
+            digits = "".join(component * 2 for component in digits)
+        if len(digits) != 6:  # noqa: PLR2004
+            return None
+        try:
+            return (
+                int(digits[0:2], 16),
+                int(digits[2:4], 16),
+                int(digits[4:6], 16),
+            )
+        except ValueError:
+            return None
 
     @staticmethod
     def _match_channel_column(identifier: Any, image_cols: Sequence[Any]) -> Any:
@@ -5167,6 +5207,11 @@ class CytoDataFrame(pd.DataFrame):
                     "compartment_center_xy explicitly."
                 )
 
+            # Resolved (channel, color) pairs for the composite, captured so a
+            # color legend can be shown alongside the table (e.g. so users of
+            # the "all" form can tell which channel is which color).
+            composite_legend_specs: List[Tuple[Any, Tuple[int, int, int]]] = []
+
             if has_bounding_box or offset_crop_without_bbox or render_whole_image:
                 bounding_box_cols = (
                     self._custom_attrs["data_bounding_box"].columns.tolist()
@@ -5219,6 +5264,7 @@ class CytoDataFrame(pd.DataFrame):
                 # HTML below, since the composite reads the raw image filenames.
                 composite_channel_specs = self._resolve_composite_channels(image_cols)
                 if composite_channel_specs:
+                    composite_legend_specs = composite_channel_specs
                     composite_column_name = display_options.get(
                         "composite_column_name", COMPOSITE_DEFAULT_COLUMN_NAME
                     )
@@ -5354,10 +5400,49 @@ class CytoDataFrame(pd.DataFrame):
                 "table.dataframe tbody tr:nth-child(even) {background:#F5F5F5;}"
                 "</style>"
             )
-            return style + table_html
+            legend = self._build_composite_legend_html(composite_legend_specs)
+            return style + legend + table_html
 
         else:
             return None
+
+    @staticmethod
+    def _build_composite_legend_html(
+        channel_specs: Sequence[Tuple[Any, Tuple[int, int, int]]],
+    ) -> str:
+        """
+        Build a small color legend for a merged channel composite.
+
+        Shows which channel maps to which color so the composite (including the
+        auto-colored ``"all"`` form) can be interpreted and captioned. Returns
+        an empty string when there are no composite channels.
+        """
+        if not channel_specs:
+            return ""
+
+        items = []
+        for column, color in channel_specs:
+            column_str = str(column)
+            channel = (
+                column_str.split("FileName_", 1)[1]
+                if "FileName_" in column_str
+                else column_str
+            )
+            swatch = (
+                "display:inline-block;width:11px;height:11px;margin-right:4px;"
+                f"border:1px solid #999;background:rgb({color[0]},{color[1]},"
+                f"{color[2]});vertical-align:middle;"
+            )
+            items.append(
+                f'<span style="margin-right:12px;white-space:nowrap;">'
+                f'<span style="{swatch}"></span>{channel}</span>'
+            )
+
+        return (
+            '<div style="font-size:12px;margin:2px 0 6px 0;color:#333;">'
+            '<span style="font-weight:600;margin-right:8px;">Composite colors:'
+            "</span>" + "".join(items) + "</div>"
+        )
 
     def _render_output(self: CytoDataFrame_type) -> None:
         # Return a hidden div that nbconvert will keep but Jupyter will ignore

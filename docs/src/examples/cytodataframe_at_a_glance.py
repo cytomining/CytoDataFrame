@@ -7,7 +7,7 @@
 #       format_version: '1.5'
 #       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: CytoDataFrame (3.13.5.final.0)
+#     display_name: CytoDataFrame (3.13.5)
 #     language: python
 #     name: python3
 # ---
@@ -121,16 +121,20 @@ CytoDataFrame(
 # single-cell crop composite (similar to a Fiji composite). Each channel is
 # tinted a color and additively blended so colocalization is easy to see.
 # Channels may be named by their column, their channel suffix (e.g. "OrigDNA"),
-# or a substring. The merged image is added as a new "Image_Composite" column.
+# or a substring, and colors may be a name, a hex code, or an (r, g, b) tuple.
+# The merged image is added as a new "Image_Composite" column and a small color
+# legend is shown with the table. "equalize_clip_limit" is an easy contrast
+# knob: a small value gives a milder, less over-saturated composite.
 CytoDataFrame(
     data=f"{jump_data_path}/BR00117006_shrunken.parquet",
     data_context_dir=f"{jump_data_path}/images/orig",
     display_options={
         "composite_channels": {
             "OrigDNA": "blue",
-            "OrigRNA": "green",
-            "OrigAGP": "red",
-        }
+            "OrigRNA": "#00ff00",
+            "OrigAGP": (255, 0, 0),
+        },
+        "equalize_clip_limit": 0.01,
     },
 )[
     [
@@ -144,11 +148,12 @@ CytoDataFrame(
 
 # %%time
 # the same composite feature can merge *all* image channels at once using
-# default (Fiji-like) colors by passing "all".
+# default (Fiji-like) colors by passing "all". The color legend shown with the
+# table indicates which channel each color represents.
 CytoDataFrame(
     data=f"{jump_data_path}/BR00117006_shrunken.parquet",
     data_context_dir=f"{jump_data_path}/images/orig",
-    display_options={"composite_channels": "all"},
+    display_options={"composite_channels": "all", "equalize_clip_limit": 0.01},
 )[
     [
         "Metadata_ImageNumber",
@@ -173,7 +178,8 @@ CytoDataFrame(
             "OrigDNA": "blue",
             "OrigRNA": "magenta",
             "OrigAGP": "red",
-        }
+        },
+        "equalize_clip_limit": 0.01,
     },
 )[
     [

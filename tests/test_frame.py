@@ -27,12 +27,14 @@ from pyarrow import parquet
 
 import cytodataframe
 from cytodataframe.frame import (
+    COMPOSITE_DEFAULT_PALETTE,
     FILTER_SLIDER_LABEL_WIDTH_PX,
     FILTER_SLIDER_READOUT_WIDTH_PX,
     FILTER_SLIDER_TOTAL_WIDTH_PX,
     MAX_FILTER_SLIDER_STOPS,
     CytoDataFrame,
 )
+from cytodataframe.image import adjust_with_adaptive_histogram_equalization
 from tests.utils import (
     cytodataframe_image_display_contains_pixels,
 )
@@ -1144,6 +1146,13 @@ def test_resolve_composite_color_and_channel_matching() -> None:
     assert CytoDataFrame._resolve_composite_color("not-a-color") is None
     assert CytoDataFrame._resolve_composite_color((1, 2)) is None
 
+    # hex colors (6-digit, 3-digit shorthand, case-insensitive) resolve too
+    assert CytoDataFrame._resolve_composite_color("#0000ff") == (0, 0, 255)
+    assert CytoDataFrame._resolve_composite_color("#00FF00") == (0, 255, 0)
+    assert CytoDataFrame._resolve_composite_color("#0af") == (0, 170, 255)
+    assert CytoDataFrame._resolve_composite_color("#zzzzzz") is None
+    assert CytoDataFrame._resolve_composite_color("#12") is None
+
     image_cols = ["Image_FileName_OrigDNA", "Image_FileName_OrigRNA"]
     # exact column name, channel suffix, and substring all match
     assert (
@@ -1190,6 +1199,98 @@ def test_resolve_composite_channels_forms(
     assert _resolved(["OrigDNA", "DoesNotExist"]) == [
         ("Image_FileName_OrigDNA", (255, 0, 0))
     ]
+
+
+def test_composite_default_palette_assigned_in_order(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    When colors are not specified, channels get the default (Fiji-like) palette
+    in order. This documents how ``"all"`` and bare channel lists are colored.
+    """
+    image_cols = [
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+        "Image_FileName_OrigER",
+    ]
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        display_options={"composite_channels": "all"},
+    )
+    resolved = frame._resolve_composite_channels(image_cols)
+    assert [col for col, _ in resolved] == image_cols
+    # colors follow the default palette order (red, green, blue, gray, ...)
+    assert [color for _, color in resolved] == list(
+        COMPOSITE_DEFAULT_PALETTE[: len(image_cols)]
+    )
+
+
+def test_composite_render_includes_color_legend(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    Rendering a composite includes a color legend mapping each channel to its
+    color, so an auto-colored (``"all"``) composite can still be interpreted.
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={"composite_channels": "all"},
+    )[["Image_FileName_OrigAGP", "Image_FileName_OrigDNA"]][:2]
+    html_output = frame._repr_html_(debug=True)
+    assert "Composite colors:" in html_output
+    # legend lists each channel with its default palette color swatch
+    assert "OrigAGP" in html_output and "rgb(255,0,0)" in html_output
+    assert "OrigDNA" in html_output and "rgb(0,255,0)" in html_output
+
+    # no composite -> no legend
+    plain = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+    )[["Image_FileName_OrigAGP", "Image_FileName_OrigDNA"]][:2]
+    assert "Composite colors:" not in plain._repr_html_(debug=True)
+
+
+def test_equalize_clip_limit_option_changes_rendered_image(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    The ``equalize_clip_limit`` display option provides a simple contrast knob
+    (a milder value avoids over-saturated crops) and changes the rendered image.
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    cols = ["Image_FileName_OrigDNA"]
+
+    def _first_image(display_options: dict) -> np.ndarray:
+        frame = CytoDataFrame(
+            data=cytotable_pediatric_cancer_atlas_parquet,
+            data_context_dir=image_dir,
+            display_options=display_options,
+        )[cols][:1]
+        return _decode_html_images(frame._repr_html_(debug=True))[0]
+
+    default_image = _first_image({})
+    mild_image = _first_image({"equalize_clip_limit": 0.01})
+    assert default_image.shape == mild_image.shape
+    assert not np.array_equal(default_image, mild_image)
+
+
+def test_equalize_clip_limit_passed_to_equalization() -> None:
+    """A provided clip_limit overrides the brightness-derived one."""
+    rng = np.random.default_rng(0)
+    image = (rng.random((64, 80)) * 255).astype(np.uint8)
+    default = adjust_with_adaptive_histogram_equalization(image, brightness=50)
+    mild = adjust_with_adaptive_histogram_equalization(
+        image, brightness=50, clip_limit=0.01
+    )
+    assert default.shape == mild.shape
+    assert not np.array_equal(default, mild)
 
 
 def test_repr_html_offset_bounding_box_without_bounding_box_columns(

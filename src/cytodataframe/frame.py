@@ -100,17 +100,18 @@ COMPOSITE_NAMED_COLORS: Dict[str, Tuple[int, int, int]] = {
 }
 
 # Default per-channel colors used when a composite is requested without
-# explicit colors. Ordering mirrors Fiji's default composite channel colors
-# (red, green, blue, gray, cyan, magenta, yellow) so results feel familiar to
-# users coming from ImageJ/Fiji. Channels beyond the palette length cycle.
+# explicit colors. Cyan/magenta/yellow (CMY) lead the palette because those
+# colors blend more legibly than red/green/blue in additive composites (they
+# stay distinguishable where channels overlap). Remaining colors follow as
+# fallbacks, and channels beyond the palette length cycle.
 COMPOSITE_DEFAULT_PALETTE: Tuple[Tuple[int, int, int], ...] = (
-    (255, 0, 0),  # red
-    (0, 255, 0),  # green
-    (0, 0, 255),  # blue
-    (255, 255, 255),  # gray
     (0, 255, 255),  # cyan
     (255, 0, 255),  # magenta
     (255, 255, 0),  # yellow
+    (0, 255, 0),  # green
+    (255, 0, 0),  # red
+    (0, 0, 255),  # blue
+    (255, 255, 255),  # gray
 )
 
 # Default column name used to hold the merged single-cell channel composite.
@@ -260,17 +261,18 @@ class CytoDataFrame(pd.DataFrame):
                   single-cell crop composite (similar to a Fiji composite),
                   rendered as an additional column. Channels are cropped to the
                   same cell, tinted per channel, and additively blended. Accepts:
-                    * "all" to merge every image channel using default colors,
+                    * "all" to merge every image channel using default colors
+                      (cyan/magenta/yellow, which read more clearly than
+                      red/green/blue where channels overlap),
                       e.g. {'composite_channels': 'all'}
                     * a list of channel identifiers (full column name, channel
                       suffix such as "OrigDNA", or a substring),
                       e.g. {'composite_channels': ['OrigDNA', 'OrigRNA']}
                     * a mapping of channel identifier to color (a named color
-                      such as "blue", a hex string such as "#0000ff", or an
+                      such as "cyan", a hex string such as "#ff00ff", or an
                       (r, g, b) tuple),
                       e.g. {'composite_channels':
-                      {'OrigDNA': 'blue', 'OrigRNA': '#00ff00',
-                      'OrigAGP': (255, 0, 0)}}
+                      {'OrigDNA': 'cyan', 'OrigRNA': '#ff00ff'}}
                   The composite is the same size as the individual channel
                   crops and also shows the segmentation outline and red center
                   dot when those are configured. Individual channel columns

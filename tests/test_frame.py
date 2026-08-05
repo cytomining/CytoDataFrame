@@ -1186,7 +1186,7 @@ def test_resolve_composite_channels_forms(
     # "all" uses every channel with palette colors in column order
     all_resolved = _resolved("all")
     assert [col for col, _ in all_resolved] == image_cols
-    assert all_resolved[0][1] == (255, 0, 0)  # first palette color (red)
+    assert all_resolved[0][1] == (0, 255, 255)  # first palette color (cyan)
 
     # a mapping uses the requested channels and explicit colors
     mapping_resolved = _resolved({"OrigDNA": "green", "OrigAGP": (10, 20, 30)})
@@ -1197,7 +1197,7 @@ def test_resolve_composite_channels_forms(
 
     # unknown channels are skipped
     assert _resolved(["OrigDNA", "DoesNotExist"]) == [
-        ("Image_FileName_OrigDNA", (255, 0, 0))
+        ("Image_FileName_OrigDNA", (0, 255, 255))
     ]
 
 
@@ -1205,8 +1205,9 @@ def test_composite_default_palette_assigned_in_order(
     cytotable_pediatric_cancer_atlas_parquet: str,
 ) -> None:
     """
-    When colors are not specified, channels get the default (Fiji-like) palette
-    in order. This documents how ``"all"`` and bare channel lists are colored.
+    When colors are not specified, channels get the default (CMY-forward)
+    palette in order. This documents how ``"all"`` and bare channel lists are
+    colored.
     """
     image_cols = [
         "Image_FileName_OrigAGP",
@@ -1220,10 +1221,11 @@ def test_composite_default_palette_assigned_in_order(
     )
     resolved = frame._resolve_composite_channels(image_cols)
     assert [col for col, _ in resolved] == image_cols
-    # colors follow the default palette order (red, green, blue, gray, ...)
+    # colors follow the default palette order (cyan, magenta, yellow, ...)
     assert [color for _, color in resolved] == list(
         COMPOSITE_DEFAULT_PALETTE[: len(image_cols)]
     )
+    assert resolved[0][1] == (0, 255, 255)  # cyan leads the palette
 
 
 def test_composite_render_includes_color_legend(
@@ -1243,9 +1245,9 @@ def test_composite_render_includes_color_legend(
     )[["Image_FileName_OrigAGP", "Image_FileName_OrigDNA"]][:2]
     html_output = frame._repr_html_(debug=True)
     assert "Composite colors:" in html_output
-    # legend lists each channel with its default palette color swatch
-    assert "OrigAGP" in html_output and "rgb(255,0,0)" in html_output
-    assert "OrigDNA" in html_output and "rgb(0,255,0)" in html_output
+    # legend lists each channel with its default (CMY-forward) palette swatch
+    assert "OrigAGP" in html_output and "rgb(0,255,255)" in html_output
+    assert "OrigDNA" in html_output and "rgb(255,0,255)" in html_output
 
     # no composite -> no legend
     plain = CytoDataFrame(

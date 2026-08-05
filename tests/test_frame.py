@@ -27,12 +27,14 @@ from pyarrow import parquet
 
 import cytodataframe
 from cytodataframe.frame import (
+    COMPOSITE_DEFAULT_PALETTE,
     FILTER_SLIDER_LABEL_WIDTH_PX,
     FILTER_SLIDER_READOUT_WIDTH_PX,
     FILTER_SLIDER_TOTAL_WIDTH_PX,
     MAX_FILTER_SLIDER_STOPS,
     CytoDataFrame,
 )
+from cytodataframe.image import adjust_with_adaptive_histogram_equalization
 from tests.utils import (
     cytodataframe_image_display_contains_pixels,
 )
@@ -853,6 +855,474 @@ def test_repr_html_red_pixels(
         ],
         color_conditions={"green": None, "red": 255, "blue": None},
     ), "The pediatric cancer atlas speckles images do not contain red dots."
+
+
+def _decode_html_images(html_output: str) -> list:
+    """Decode every base64 PNG embedded in rendered CytoDataFrame HTML."""
+    decoded = []
+    for base64_data in re.findall(r'data:image/png;base64,([^"]+)', html_output):
+        image = Image.open(BytesIO(base64.b64decode(base64_data))).convert("RGB")
+        decoded.append(np.array(image))
+    return decoded
+
+
+def test_composite_channels_single_channel_is_tinted(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+):
+    """
+    A single-channel composite tinted a pure color produces an image where the
+    other two color channels are zero. Individual (grayscale) channel crops
+    always have R == G == B, so an image with only one non-zero color channel
+    can only be the tinted composite. This makes the assertion deterministic.
+    The center dot is disabled here so the pure-tint invariant holds (the dot
+    and outline overlays are exercised in a dedicated test).
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+
+    # tint the DNA channel pure blue -> composite has red==0, green==0, blue>0
+    blue_frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={
+            "composite_channels": {"OrigDNA": "blue"},
+            "center_dot": False,
+        },
+    )[["Image_FileName_OrigDNA"]][:2]
+    blue_html = blue_frame._repr_html_(debug=True)
+    assert "Image_Composite" in blue_html
+    blue_images = _decode_html_images(blue_html)
+    assert any(
+        img[:, :, 0].max() == 0 and img[:, :, 1].max() == 0 and img[:, :, 2].max() > 0
+        for img in blue_images
+    ), "Expected a blue-tinted composite image (red==0, green==0, blue>0)."
+
+    # tint the DNA channel pure red -> composite has green==0, blue==0, red>0
+    red_frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={
+            "composite_channels": {"OrigDNA": (255, 0, 0)},
+            "center_dot": False,
+        },
+    )[["Image_FileName_OrigDNA"]][:2]
+    red_images = _decode_html_images(red_frame._repr_html_(debug=True))
+    assert any(
+        img[:, :, 0].max() > 0 and img[:, :, 1].max() == 0 and img[:, :, 2].max() == 0
+        for img in red_images
+    ), "Expected a red-tinted composite image (green==0, blue==0, red>0)."
+
+
+def test_composite_channels_match_size_and_show_outline_and_dot(
+    cytotable_NF1_data_parquet_shrunken: str,
+):
+    """
+    The merged composite is rendered at the same size as the individual channel
+    crops and, when a segmentation outline and center dot are configured, shows
+    them just like the other images.
+    """
+    parent = pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent
+    frame = CytoDataFrame(
+        data=cytotable_NF1_data_parquet_shrunken,
+        data_context_dir=f"{parent}/Plate_2_images",
+        data_mask_context_dir=f"{parent}/Plate_2_masks",
+        # tint the single channel blue so the green outline and red dot stand
+        # out unambiguously against the blue-tinted cell body.
+        display_options={"composite_channels": {"DAPI": "blue"}},
+    )[["Image_FileName_DAPI"]][:2]
+
+    images = _decode_html_images(frame._repr_html_(debug=True))
+    # with a single selected channel column, images alternate per row as
+    # [channel, composite]; the composite is every second image.
+    channel_image, composite_image = images[0], images[1]
+
+    # the composite is the same size as the individual channel crop
+    assert composite_image.shape == channel_image.shape
+
+    # the composite shows the segmentation outline (green) and center dot (red)
+    green_outline = (
+        (composite_image[:, :, 1] >= 200)
+        & (composite_image[:, :, 0] <= 80)
+        & (composite_image[:, :, 2] <= 80)
+    )
+    red_dot = (
+        (composite_image[:, :, 0] >= 200)
+        & (composite_image[:, :, 1] <= 80)
+        & (composite_image[:, :, 2] <= 80)
+    )
+    assert np.any(green_outline), "Composite is missing the green segmentation outline."
+    assert np.any(red_dot), "Composite is missing the red center dot."
+
+
+def test_fit_to_shape_resizes_and_passes_through() -> None:
+    """``_fit_to_shape`` resizes to the target and no-ops on a match."""
+    same = np.full((8, 8, 3), 5, dtype=np.uint8)
+    # identical shape returns the array unchanged (byte-identical)
+    assert CytoDataFrame._fit_to_shape(same, (8, 8), smooth=True) is same
+
+    smaller = np.full((4, 4), 200, dtype=np.uint8)
+    grown = CytoDataFrame._fit_to_shape(smaller, (8, 8), smooth=False)
+    assert grown.shape == (8, 8)
+    assert grown.dtype == np.uint8
+
+
+def test_composite_resizes_mismatched_channels(
+    monkeypatch: MonkeyPatch,
+    cytotable_NF1_data_parquet_shrunken: str,
+) -> None:
+    """
+    Channels whose crops differ in size (e.g. different source resolutions) are
+    fit to a single canvas so the composite is a consistent size and every
+    channel still contributes to the blend.
+    """
+    frame = CytoDataFrame(data=cytotable_NF1_data_parquet_shrunken)
+
+    def fake_layers(data_value: object, **_: object) -> dict:
+        # channel "a" renders 20x20, channel "b" renders a smaller 10x10 crop
+        if data_value == "a":
+            arr = np.full((20, 20, 3), 120, dtype=np.uint8)
+        else:
+            arr = np.full((10, 10, 3), 200, dtype=np.uint8)
+        return {"original": arr, "composite": arr}
+
+    monkeypatch.setattr(frame, "_prepare_cropped_image_layers", fake_layers)
+
+    row = pd.Series({"Image_FileName_A": "a", "Image_FileName_B": "b"})
+    channel_specs = [
+        ("Image_FileName_A", (255, 0, 0)),  # red
+        ("Image_FileName_B", (0, 0, 255)),  # blue
+    ]
+    composite = frame._build_channel_composite_array(
+        row=row,
+        channel_specs=channel_specs,
+        bounding_box=None,
+        compartment_center_xy=None,
+        image_path_cols={},
+    )
+    # composite matches the first channel's canvas size, not the smaller channel
+    assert composite.shape == (20, 20, 3)
+    # both channels contributed to the blend (red from "a", blue from "b")
+    assert composite[:, :, 0].max() > 0
+    assert composite[:, :, 2].max() > 0
+
+
+def test_composite_channels_all_and_custom_name(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+):
+    """
+    The ``composite_channels: 'all'`` form adds a merged composite column and
+    ``composite_column_name`` controls the column label.
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={
+            "composite_channels": "all",
+            "composite_column_name": "Image_Merged",
+        },
+    )[["Image_FileName_OrigAGP", "Image_FileName_OrigDNA"]][:2]
+    html_output = frame._repr_html_(debug=True)
+    assert "Image_Merged" in html_output
+    assert "Image_Composite" not in html_output
+
+    # the merged composite of multiple differently-colored channels is not
+    # grayscale: at least one pixel has channels that differ meaningfully.
+    assert any(
+        int(img[:, :, 0].astype(int).max()) - int(img[:, :, 2].astype(int).min()) > 30
+        and np.any(np.abs(img[:, :, 0].astype(int) - img[:, :, 2].astype(int)) > 30)
+        for img in _decode_html_images(html_output)
+    ), "Expected the merged composite to contain non-grayscale (colored) pixels."
+
+
+def test_image_cells_have_min_width_floor(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    Displayed images carry a ``min-width`` floor so image columns keep a
+    consistent, readable size under table width pressure (applied by notebook
+    environments' ``img {max-width:100%}``) instead of a short-headed column
+    such as the merged composite collapsing, or many image columns (e.g. an
+    OME-Arrow table) shrinking to tiny thumbnails.
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={"composite_channels": "all"},
+    )[["Image_FileName_OrigAGP", "Image_FileName_OrigDNA"]][:2]
+    html_output = frame._repr_html_(debug=True)
+    # every displayed image (channels and composite) carries the floor
+    image_styles = re.findall(
+        r'<img[^>]*style="([^"]*)"',
+        re.sub(r"base64,[A-Za-z0-9+/=]+", "", html_output),
+    )
+    assert image_styles
+    assert all("min-width:200px" in style for style in image_styles)
+    # the fragile header-wrap approach is not used (it mangled text headers and
+    # shrank many-column OME-Arrow tables)
+    assert "overflow-wrap" not in html_output
+    # column headers stay on one line so names are never scrunched narrower than
+    # the header (giving each column a reasonable minimum width)
+    assert "table.dataframe thead th {background:#EBEBEB;white-space:nowrap;}" in (
+        html_output
+    )
+
+
+def test_resolve_image_min_width_only_floors_large_pixel_widths() -> None:
+    """The image min-width floor applies only to explicit px widths above it."""
+    # default width gets floored
+    assert CytoDataFrame._resolve_image_min_width("300px") == "200px"
+    # widths at or below the floor, or non-pixel widths, stay responsive
+    assert CytoDataFrame._resolve_image_min_width("200px") is None
+    assert CytoDataFrame._resolve_image_min_width("120px") is None
+    assert CytoDataFrame._resolve_image_min_width("auto") is None
+    assert CytoDataFrame._resolve_image_min_width("100%") is None
+
+
+def test_normalize_css_width_converts_bare_numbers_to_pixels() -> None:
+    """Bare numeric widths become px strings; unit/keyword widths are kept."""
+    # bare numbers (int, float, numeric string) become pixel strings
+    assert CytoDataFrame._normalize_css_width(300) == "300px"
+    assert CytoDataFrame._normalize_css_width("300") == "300px"
+    assert CytoDataFrame._normalize_css_width(300.0) == "300px"
+    assert CytoDataFrame._normalize_css_width("100") == "100px"
+    # values that already carry a unit or keyword are returned unchanged
+    assert CytoDataFrame._normalize_css_width("300px") == "300px"
+    assert CytoDataFrame._normalize_css_width("100%") == "100%"
+    assert CytoDataFrame._normalize_css_width("auto") == "auto"
+
+
+def test_integer_width_emits_valid_css_and_floors(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    An integer ``width`` (as documented) emits a valid pixel width and still
+    participates in the min-width floor.
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={"width": 300},
+    )[["Image_FileName_OrigDNA"]][:1]
+    html_output = frame._repr_html_(debug=True)
+    image_styles = re.findall(
+        r'<img[^>]*style="([^"]*)"',
+        re.sub(r"base64,[A-Za-z0-9+/=]+", "", html_output),
+    )
+    assert image_styles
+    assert all("width:300px" in style for style in image_styles)
+    assert all("min-width:200px" in style for style in image_styles)
+
+
+def test_composite_channels_no_option_adds_no_column(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+):
+    """Without the display option, no composite column is added."""
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+    )[["Image_FileName_OrigAGP", "Image_FileName_OrigDNA"]][:2]
+    assert "Image_Composite" not in frame._repr_html_(debug=True)
+
+
+def test_resolve_composite_color_and_channel_matching() -> None:
+    """Unit tests for the composite color and channel-matching helpers."""
+    # named colors (case-insensitive) and RGB sequences resolve to tuples
+    assert CytoDataFrame._resolve_composite_color("Blue") == (0, 0, 255)
+    assert CytoDataFrame._resolve_composite_color([0, 255, 0]) == (0, 255, 0)
+    assert CytoDataFrame._resolve_composite_color((300, -5, 10)) == (255, 0, 10)
+    assert CytoDataFrame._resolve_composite_color("not-a-color") is None
+    assert CytoDataFrame._resolve_composite_color((1, 2)) is None
+
+    # hex colors (6-digit, 3-digit shorthand, case-insensitive) resolve too
+    assert CytoDataFrame._resolve_composite_color("#0000ff") == (0, 0, 255)
+    assert CytoDataFrame._resolve_composite_color("#00FF00") == (0, 255, 0)
+    assert CytoDataFrame._resolve_composite_color("#0af") == (0, 170, 255)
+    assert CytoDataFrame._resolve_composite_color("#zzzzzz") is None
+    assert CytoDataFrame._resolve_composite_color("#12") is None
+
+    image_cols = ["Image_FileName_OrigDNA", "Image_FileName_OrigRNA"]
+    # exact column name, channel suffix, and substring all match
+    assert (
+        CytoDataFrame._match_channel_column("Image_FileName_OrigDNA", image_cols)
+        == "Image_FileName_OrigDNA"
+    )
+    assert (
+        CytoDataFrame._match_channel_column("OrigRNA", image_cols)
+        == "Image_FileName_OrigRNA"
+    )
+    assert (
+        CytoDataFrame._match_channel_column("dna", image_cols)
+        == "Image_FileName_OrigDNA"
+    )
+    assert CytoDataFrame._match_channel_column("missing", image_cols) is None
+
+
+def test_resolve_composite_channels_forms(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """The composite channel spec resolves across all supported forms."""
+    image_cols = ["Image_FileName_OrigAGP", "Image_FileName_OrigDNA"]
+
+    def _resolved(spec: object) -> list:
+        frame = CytoDataFrame(
+            data=cytotable_pediatric_cancer_atlas_parquet,
+            display_options={"composite_channels": spec},
+        )
+        return frame._resolve_composite_channels(image_cols)
+
+    # "all" uses every channel with palette colors in column order
+    all_resolved = _resolved("all")
+    assert [col for col, _ in all_resolved] == image_cols
+    assert all_resolved[0][1] == (0, 255, 255)  # first palette color (cyan)
+
+    # a mapping uses the requested channels and explicit colors
+    mapping_resolved = _resolved({"OrigDNA": "green", "OrigAGP": (10, 20, 30)})
+    assert mapping_resolved == [
+        ("Image_FileName_OrigDNA", (0, 255, 0)),
+        ("Image_FileName_OrigAGP", (10, 20, 30)),
+    ]
+
+    # unknown channels are skipped
+    assert _resolved(["OrigDNA", "DoesNotExist"]) == [
+        ("Image_FileName_OrigDNA", (0, 255, 255))
+    ]
+
+
+def test_composite_default_palette_assigned_in_order(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    When colors are not specified, channels get the default (CMY-forward)
+    palette in order. This documents how ``"all"`` and bare channel lists are
+    colored.
+    """
+    image_cols = [
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+        "Image_FileName_OrigER",
+    ]
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        display_options={"composite_channels": "all"},
+    )
+    resolved = frame._resolve_composite_channels(image_cols)
+    assert [col for col, _ in resolved] == image_cols
+    # colors follow the default palette order (cyan, magenta, yellow, ...)
+    assert [color for _, color in resolved] == list(
+        COMPOSITE_DEFAULT_PALETTE[: len(image_cols)]
+    )
+    assert resolved[0][1] == (0, 255, 255)  # cyan leads the palette
+
+
+def test_composite_render_includes_color_legend(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    Rendering a composite includes a color legend mapping each channel to its
+    color, so an auto-colored (``"all"``) composite can still be interpreted.
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={"composite_channels": "all"},
+    )[["Image_FileName_OrigAGP", "Image_FileName_OrigDNA"]][:2]
+    html_output = frame._repr_html_(debug=True)
+    assert "Composite colors:" in html_output
+    # legend lists each channel with its default (CMY-forward) palette swatch
+    assert "OrigAGP" in html_output and "rgb(0,255,255)" in html_output
+    assert "OrigDNA" in html_output and "rgb(255,0,255)" in html_output
+
+    # no composite -> no legend
+    plain = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+    )[["Image_FileName_OrigAGP", "Image_FileName_OrigDNA"]][:2]
+    assert "Composite colors:" not in plain._repr_html_(debug=True)
+
+
+def test_equalize_clip_limit_option_changes_rendered_image(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    The ``equalize_clip_limit`` display option provides a simple contrast knob
+    (a milder value avoids over-saturated crops) and changes the rendered image.
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    cols = ["Image_FileName_OrigDNA"]
+
+    def _first_image(display_options: dict) -> np.ndarray:
+        frame = CytoDataFrame(
+            data=cytotable_pediatric_cancer_atlas_parquet,
+            data_context_dir=image_dir,
+            display_options=display_options,
+        )[cols][:1]
+        return _decode_html_images(frame._repr_html_(debug=True))[0]
+
+    default_image = _first_image({})
+    mild_image = _first_image({"equalize_clip_limit": 0.01})
+    assert default_image.shape == mild_image.shape
+    assert not np.array_equal(default_image, mild_image)
+
+
+def test_equalize_clip_limit_passed_to_equalization() -> None:
+    """A provided clip_limit overrides the brightness-derived one."""
+    rng = np.random.default_rng(0)
+    image = (rng.random((64, 80)) * 255).astype(np.uint8)
+    default = adjust_with_adaptive_histogram_equalization(image, brightness=50)
+    mild = adjust_with_adaptive_histogram_equalization(
+        image, brightness=50, clip_limit=0.01
+    )
+    assert default.shape == mild.shape
+    assert not np.array_equal(default, mild)
+
+
+def test_equalize_clip_limit_change_invalidates_image_cache(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    The image cache key includes ``equalize_clip_limit``, so changing it on the
+    same frame produces a cache miss and recomputes the pixels (rather than
+    returning the previously cached, differently-equalized image).
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={"equalize_clip_limit": 0.01},
+    )[["Image_FileName_OrigDNA"]][:1]
+
+    before = _decode_html_images(frame._repr_html_(debug=True))[0]
+    # change the clip limit on the same frame (which shares the image cache)
+    frame._custom_attrs["display_options"]["equalize_clip_limit"] = 0.2
+    after = _decode_html_images(frame._repr_html_(debug=True))[0]
+    assert before.shape == after.shape
+    assert not np.array_equal(before, after)
+
+    # reverting reproduces the original (cache hit on the original key)
+    frame._custom_attrs["display_options"]["equalize_clip_limit"] = 0.01
+    reverted = _decode_html_images(frame._repr_html_(debug=True))[0]
+    assert np.array_equal(before, reverted)
 
 
 def test_repr_html_offset_bounding_box_without_bounding_box_columns(

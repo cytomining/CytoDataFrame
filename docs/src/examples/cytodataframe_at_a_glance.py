@@ -117,6 +117,78 @@ CytoDataFrame(
 ][:3]
 
 # %%time
+# view JUMP plate BR00117006 and merge multiple channels into a single
+# single-cell crop composite (similar to a Fiji composite). Each channel is
+# tinted a color and additively blended so colocalization is easy to see.
+# Here we combine the nucleus (DNA) with the cell-segmentation channel (RNA for
+# JUMP) using cyan/magenta, which read more clearly than red/green/blue where
+# channels overlap. Channels may be named by their column, their channel suffix
+# (e.g. "OrigDNA"), or a substring, and colors may be a name, a hex code, or an
+# (r, g, b) tuple. The merged image is added as a new "Image_Composite" column
+# and a small color legend is shown with the table. "equalize_clip_limit" is an
+# easy contrast knob: a small value gives a milder, less over-saturated result.
+CytoDataFrame(
+    data=f"{jump_data_path}/BR00117006_shrunken.parquet",
+    data_context_dir=f"{jump_data_path}/images/orig",
+    display_options={
+        "composite_channels": {
+            "OrigDNA": "cyan",
+            "OrigRNA": "#ff00ff",
+        },
+        "equalize_clip_limit": 0.01,
+    },
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:3]
+
+# %%time
+# the same composite feature can merge *all* image channels at once by passing
+# "all", using default cyan/magenta/yellow (CMY) colors. The color legend shown
+# with the table indicates which channel each color represents.
+CytoDataFrame(
+    data=f"{jump_data_path}/BR00117006_shrunken.parquet",
+    data_context_dir=f"{jump_data_path}/images/orig",
+    display_options={"composite_channels": "all", "equalize_clip_limit": 0.01},
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:3]
+
+# %%time
+# composites also keep the segmentation outline and red center dot when those
+# are configured, so a single merged view still shows where each object was
+# segmented. Here we merge channels and overlay outlines from the segmentation
+# directory (cyan/magenta channels keep the green outline easy to distinguish).
+CytoDataFrame(
+    data=f"{jump_data_path}/BR00117006_shrunken.parquet",
+    data_context_dir=f"{jump_data_path}/images/orig",
+    data_outline_context_dir=f"{jump_data_path}/images/outlines",
+    display_options={
+        "composite_channels": {
+            "OrigDNA": "cyan",
+            "OrigRNA": "magenta",
+        },
+        "equalize_clip_limit": 0.01,
+    },
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:3]
+
+# %%time
 # view JUMP plate BR00117006 with images and adjust the brightness
 CytoDataFrame(
     data=f"{jump_data_path}/BR00117006_shrunken.parquet",

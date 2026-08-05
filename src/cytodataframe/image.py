@@ -2,7 +2,7 @@
 Helper functions for working with images in the context of CytoDataFrames.
 """
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import cv2
 import imageio.v2 as imageio
@@ -248,7 +248,7 @@ def draw_outline_on_image_from_mask(
 
 
 def adjust_with_adaptive_histogram_equalization(
-    image: np.ndarray, brightness: int = 50
+    image: np.ndarray, brightness: int = 50, clip_limit: Optional[float] = None
 ) -> np.ndarray:
     """
     Adaptive histogram equalization with brightness and contrast tuning via gamma.
@@ -256,6 +256,11 @@ def adjust_with_adaptive_histogram_equalization(
     Parameters:
         image (np.ndarray): Input image.
         brightness (int): 0 = dark, 50 = neutral, 100 = bright.
+        clip_limit (Optional[float]): Contrast clip limit passed to
+            ``skimage.exposure.equalize_adapthist``. When None (default), the
+            clip limit is derived from ``brightness``. Provide a small value
+            (e.g. ``0.01``) for a milder, less over-saturated equalization,
+            which is often preferable for merged channel composites.
 
     Returns:
         np.ndarray: Adjusted image.
@@ -269,7 +274,10 @@ def adjust_with_adaptive_histogram_equalization(
         max(int(image.shape[1] * kernel_frac), 1),
     )
 
-    clip_limit = 0.1 * (1 - b) + 0.01 * b
+    # Derive the clip limit from brightness unless an explicit value is given.
+    resolved_clip_limit = 0.1 * (1 - b) + 0.01 * b
+    if clip_limit is not None:
+        resolved_clip_limit = float(clip_limit)
     nbins = int(128 * (1 - b) + 1024 * b)
 
     def equalize_and_adjust(channel: np.ndarray) -> np.ndarray:
@@ -286,7 +294,7 @@ def adjust_with_adaptive_histogram_equalization(
         eq = exposure.equalize_adapthist(
             channel,
             kernel_size=kernel_size,
-            clip_limit=clip_limit,
+            clip_limit=resolved_clip_limit,
             nbins=nbins,
         )
         brightness_shift = (b - 0.5) * 2  # [-1, 1]

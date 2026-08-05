@@ -446,6 +446,7 @@
     <span class="n">draw_outline_on_image_from_mask</span><span class="p">,</span>
     <span class="n">draw_outline_on_image_from_outline</span><span class="p">,</span>
     <span class="n">get_pixel_bbox_from_offsets</span><span class="p">,</span>
+    <span class="n">image_array_to_grayscale</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.volume</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">build_3d_html_from_path</span><span class="p">,</span>
@@ -480,6 +481,50 @@
 <span class="n">FILTER_PLOT_Y_GAMMA_DEFAULT</span> <span class="o">=</span> <span class="mf">0.6</span>
 <span class="n">FILTER_PLOT_Y_TAIL_LOG_SCALE_DEFAULT</span> <span class="o">=</span> <span class="mf">0.35</span>
 <span class="n">FILTER_SLIDER_CSS_CLASS</span> <span class="o">=</span> <span class="s2">&quot;cdf-filter-range-slider&quot;</span>
+
+<span class="c1"># Named colors that may be used to tint channels within a merged composite</span>
+<span class="c1"># (see the ``composite_channels`` display option). Values are RGB tuples.</span>
+<span class="n">COMPOSITE_NAMED_COLORS</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;red&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+    <span class="s2">&quot;green&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+    <span class="s2">&quot;blue&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span>
+    <span class="s2">&quot;cyan&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span>
+    <span class="s2">&quot;magenta&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span>
+    <span class="s2">&quot;yellow&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+    <span class="s2">&quot;gray&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span>
+    <span class="s2">&quot;grey&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span>
+    <span class="s2">&quot;white&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span>
+    <span class="s2">&quot;orange&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">165</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+<span class="p">}</span>
+
+<span class="c1"># Default per-channel colors used when a composite is requested without</span>
+<span class="c1"># explicit colors. Cyan/magenta/yellow (CMY) lead the palette because those</span>
+<span class="c1"># colors blend more legibly than red/green/blue in additive composites (they</span>
+<span class="c1"># stay distinguishable where channels overlap). Remaining colors follow as</span>
+<span class="c1"># fallbacks, and channels beyond the palette length cycle.</span>
+<span class="n">COMPOSITE_DEFAULT_PALETTE</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span>  <span class="c1"># cyan</span>
+    <span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span>  <span class="c1"># magenta</span>
+    <span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>  <span class="c1"># yellow</span>
+    <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>  <span class="c1"># green</span>
+    <span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>  <span class="c1"># red</span>
+    <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span>  <span class="c1"># blue</span>
+    <span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span>  <span class="c1"># gray</span>
+<span class="p">)</span>
+
+<span class="c1"># Default column name used to hold the merged single-cell channel composite.</span>
+<span class="n">COMPOSITE_DEFAULT_COLUMN_NAME</span> <span class="o">=</span> <span class="s2">&quot;Image_Composite&quot;</span>
+
+<span class="c1"># Minimum on-screen width (px) for displayed image cells. Notebook environments</span>
+<span class="c1"># apply ``img {max-width:100%}``, so under table width pressure each image column</span>
+<span class="c1"># shrinks toward its header width -- which lets a short-headed column (such as</span>
+<span class="c1"># the merged &quot;Image_Composite&quot; column) collapse smaller than the longer channel</span>
+<span class="c1"># columns, and squeezes rows with many image columns (e.g. OME-Arrow tables that</span>
+<span class="c1"># expand each channel into several columns) down to unreadably small thumbnails.</span>
+<span class="c1"># Flooring the image width keeps all image cells a consistent, readable size and</span>
+<span class="c1"># lets the table scroll instead. Only applied when the configured display width</span>
+<span class="c1"># is an explicit pixel value larger than this floor.</span>
+<span class="n">IMAGE_MIN_DISPLAY_WIDTH_PX</span> <span class="o">=</span> <span class="mi">200</span>
 
 <span class="c1"># provide backwards compatibility for Self type in earlier Python versions.</span>
 <span class="c1"># see: https://peps.python.org/pep-0484/#annotating-instance-and-class-methods</span>
@@ -612,6 +657,39 @@
 <span class="sd">                  }</span>
 <span class="sd">                - Alternatively, set a global pixel size in &#39;display_options&#39;:</span>
 <span class="sd">                  {&#39;um_per_pixel&#39;: 0.325}  # used if not provided under &#39;scale_bar&#39;</span>
+<span class="sd">                - &#39;composite_channels&#39;: Merge several channels into a single</span>
+<span class="sd">                  single-cell crop composite (similar to a Fiji composite),</span>
+<span class="sd">                  rendered as an additional column. Channels are cropped to the</span>
+<span class="sd">                  same cell, tinted per channel, and additively blended. Accepts:</span>
+<span class="sd">                    * &quot;all&quot; to merge every image channel using default colors</span>
+<span class="sd">                      (cyan/magenta/yellow, which read more clearly than</span>
+<span class="sd">                      red/green/blue where channels overlap),</span>
+<span class="sd">                      e.g. {&#39;composite_channels&#39;: &#39;all&#39;}</span>
+<span class="sd">                    * a list of channel identifiers (full column name, channel</span>
+<span class="sd">                      suffix such as &quot;OrigDNA&quot;, or a substring),</span>
+<span class="sd">                      e.g. {&#39;composite_channels&#39;: [&#39;OrigDNA&#39;, &#39;OrigRNA&#39;]}</span>
+<span class="sd">                    * a mapping of channel identifier to color (a named color</span>
+<span class="sd">                      such as &quot;cyan&quot;, a hex string such as &quot;#ff00ff&quot;, or an</span>
+<span class="sd">                      (r, g, b) tuple),</span>
+<span class="sd">                      e.g. {&#39;composite_channels&#39;:</span>
+<span class="sd">                      {&#39;OrigDNA&#39;: &#39;cyan&#39;, &#39;OrigRNA&#39;: &#39;#ff00ff&#39;}}</span>
+<span class="sd">                  The composite is the same size as the individual channel</span>
+<span class="sd">                  crops and also shows the segmentation outline and red center</span>
+<span class="sd">                  dot when those are configured. Individual channel columns</span>
+<span class="sd">                  still render as usual. A small color legend mapping each</span>
+<span class="sd">                  channel to its color is shown with the table so auto-colored</span>
+<span class="sd">                  (&quot;all&quot;) composites can still be interpreted.</span>
+<span class="sd">                - &#39;composite_column_name&#39;: Name of the column used to hold the</span>
+<span class="sd">                  merged composite. Defaults to &quot;Image_Composite&quot;.</span>
+<span class="sd">                  e.g. {&#39;composite_column_name&#39;: &#39;Image_Merged&#39;}</span>
+<span class="sd">                - &#39;equalize_clip_limit&#39;: Contrast clip limit for the adaptive</span>
+<span class="sd">                  histogram equalization applied to displayed crops. By default</span>
+<span class="sd">                  the clip limit is derived from &#39;brightness&#39;; provide a small</span>
+<span class="sd">                  value (e.g. 0.01) for a milder, less over-saturated result,</span>
+<span class="sd">                  which is often preferable for merged channel composites. This</span>
+<span class="sd">                  is a simpler alternative to supplying a custom</span>
+<span class="sd">                  &#39;image_adjustment&#39; function.</span>
+<span class="sd">                  e.g. {&#39;equalize_clip_limit&#39;: 0.01}</span>
 <span class="sd">                - &#39;ignore_image_path_columns&#39;: When True and a data_context_dir is set,</span>
 <span class="sd">                  ignore any PathName_* or other image path columns and resolve images</span>
 <span class="sd">                  only via data_context_dir + filename.</span>
@@ -3048,7 +3126,8 @@
 <span class="sd">        expensive steps in rendering, and the same field-of-view image is often</span>
 <span class="sd">        shared by many displayed objects (and re-processed on every re-render,</span>
 <span class="sd">        e.g. brightness/filter changes). Results are therefore cached by</span>
-<span class="sd">        (resolved path, brightness) so that work happens once per unique image.</span>
+<span class="sd">        (resolved path, brightness, equalize clip limit) so that work happens</span>
+<span class="sd">        once per unique image and recomputes when any of those inputs change.</span>
 
 <span class="sd">        The returned array is always a private copy that the caller may mutate</span>
 <span class="sd">        freely (e.g. drawing a center dot) without corrupting the cache.</span>
@@ -3058,8 +3137,18 @@
 <span class="sd">        fails. In both cases the caller should stop and return ``layers``.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">brightness</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_widget_state&quot;</span><span class="p">][</span><span class="s2">&quot;scale&quot;</span><span class="p">])</span>
+        <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="c1"># The equalize clip limit changes the equalized pixels, so include it in</span>
+        <span class="c1"># the cache key (normalized to a float) alongside path and brightness;</span>
+        <span class="c1"># otherwise changing it on the same frame would return stale pixels.</span>
+        <span class="n">raw_clip_limit</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;equalize_clip_limit&quot;</span><span class="p">)</span>
+        <span class="n">clip_limit_key</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">raw_clip_limit</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="n">raw_clip_limit</span><span class="p">)</span>
         <span class="n">cache</span><span class="p">,</span> <span class="n">cache_disabled</span><span class="p">,</span> <span class="n">cache_max_entries</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_image_display_cache</span><span class="p">()</span>
-        <span class="n">cache_key</span> <span class="o">=</span> <span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">candidate_path</span><span class="p">),</span> <span class="n">brightness</span><span class="p">)</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">cache_disabled</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">cache_key</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">candidate_path</span><span class="p">),</span> <span class="n">brightness</span><span class="p">,</span> <span class="n">clip_limit_key</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">cache_disabled</span>
+            <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
 
         <span class="k">if</span> <span class="n">cache_key</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">cached</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
@@ -3143,6 +3232,7 @@
             <span class="n">orig_image_array</span> <span class="o">=</span> <span class="n">adjust_with_adaptive_histogram_equalization</span><span class="p">(</span>
                 <span class="n">image</span><span class="o">=</span><span class="n">orig_image_array</span><span class="p">,</span>
                 <span class="n">brightness</span><span class="o">=</span><span class="n">brightness</span><span class="p">,</span>
+                <span class="n">clip_limit</span><span class="o">=</span><span class="n">raw_clip_limit</span><span class="p">,</span>
             <span class="p">)</span>
 
         <span class="n">orig_image_array</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_uint8</span><span class="p">(</span><span class="n">orig_image_array</span><span class="p">)</span>
@@ -3514,6 +3604,49 @@
         <span class="k">return</span> <span class="n">layers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;composite&quot;</span><span class="p">),</span> <span class="n">layers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_HTML_3D_STUB_KEY</span><span class="p">)</span></div>
 
 
+<div class="viewcode-block" id="CytoDataFrame._normalize_css_width">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._normalize_css_width">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_normalize_css_width</span><span class="p">(</span><span class="n">width</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Normalize a bare numeric width to a CSS pixel string.</span>
+
+<span class="sd">        Integer/float widths (e.g. ``300``) and pure-numeric strings (e.g.</span>
+<span class="sd">        ``&quot;300&quot;``) become ``&quot;300px&quot;`` so they emit valid CSS and participate in</span>
+<span class="sd">        the min-width floor. Values already carrying a unit or keyword (e.g.</span>
+<span class="sd">        ``&quot;300px&quot;``, ``&quot;100%&quot;``, ``&quot;auto&quot;``) are returned unchanged.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">width</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">width</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">width</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
+            <span class="n">number</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">width</span><span class="p">)</span> <span class="k">if</span> <span class="nb">float</span><span class="p">(</span><span class="n">width</span><span class="p">)</span><span class="o">.</span><span class="n">is_integer</span><span class="p">()</span> <span class="k">else</span> <span class="n">width</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">number</span><span class="si">}</span><span class="s2">px&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">width</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">re</span><span class="o">.</span><span class="n">fullmatch</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\s*\d+(?:\.\d+)?\s*&quot;</span><span class="p">,</span> <span class="n">width</span><span class="p">):</span>
+            <span class="n">number</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">width</span><span class="p">)</span>
+            <span class="n">number</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">number</span><span class="p">)</span> <span class="k">if</span> <span class="n">number</span><span class="o">.</span><span class="n">is_integer</span><span class="p">()</span> <span class="k">else</span> <span class="n">number</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">number</span><span class="si">}</span><span class="s2">px&quot;</span>
+        <span class="k">return</span> <span class="n">width</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._resolve_image_min_width">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._resolve_image_min_width">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_image_min_width</span><span class="p">(</span><span class="n">width</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return a CSS ``min-width`` floor for a displayed image, or None.</span>
+
+<span class="sd">        Only explicit pixel widths larger than ``IMAGE_MIN_DISPLAY_WIDTH_PX``</span>
+<span class="sd">        get a floor (so custom small/auto widths stay fully responsive). See</span>
+<span class="sd">        ``IMAGE_MIN_DISPLAY_WIDTH_PX`` for why the floor exists.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">match</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">fullmatch</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\s*(\d+(?:\.\d+)?)px\s*&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">width</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">match</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="nb">float</span><span class="p">(</span><span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span> <span class="o">&lt;=</span> <span class="n">IMAGE_MIN_DISPLAY_WIDTH_PX</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">IMAGE_MIN_DISPLAY_WIDTH_PX</span><span class="si">}</span><span class="s2">px&quot;</span></div>
+
+
 <div class="viewcode-block" id="CytoDataFrame._image_array_to_html">
 <a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._image_array_to_html">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">_image_array_to_html</span><span class="p">(</span><span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span> <span class="n">image_array</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
@@ -3530,10 +3663,19 @@
             <span class="k">raise</span>
 
         <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
-        <span class="n">width</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;width&quot;</span><span class="p">,</span> <span class="s2">&quot;300px&quot;</span><span class="p">)</span>
+        <span class="c1"># Normalize bare numeric widths (e.g. 300 or &quot;300&quot;) to CSS pixel strings</span>
+        <span class="c1"># so they emit valid CSS and feed the min-width floor consistently.</span>
+        <span class="n">width</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_css_width</span><span class="p">(</span><span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;width&quot;</span><span class="p">,</span> <span class="s2">&quot;300px&quot;</span><span class="p">))</span>
         <span class="n">height</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;height&quot;</span><span class="p">)</span>
 
         <span class="n">html_style</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;width:</span><span class="si">{</span><span class="n">width</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span>
+        <span class="c1"># Floor the on-screen image width so image cells stay a consistent,</span>
+        <span class="c1"># readable size instead of collapsing under table width pressure (see</span>
+        <span class="c1"># IMAGE_MIN_DISPLAY_WIDTH_PX). Kept below the configured width so it only</span>
+        <span class="c1"># bounds shrinking and never enlarges the image past its target.</span>
+        <span class="n">min_width</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_image_min_width</span><span class="p">(</span><span class="n">width</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">min_width</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">html_style</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;min-width:</span><span class="si">{</span><span class="n">min_width</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">height</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">html_style</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;height:</span><span class="si">{</span><span class="n">height</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
@@ -3672,6 +3814,336 @@
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_image_array_to_html</span><span class="p">(</span><span class="n">cropped_img_array</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">data_value</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._resolve_composite_color">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._resolve_composite_color">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_composite_color</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Resolve a channel color specification to an ``(r, g, b)`` tuple.</span>
+
+<span class="sd">        Accepts a named color (e.g. ``&quot;blue&quot;``), a hex string (e.g.</span>
+<span class="sd">        ``&quot;#0000ff&quot;`` or ``&quot;#00f&quot;``), or an explicit RGB sequence (e.g.</span>
+<span class="sd">        ``(0, 0, 255)`` or ``[0, 0, 255]``). Returns None when the value</span>
+<span class="sd">        cannot be understood as a color.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">text</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;#&quot;</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">CytoDataFrame</span><span class="o">.</span><span class="n">_hex_to_rgb</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">COMPOSITE_NAMED_COLORS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">tuple</span><span class="p">,</span> <span class="nb">list</span><span class="p">))</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>  <span class="c1"># noqa: PLR2004</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span>
+                    <span class="nb">int</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">component</span><span class="p">))))</span> <span class="k">for</span> <span class="n">component</span> <span class="ow">in</span> <span class="n">value</span>
+                <span class="p">)</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+                <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._hex_to_rgb">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._hex_to_rgb">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_hex_to_rgb</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert a ``#RGB`` or ``#RRGGBB`` hex string to an ``(r, g, b)`` tuple.</span>
+
+<span class="sd">        Returns None when the string is not a valid 3- or 6-digit hex color.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">digits</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">lstrip</span><span class="p">(</span><span class="s2">&quot;#&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">digits</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>  <span class="c1"># noqa: PLR2004</span>
+            <span class="c1"># expand shorthand (e.g. &quot;0af&quot; -&gt; &quot;00aaff&quot;)</span>
+            <span class="n">digits</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">component</span> <span class="o">*</span> <span class="mi">2</span> <span class="k">for</span> <span class="n">component</span> <span class="ow">in</span> <span class="n">digits</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">digits</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">6</span><span class="p">:</span>  <span class="c1"># noqa: PLR2004</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="nb">int</span><span class="p">(</span><span class="n">digits</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="mi">2</span><span class="p">],</span> <span class="mi">16</span><span class="p">),</span>
+                <span class="nb">int</span><span class="p">(</span><span class="n">digits</span><span class="p">[</span><span class="mi">2</span><span class="p">:</span><span class="mi">4</span><span class="p">],</span> <span class="mi">16</span><span class="p">),</span>
+                <span class="nb">int</span><span class="p">(</span><span class="n">digits</span><span class="p">[</span><span class="mi">4</span><span class="p">:</span><span class="mi">6</span><span class="p">],</span> <span class="mi">16</span><span class="p">),</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._match_channel_column">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._match_channel_column">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_match_channel_column</span><span class="p">(</span><span class="n">identifier</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">image_cols</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Match a user-provided channel identifier to an image column.</span>
+
+<span class="sd">        Matching is attempted, in order, by: exact column name, the channel</span>
+<span class="sd">        suffix following ``FileName_`` (or the final underscore) and finally a</span>
+<span class="sd">        case-insensitive substring. Returns the matched column or None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">identifier_str</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">identifier</span><span class="p">)</span>
+
+        <span class="c1"># exact column-name match</span>
+        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">image_cols</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)</span> <span class="o">==</span> <span class="n">identifier_str</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">col</span>
+
+        <span class="c1"># match on the channel suffix (e.g. &quot;OrigDNA&quot; from</span>
+        <span class="c1"># &quot;Image_FileName_OrigDNA&quot;)</span>
+        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">image_cols</span><span class="p">:</span>
+            <span class="n">col_str</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">&quot;FileName_&quot;</span> <span class="ow">in</span> <span class="n">col_str</span><span class="p">:</span>
+                <span class="n">suffix</span> <span class="o">=</span> <span class="n">col_str</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;FileName_&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">suffix</span> <span class="o">=</span> <span class="n">col_str</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">suffix</span> <span class="o">==</span> <span class="n">identifier_str</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">col</span>
+
+        <span class="c1"># case-insensitive substring fallback</span>
+        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">image_cols</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">identifier_str</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
+                <span class="k">return</span> <span class="n">col</span>
+
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._resolve_composite_channels">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._resolve_composite_channels">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_composite_channels</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span> <span class="n">image_cols</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Resolve the ``composite_channels`` display option to ordered channel</span>
+<span class="sd">        columns paired with the RGB color used to tint each channel.</span>
+
+<span class="sd">        The option may be:</span>
+<span class="sd">        - ``&quot;all&quot;``: use every image channel column, colored from the default</span>
+<span class="sd">          palette in column order.</span>
+<span class="sd">        - a list of channel identifiers: use those channels (color from the</span>
+<span class="sd">          default palette in the given order).</span>
+<span class="sd">        - a mapping of ``{identifier: color}``: use those channels with the</span>
+<span class="sd">          specified colors (named color or RGB tuple). ``color`` may be None</span>
+<span class="sd">          to fall back to the default palette.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">spec</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;composite_channels&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">spec</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
+                <span class="n">requested</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[(</span><span class="n">col</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">image_cols</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">requested</span> <span class="o">=</span> <span class="p">[(</span><span class="n">spec</span><span class="p">,</span> <span class="kc">None</span><span class="p">)]</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">requested</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">spec</span><span class="o">.</span><span class="n">items</span><span class="p">())</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">,</span> <span class="nb">set</span><span class="p">)):</span>
+            <span class="n">requested</span> <span class="o">=</span> <span class="p">[(</span><span class="n">identifier</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">for</span> <span class="n">identifier</span> <span class="ow">in</span> <span class="n">spec</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">&quot;Unrecognized &#39;composite_channels&#39; display option: </span><span class="si">%s</span><span class="s2">; &quot;</span>
+                <span class="s2">&quot;expected &#39;all&#39;, a list of channels, or a mapping.&quot;</span><span class="p">,</span>
+                <span class="n">spec</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="n">resolved</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">position</span><span class="p">,</span> <span class="p">(</span><span class="n">identifier</span><span class="p">,</span> <span class="n">color_value</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">requested</span><span class="p">):</span>
+            <span class="n">column</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_match_channel_column</span><span class="p">(</span><span class="n">identifier</span><span class="p">,</span> <span class="n">image_cols</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">column</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">&quot;Composite channel &#39;</span><span class="si">%s</span><span class="s2">&#39; did not match any image column; &quot;</span>
+                    <span class="s2">&quot;skipping it.&quot;</span><span class="p">,</span>
+                    <span class="n">identifier</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="n">color</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_composite_color</span><span class="p">(</span><span class="n">color_value</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">color</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">color</span> <span class="o">=</span> <span class="n">COMPOSITE_DEFAULT_PALETTE</span><span class="p">[</span>
+                    <span class="n">position</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">COMPOSITE_DEFAULT_PALETTE</span><span class="p">)</span>
+                <span class="p">]</span>
+            <span class="n">resolved</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">column</span><span class="p">,</span> <span class="n">color</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">resolved</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._as_rgb">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._as_rgb">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_as_rgb</span><span class="p">(</span><span class="n">image</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return an ``(H, W, 3)`` RGB view of a grayscale/RGB/RGBA array.&quot;&quot;&quot;</span>
+        <span class="n">array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">image</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">array</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>  <span class="c1"># noqa: PLR2004</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">array</span><span class="p">]</span> <span class="o">*</span> <span class="mi">3</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">array</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">array</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="mi">4</span><span class="p">:</span>  <span class="c1"># noqa: PLR2004</span>
+            <span class="k">return</span> <span class="n">array</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">array</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._fit_to_shape">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._fit_to_shape">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_fit_to_shape</span><span class="p">(</span>
+        <span class="n">image</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">target_shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">smooth</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resize ``image`` to ``target_shape`` (height, width) as uint8.</span>
+
+<span class="sd">        Used to place each channel of a merged composite onto a shared canvas so</span>
+<span class="sd">        the composite is always the same size as the other images. ``smooth``</span>
+<span class="sd">        selects bilinear (for intensity) vs. nearest-neighbor (to keep outlines</span>
+<span class="sd">        and the center dot crisp) interpolation. Returns the input unchanged when</span>
+<span class="sd">        it already matches ``target_shape``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">image</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">array</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="n">target_shape</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">array</span>
+        <span class="n">resized</span> <span class="o">=</span> <span class="n">skimage</span><span class="o">.</span><span class="n">transform</span><span class="o">.</span><span class="n">resize</span><span class="p">(</span>
+            <span class="n">array</span><span class="p">,</span>
+            <span class="n">target_shape</span><span class="p">,</span>
+            <span class="n">order</span><span class="o">=</span><span class="mi">1</span> <span class="k">if</span> <span class="n">smooth</span> <span class="k">else</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="n">preserve_range</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">anti_aliasing</span><span class="o">=</span><span class="n">smooth</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">resized</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._build_channel_composite_array">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._build_channel_composite_array">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_channel_composite_array</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
+        <span class="n">row</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">channel_specs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]],</span>
+        <span class="n">bounding_box</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]],</span>
+        <span class="n">compartment_center_xy</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]],</span>
+        <span class="n">image_path_cols</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Build a merged, color-tinted composite crop from several channels.</span>
+
+<span class="sd">        Each channel is cropped to the same single-cell region using the same</span>
+<span class="sd">        pipeline as the individual channel columns, so the composite is always</span>
+<span class="sd">        the same size as the other images. The clean (pre-overlay) crop of each</span>
+<span class="sd">        channel is converted to a grayscale intensity, tinted by the channel&#39;s</span>
+<span class="sd">        color, and additively blended (Fiji-style). The segmentation outline and</span>
+<span class="sd">        red center dot that appear on the individual channels (when configured)</span>
+<span class="sd">        are then laid back on top of the blended result so the composite matches</span>
+<span class="sd">        the other images. Returns an ``(H, W, 3)`` uint8 array, or None when no</span>
+<span class="sd">        channel could be rendered.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">composite</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="c1"># Overlay canvas holds the outline/center-dot pixels drawn on the</span>
+        <span class="c1"># individual channels, to be applied on top of the blended composite.</span>
+        <span class="n">overlay_rgb</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">overlay_mask</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">for</span> <span class="n">column</span><span class="p">,</span> <span class="n">color</span> <span class="ow">in</span> <span class="n">channel_specs</span><span class="p">:</span>
+            <span class="n">data_value</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="n">column</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">data_value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">pd</span><span class="o">.</span><span class="n">isna</span><span class="p">(</span><span class="n">data_value</span><span class="p">):</span>
+                <span class="k">continue</span>
+
+            <span class="n">image_path</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">row</span><span class="p">[</span><span class="n">image_path_cols</span><span class="p">[</span><span class="n">column</span><span class="p">]]</span>
+                <span class="k">if</span> <span class="n">image_path_cols</span> <span class="ow">and</span> <span class="n">column</span> <span class="ow">in</span> <span class="n">image_path_cols</span>
+                <span class="k">else</span> <span class="kc">None</span>
+            <span class="p">)</span>
+
+            <span class="c1"># ``original`` is the clean equalized crop (used for the color</span>
+            <span class="c1"># blend); ``composite`` is the same crop with the segmentation</span>
+            <span class="c1"># outline and center dot applied (per the display configuration),</span>
+            <span class="c1"># exactly as the individual channel column is rendered.</span>
+            <span class="n">layers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_cropped_image_layers</span><span class="p">(</span>
+                <span class="n">data_value</span><span class="o">=</span><span class="n">data_value</span><span class="p">,</span>
+                <span class="n">bounding_box</span><span class="o">=</span><span class="n">bounding_box</span><span class="p">,</span>
+                <span class="n">compartment_center_xy</span><span class="o">=</span><span class="n">compartment_center_xy</span><span class="p">,</span>
+                <span class="n">image_path</span><span class="o">=</span><span class="n">image_path</span><span class="p">,</span>
+                <span class="n">include_original</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">include_composite</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">clean_crop</span> <span class="o">=</span> <span class="n">layers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;original&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">clean_crop</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="n">gray</span> <span class="o">=</span> <span class="n">image_array_to_grayscale</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">clean_crop</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">gray</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">:</span>
+                <span class="n">gray</span> <span class="o">=</span> <span class="n">img_as_ubyte</span><span class="p">(</span><span class="n">gray</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">composite</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># The first rendered channel establishes the composite canvas,</span>
+                <span class="c1"># which is exactly the crop size the individual channel columns</span>
+                <span class="c1"># display. Every other channel is fit to this canvas so the</span>
+                <span class="c1"># composite is always the same size as the other images, even if</span>
+                <span class="c1"># a channel&#39;s source image has a different resolution.</span>
+                <span class="n">composite</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="o">*</span><span class="n">gray</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">],</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+                <span class="n">overlay_rgb</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="o">*</span><span class="n">gray</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">],</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
+                <span class="n">overlay_mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">gray</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+
+            <span class="n">target_h</span><span class="p">,</span> <span class="n">target_w</span> <span class="o">=</span> <span class="n">composite</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span>
+            <span class="n">target_shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">target_h</span><span class="p">,</span> <span class="n">target_w</span><span class="p">)</span>
+
+            <span class="c1"># Fit this channel to the canvas so the composite is a consistent</span>
+            <span class="c1"># size regardless of any per-channel resolution differences.</span>
+            <span class="n">gray</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fit_to_shape</span><span class="p">(</span><span class="n">gray</span><span class="p">,</span> <span class="n">target_shape</span><span class="p">,</span> <span class="n">smooth</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+            <span class="n">tint</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">color</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span> <span class="o">/</span> <span class="mf">255.0</span>
+            <span class="n">composite</span> <span class="o">+=</span> <span class="n">gray</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span> <span class="o">*</span> <span class="n">tint</span>
+
+            <span class="c1"># Capture the outline/center-dot decorations by diffing the</span>
+            <span class="c1"># decorated crop against the clean crop; those pixels are laid over</span>
+            <span class="c1"># the blended composite so it matches the individual channels.</span>
+            <span class="n">decorated_crop</span> <span class="o">=</span> <span class="n">layers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;composite&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">decorated_crop</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># Nearest-neighbor keeps thin outlines and the center dot crisp.</span>
+                <span class="n">clean_rgb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fit_to_shape</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_as_rgb</span><span class="p">(</span><span class="n">clean_crop</span><span class="p">),</span> <span class="n">target_shape</span><span class="p">,</span> <span class="n">smooth</span><span class="o">=</span><span class="kc">False</span>
+                <span class="p">)</span>
+                <span class="n">decorated_rgb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fit_to_shape</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_as_rgb</span><span class="p">(</span><span class="n">decorated_crop</span><span class="p">),</span> <span class="n">target_shape</span><span class="p">,</span> <span class="n">smooth</span><span class="o">=</span><span class="kc">False</span>
+                <span class="p">)</span>
+                <span class="n">diff</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span>
+                    <span class="n">decorated_rgb</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int16</span><span class="p">)</span> <span class="o">!=</span> <span class="n">clean_rgb</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int16</span><span class="p">),</span>
+                    <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">overlay_rgb</span><span class="p">[</span><span class="n">diff</span><span class="p">]</span> <span class="o">=</span> <span class="n">decorated_rgb</span><span class="p">[</span><span class="n">diff</span><span class="p">]</span>
+                <span class="n">overlay_mask</span> <span class="o">|=</span> <span class="n">diff</span>
+
+        <span class="k">if</span> <span class="n">composite</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">composite</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">overlay_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">overlay_mask</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+            <span class="n">result</span><span class="p">[</span><span class="n">overlay_mask</span><span class="p">]</span> <span class="o">=</span> <span class="n">overlay_rgb</span><span class="p">[</span><span class="n">overlay_mask</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame.process_channel_composite_as_html_display">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame.process_channel_composite_as_html_display">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process_channel_composite_as_html_display</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
+        <span class="n">row</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">channel_specs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]],</span>
+        <span class="n">bounding_box</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]],</span>
+        <span class="n">compartment_center_xy</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]],</span>
+        <span class="n">image_path_cols</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Render a merged multi-channel composite crop for a row as HTML.</span>
+
+<span class="sd">        Returns an HTML ``&lt;img&gt;`` string for the blended composite, or an</span>
+<span class="sd">        empty string when no channel could be rendered for the row.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">composite_array</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_channel_composite_array</span><span class="p">(</span>
+            <span class="n">row</span><span class="o">=</span><span class="n">row</span><span class="p">,</span>
+            <span class="n">channel_specs</span><span class="o">=</span><span class="n">channel_specs</span><span class="p">,</span>
+            <span class="n">bounding_box</span><span class="o">=</span><span class="n">bounding_box</span><span class="p">,</span>
+            <span class="n">compartment_center_xy</span><span class="o">=</span><span class="n">compartment_center_xy</span><span class="p">,</span>
+            <span class="n">image_path_cols</span><span class="o">=</span><span class="n">image_path_cols</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">composite_array</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;&quot;</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_image_array_to_html</span><span class="p">(</span><span class="n">composite_array</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
 
 
 <div class="viewcode-block" id="CytoDataFrame._get_3d_volume_from_cell">
@@ -5368,6 +5840,11 @@
                     <span class="s2">&quot;compartment_center_xy explicitly.&quot;</span>
                 <span class="p">)</span>
 
+            <span class="c1"># Resolved (channel, color) pairs for the composite, captured so a</span>
+            <span class="c1"># color legend can be shown alongside the table (e.g. so users of</span>
+            <span class="c1"># the &quot;all&quot; form can tell which channel is which color).</span>
+            <span class="n">composite_legend_specs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]]</span> <span class="o">=</span> <span class="p">[]</span>
+
             <span class="k">if</span> <span class="n">has_bounding_box</span> <span class="ow">or</span> <span class="n">offset_crop_without_bbox</span> <span class="ow">or</span> <span class="n">render_whole_image</span><span class="p">:</span>
                 <span class="n">bounding_box_cols</span> <span class="o">=</span> <span class="p">(</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_bounding_box&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
@@ -5380,6 +5857,66 @@
                     <span class="n">compartment_center_xy_cols</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span>
                         <span class="s2">&quot;compartment_center_xy&quot;</span>
                     <span class="p">]</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+
+                <span class="k">def</span><span class="w"> </span><span class="nf">_row_crop_geometry</span><span class="p">(</span>
+                    <span class="n">row</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+                <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span>
+                    <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span>
+                <span class="p">]:</span>
+<span class="w">                    </span><span class="sd">&quot;&quot;&quot;Return the per-row bounding box and compartment center.&quot;&quot;&quot;</span>
+                    <span class="n">row_bounding_box</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_row_bounding_box</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">bounding_box_cols</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">bounding_box_cols</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                        <span class="k">else</span> <span class="kc">None</span>
+                    <span class="p">)</span>
+                    <span class="n">row_center</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="p">(</span>
+                            <span class="n">row</span><span class="p">[</span>
+                                <span class="nb">next</span><span class="p">(</span>
+                                    <span class="n">col</span>
+                                    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">compartment_center_xy_cols</span>
+                                    <span class="k">if</span> <span class="s2">&quot;X&quot;</span> <span class="ow">in</span> <span class="n">col</span>
+                                <span class="p">)</span>
+                            <span class="p">],</span>
+                            <span class="n">row</span><span class="p">[</span>
+                                <span class="nb">next</span><span class="p">(</span>
+                                    <span class="n">col</span>
+                                    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">compartment_center_xy_cols</span>
+                                    <span class="k">if</span> <span class="s2">&quot;Y&quot;</span> <span class="ow">in</span> <span class="n">col</span>
+                                <span class="p">)</span>
+                            <span class="p">],</span>
+                        <span class="p">)</span>
+                        <span class="k">if</span> <span class="n">has_compartment_center</span>
+                        <span class="k">else</span> <span class="kc">None</span>
+                    <span class="p">)</span>
+                    <span class="k">return</span> <span class="n">row_bounding_box</span><span class="p">,</span> <span class="n">row_center</span>
+
+                <span class="c1"># Build a merged multi-channel composite column when requested</span>
+                <span class="c1"># via the ``composite_channels`` display option. This is done</span>
+                <span class="c1"># before the per-channel columns are overwritten with rendered</span>
+                <span class="c1"># HTML below, since the composite reads the raw image filenames.</span>
+                <span class="n">composite_channel_specs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_composite_channels</span><span class="p">(</span><span class="n">image_cols</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">composite_channel_specs</span><span class="p">:</span>
+                    <span class="n">composite_legend_specs</span> <span class="o">=</span> <span class="n">composite_channel_specs</span>
+                    <span class="n">composite_column_name</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                        <span class="s2">&quot;composite_column_name&quot;</span><span class="p">,</span> <span class="n">COMPOSITE_DEFAULT_COLUMN_NAME</span>
+                    <span class="p">)</span>
+                    <span class="k">if</span> <span class="n">composite_column_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                        <span class="n">data</span><span class="p">[</span><span class="n">composite_column_name</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+
+                    <span class="k">def</span><span class="w"> </span><span class="nf">_render_composite</span><span class="p">(</span><span class="n">row</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+                        <span class="n">row_bounding_box</span><span class="p">,</span> <span class="n">row_center</span> <span class="o">=</span> <span class="n">_row_crop_geometry</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+                        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_channel_composite_as_html_display</span><span class="p">(</span>
+                            <span class="n">row</span><span class="o">=</span><span class="n">row</span><span class="p">,</span>
+                            <span class="n">channel_specs</span><span class="o">=</span><span class="n">composite_channel_specs</span><span class="p">,</span>
+                            <span class="n">bounding_box</span><span class="o">=</span><span class="n">row_bounding_box</span><span class="p">,</span>
+                            <span class="n">compartment_center_xy</span><span class="o">=</span><span class="n">row_center</span><span class="p">,</span>
+                            <span class="n">image_path_cols</span><span class="o">=</span><span class="n">image_path_cols</span><span class="p">,</span>
+                        <span class="p">)</span>
+
+                    <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">display_indices</span><span class="p">,</span> <span class="n">composite_column_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+                        <span class="n">display_indices</span>
+                    <span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">_render_composite</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
 
                 <span class="k">for</span> <span class="n">image_col</span> <span class="ow">in</span> <span class="n">image_cols</span><span class="p">:</span>
                     <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">display_indices</span><span class="p">,</span> <span class="n">image_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
@@ -5485,15 +6022,63 @@
             <span class="n">style</span> <span class="o">=</span> <span class="p">(</span>
                 <span class="s2">&quot;&lt;style&gt;&quot;</span>
                 <span class="s2">&quot;table.dataframe thead tr {background:#EBEBEB;}&quot;</span>
-                <span class="s2">&quot;table.dataframe thead th {background:#EBEBEB;}&quot;</span>
+                <span class="c1"># Keep column names on a single line so a column is never</span>
+                <span class="c1"># narrower than its header. Notebook environments (e.g.</span>
+                <span class="c1"># JupyterLab) constrain the table and can break header words,</span>
+                <span class="c1"># scrunching names into tall, unreadable one-character-per-line</span>
+                <span class="c1"># strips; ``white-space:nowrap`` gives every column a reasonable</span>
+                <span class="c1"># minimum width (its header width) and lets the table scroll.</span>
+                <span class="s2">&quot;table.dataframe thead th {background:#EBEBEB;white-space:nowrap;}&quot;</span>
                 <span class="s2">&quot;table.dataframe tbody tr {background:#FFFFFF;}&quot;</span>
                 <span class="s2">&quot;table.dataframe tbody tr:nth-child(even) {background:#F5F5F5;}&quot;</span>
                 <span class="s2">&quot;&lt;/style&gt;&quot;</span>
             <span class="p">)</span>
-            <span class="k">return</span> <span class="n">style</span> <span class="o">+</span> <span class="n">table_html</span>
+            <span class="n">legend</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_composite_legend_html</span><span class="p">(</span><span class="n">composite_legend_specs</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">style</span> <span class="o">+</span> <span class="n">legend</span> <span class="o">+</span> <span class="n">table_html</span>
 
         <span class="k">else</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame._build_composite_legend_html">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame._build_composite_legend_html">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_composite_legend_html</span><span class="p">(</span>
+        <span class="n">channel_specs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Build a small color legend for a merged channel composite.</span>
+
+<span class="sd">        Shows which channel maps to which color so the composite (including the</span>
+<span class="sd">        auto-colored ``&quot;all&quot;`` form) can be interpreted and captioned. Returns</span>
+<span class="sd">        an empty string when there are no composite channels.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">channel_specs</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;&quot;</span>
+
+        <span class="n">items</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">column</span><span class="p">,</span> <span class="n">color</span> <span class="ow">in</span> <span class="n">channel_specs</span><span class="p">:</span>
+            <span class="n">column_str</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">column</span><span class="p">)</span>
+            <span class="n">channel</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">column_str</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;FileName_&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="k">if</span> <span class="s2">&quot;FileName_&quot;</span> <span class="ow">in</span> <span class="n">column_str</span>
+                <span class="k">else</span> <span class="n">column_str</span>
+            <span class="p">)</span>
+            <span class="n">swatch</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="s2">&quot;display:inline-block;width:11px;height:11px;margin-right:4px;&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;border:1px solid #999;background:rgb(</span><span class="si">{</span><span class="n">color</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">,</span><span class="si">{</span><span class="n">color</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">,&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">color</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="si">}</span><span class="s2">);vertical-align:middle;&quot;</span>
+            <span class="p">)</span>
+            <span class="n">items</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s1">&#39;&lt;span style=&quot;margin-right:12px;white-space:nowrap;&quot;&gt;&#39;</span>
+                <span class="sa">f</span><span class="s1">&#39;&lt;span style=&quot;</span><span class="si">{</span><span class="n">swatch</span><span class="si">}</span><span class="s1">&quot;&gt;&lt;/span&gt;</span><span class="si">{</span><span class="n">channel</span><span class="si">}</span><span class="s1">&lt;/span&gt;&#39;</span>
+            <span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="s1">&#39;&lt;div style=&quot;font-size:12px;margin:2px 0 6px 0;color:#333;&quot;&gt;&#39;</span>
+            <span class="s1">&#39;&lt;span style=&quot;font-weight:600;margin-right:8px;&quot;&gt;Composite colors:&#39;</span>
+            <span class="s2">&quot;&lt;/span&gt;&quot;</span> <span class="o">+</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">items</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;&lt;/div&gt;&quot;</span>
+        <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="CytoDataFrame._render_output">

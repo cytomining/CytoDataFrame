@@ -1500,6 +1500,55 @@ def test_repr_html_render_whole_image_without_bounding_box_or_center(
     assert all(size == (expected_width, expected_height) for size in sizes)
 
 
+def test_repr_html_transposed_render_whole_image_without_bounding_box_or_center(
+    cytotable_NF1_data_parquet_shrunken: str,
+):
+    """
+    Tests that ``.T`` on a whole-FOV CytoDataFrame (no bounding box or
+    compartment center columns) still renders a transposed table with the
+    embedded image intact, rather than falling back to an untransposed table
+    of raw filenames.
+
+    See https://github.com/cytomining/CytoDataFrame/issues/226.
+    """
+
+    image_dir = (
+        f"{pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent}/Plate_2_images"
+    )
+    image_filename = next(pathlib.Path(image_dir).glob("*.tif")).name
+
+    # a minimal whole-FOV frame with no bounding box or compartment
+    # center columns at all (mirrors the issue's reproduction).
+    df = pd.DataFrame(
+        {
+            "FileName_OrigDNA": [image_filename, image_filename],
+            "PathName_OrigDNA": [image_dir, image_dir],
+            "SomeMetric": [-2.5, -2.7],
+        }
+    )
+
+    whole_frame = CytoDataFrame(df, display_options={"render_whole_image": True})
+    assert whole_frame._custom_attrs["data_bounding_box"] is None
+    assert whole_frame._custom_attrs["compartment_center_xy"] is None
+
+    non_transposed_html = whole_frame.head(2)._repr_html_(debug=True)
+    transposed_html = whole_frame.head(2).T._repr_html_(debug=True)
+
+    non_transposed_images = re.findall(
+        r"data:image/png;base64,([^\"]+)", non_transposed_html
+    )
+    transposed_images = re.findall(r"data:image/png;base64,([^\"]+)", transposed_html)
+
+    # the transposed rendering must still embed the same images as the
+    # non-transposed rendering (previously it silently rendered none).
+    assert len(transposed_images) == len(non_transposed_images) > 0
+
+    # the transposed rendering must actually be transposed: the
+    # FileName_OrigDNA column becomes a row label instead of appearing
+    # in the header row.
+    assert ">FileName_OrigDNA<" in transposed_html
+
+
 def test_repr_html_offset_bounding_box_warns_when_centers_missing_with_bbox(
     cytotable_NF1_data_parquet_shrunken: str,
     caplog: pytest.LogCaptureFixture,

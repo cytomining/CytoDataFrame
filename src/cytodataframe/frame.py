@@ -5029,7 +5029,10 @@ class CytoDataFrame(pd.DataFrame):
             # Re-add bounding box columns if they are no longer available
             bounding_box_externally_joined = False
             if self._custom_attrs["data_bounding_box"] is not None and not all(
-                col in self.columns.tolist()
+                col
+                in (
+                    data if self._custom_attrs["is_transposed"] else self
+                ).columns.tolist()
                 for col in self._custom_attrs["data_bounding_box"].columns.tolist()
             ):
                 logger.debug("Re-adding bounding box columns.")
@@ -5049,15 +5052,18 @@ class CytoDataFrame(pd.DataFrame):
 
             # Re-add compartment center xy columns if they are no longer available
             compartment_center_externally_joined = False
+            use_data_for_compartment_center = (
+                self._custom_attrs["is_transposed"] or bounding_box_externally_joined
+            )
             if self._custom_attrs["compartment_center_xy"] is not None and not all(
                 col
-                in (data if bounding_box_externally_joined else self).columns.tolist()
+                in (data if use_data_for_compartment_center else self).columns.tolist()
                 for col in self._custom_attrs["compartment_center_xy"].columns.tolist()
             ):
                 logger.debug("Re-adding compartment center xy columns.")
                 data = (
                     data.join(other=self._custom_attrs["compartment_center_xy"])
-                    if bounding_box_externally_joined
+                    if use_data_for_compartment_center
                     else self.join(other=self._custom_attrs["compartment_center_xy"])
                 )
                 compartment_center_externally_joined = True
@@ -5072,11 +5078,13 @@ class CytoDataFrame(pd.DataFrame):
 
             # Re-add image path columns if they are no longer available
             image_paths_externally_joined = False
+            use_data_for_image_paths = (
+                self._custom_attrs["is_transposed"]
+                or compartment_center_externally_joined
+                or bounding_box_externally_joined
+            )
             if self._custom_attrs["data_image_paths"] is not None and not all(
-                col
-                in (
-                    data if compartment_center_externally_joined else self
-                ).columns.tolist()
+                col in (data if use_data_for_image_paths else self).columns.tolist()
                 for col in self._custom_attrs["data_image_paths"].columns.tolist()
             ):
                 logger.debug("Re-adding image path columns.")
@@ -5087,8 +5095,7 @@ class CytoDataFrame(pd.DataFrame):
                 )
                 data = (
                     data.join(other=self._custom_attrs["data_image_paths"])
-                    if compartment_center_externally_joined
-                    or bounding_box_externally_joined
+                    if use_data_for_image_paths
                     else self.join(other=self._custom_attrs["data_image_paths"])
                 )
                 image_paths_externally_joined = True

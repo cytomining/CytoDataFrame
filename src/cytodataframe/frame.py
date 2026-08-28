@@ -5102,9 +5102,7 @@ class CytoDataFrame(pd.DataFrame):
             else:
                 data = (
                     data
-                    if self._custom_attrs["is_transposed"]
-                    or image_paths_externally_joined
-                    or bounding_box_externally_joined
+                    if use_data_for_image_paths or image_paths_externally_joined
                     else self.copy()
                 )
 

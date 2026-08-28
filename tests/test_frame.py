@@ -3204,6 +3204,73 @@ def test_generate_jupyter_dataframe_html_with_joined_components(
     assert "<div>OME</div>" in html
 
 
+def test_generate_jupyter_dataframe_html_preserves_center_join_with_existing_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+):
+    """
+    Regression test: an externally joined compartment center must survive
+    rendering even when image-path columns are already present on the
+    frame (so the image-path re-add block takes its "already present"
+    branch instead of re-joining). Before the fix, that branch discarded
+    the joined compartment center columns, and the later ``.drop(...)``
+    of those columns raised a ``KeyError``.
+    """
+    base = pd.DataFrame(
+        {
+            "Image_FileName_DNA": ["dna.tiff"],
+            "Image_PathName_DNA": [str(tmp_path)],
+        },
+        index=[0],
+    )
+    cdf = CytoDataFrame(
+        base,
+        data_context_dir=str(tmp_path),
+        display_options={"render_whole_image": True},
+    )
+    assert cdf._custom_attrs["data_bounding_box"] is None
+    cdf._custom_attrs["compartment_center_xy"] = pd.DataFrame(
+        {"Cells_Location_Center_X": [5], "Cells_Location_Center_Y": [6]},
+        index=[0],
+    )
+    cdf._custom_attrs["data_image_paths"] = pd.DataFrame(
+        {"Image_PathName_DNA": [str(tmp_path)]},
+        index=[0],
+    )
+
+    options = {
+        "display.notebook_repr_html": True,
+        "display.max_rows": 10,
+        "display.min_rows": 10,
+        "display.max_columns": 10,
+        "display.show_dimensions": False,
+    }
+
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda name: options[name])
+    monkeypatch.setattr(
+        "cytodataframe.frame.CytoDataFrame.find_image_columns",
+        lambda self: ["Image_FileName_DNA"],
+    )
+    monkeypatch.setattr(
+        "cytodataframe.frame.CytoDataFrame.find_image_path_columns",
+        lambda self, image_cols, all_cols: {"Image_FileName_DNA": "Image_PathName_DNA"},
+    )
+    monkeypatch.setattr(
+        "cytodataframe.frame.CytoDataFrame.get_displayed_rows",
+        lambda self: [0],
+    )
+    monkeypatch.setattr(
+        cdf,
+        "process_image_data_as_html_display",
+        lambda **_kwargs: "<img src='x'/>",
+    )
+
+    # previously raised KeyError from dropping compartment center columns
+    # that had been silently discarded earlier in the method.
+    html = cdf._generate_jupyter_dataframe_html()
+    assert "<img src='x'/>" in html
+
+
 def test_render_output_displays_js_and_print_html(monkeypatch: pytest.MonkeyPatch):
     cdf = CytoDataFrame(pd.DataFrame({"A": [1]}))
     cdf._custom_attrs["_output"] = nullcontext()

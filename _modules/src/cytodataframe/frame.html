@@ -5650,7 +5650,10 @@
             <span class="c1"># Re-add bounding box columns if they are no longer available</span>
             <span class="n">bounding_box_externally_joined</span> <span class="o">=</span> <span class="kc">False</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_bounding_box&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span>
-                <span class="n">col</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                <span class="n">col</span>
+                <span class="ow">in</span> <span class="p">(</span>
+                    <span class="n">data</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;is_transposed&quot;</span><span class="p">]</span> <span class="k">else</span> <span class="bp">self</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
                 <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_bounding_box&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
             <span class="p">):</span>
                 <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Re-adding bounding box columns.&quot;</span><span class="p">)</span>
@@ -5670,15 +5673,18 @@
 
             <span class="c1"># Re-add compartment center xy columns if they are no longer available</span>
             <span class="n">compartment_center_externally_joined</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="n">use_data_for_compartment_center</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;is_transposed&quot;</span><span class="p">]</span> <span class="ow">or</span> <span class="n">bounding_box_externally_joined</span>
+            <span class="p">)</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;compartment_center_xy&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span>
                 <span class="n">col</span>
-                <span class="ow">in</span> <span class="p">(</span><span class="n">data</span> <span class="k">if</span> <span class="n">bounding_box_externally_joined</span> <span class="k">else</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                <span class="ow">in</span> <span class="p">(</span><span class="n">data</span> <span class="k">if</span> <span class="n">use_data_for_compartment_center</span> <span class="k">else</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
                 <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;compartment_center_xy&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
             <span class="p">):</span>
                 <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Re-adding compartment center xy columns.&quot;</span><span class="p">)</span>
                 <span class="n">data</span> <span class="o">=</span> <span class="p">(</span>
                     <span class="n">data</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">other</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;compartment_center_xy&quot;</span><span class="p">])</span>
-                    <span class="k">if</span> <span class="n">bounding_box_externally_joined</span>
+                    <span class="k">if</span> <span class="n">use_data_for_compartment_center</span>
                     <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">other</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;compartment_center_xy&quot;</span><span class="p">])</span>
                 <span class="p">)</span>
                 <span class="n">compartment_center_externally_joined</span> <span class="o">=</span> <span class="kc">True</span>
@@ -5693,11 +5699,13 @@
 
             <span class="c1"># Re-add image path columns if they are no longer available</span>
             <span class="n">image_paths_externally_joined</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="n">use_data_for_image_paths</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;is_transposed&quot;</span><span class="p">]</span>
+                <span class="ow">or</span> <span class="n">compartment_center_externally_joined</span>
+                <span class="ow">or</span> <span class="n">bounding_box_externally_joined</span>
+            <span class="p">)</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_image_paths&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span>
-                <span class="n">col</span>
-                <span class="ow">in</span> <span class="p">(</span>
-                    <span class="n">data</span> <span class="k">if</span> <span class="n">compartment_center_externally_joined</span> <span class="k">else</span> <span class="bp">self</span>
-                <span class="p">)</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                <span class="n">col</span> <span class="ow">in</span> <span class="p">(</span><span class="n">data</span> <span class="k">if</span> <span class="n">use_data_for_image_paths</span> <span class="k">else</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
                 <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_image_paths&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
             <span class="p">):</span>
                 <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Re-adding image path columns.&quot;</span><span class="p">)</span>
@@ -5708,17 +5716,14 @@
                 <span class="p">)</span>
                 <span class="n">data</span> <span class="o">=</span> <span class="p">(</span>
                     <span class="n">data</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">other</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_image_paths&quot;</span><span class="p">])</span>
-                    <span class="k">if</span> <span class="n">compartment_center_externally_joined</span>
-                    <span class="ow">or</span> <span class="n">bounding_box_externally_joined</span>
+                    <span class="k">if</span> <span class="n">use_data_for_image_paths</span>
                     <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">other</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_image_paths&quot;</span><span class="p">])</span>
                 <span class="p">)</span>
                 <span class="n">image_paths_externally_joined</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">data</span> <span class="o">=</span> <span class="p">(</span>
                     <span class="n">data</span>
-                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;is_transposed&quot;</span><span class="p">]</span>
-                    <span class="ow">or</span> <span class="n">image_paths_externally_joined</span>
-                    <span class="ow">or</span> <span class="n">bounding_box_externally_joined</span>
+                    <span class="k">if</span> <span class="n">use_data_for_image_paths</span> <span class="ow">or</span> <span class="n">image_paths_externally_joined</span>
                     <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
                 <span class="p">)</span>
 

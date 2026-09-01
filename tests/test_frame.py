@@ -1500,6 +1500,55 @@ def test_repr_html_render_whole_image_without_bounding_box_or_center(
     assert all(size == (expected_width, expected_height) for size in sizes)
 
 
+def test_repr_html_transposed_render_whole_image_without_bounding_box_or_center(
+    cytotable_NF1_data_parquet_shrunken: str,
+):
+    """
+    Tests that ``.T`` on a whole-FOV CytoDataFrame (no bounding box or
+    compartment center columns) still renders a transposed table with the
+    embedded image intact, rather than falling back to an untransposed table
+    of raw filenames.
+
+    See https://github.com/cytomining/CytoDataFrame/issues/226.
+    """
+
+    image_dir = (
+        f"{pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent}/Plate_2_images"
+    )
+    image_filename = next(pathlib.Path(image_dir).glob("*.tif")).name
+
+    # a minimal whole-FOV frame with no bounding box or compartment
+    # center columns at all (mirrors the issue's reproduction).
+    df = pd.DataFrame(
+        {
+            "FileName_OrigDNA": [image_filename, image_filename],
+            "PathName_OrigDNA": [image_dir, image_dir],
+            "SomeMetric": [-2.5, -2.7],
+        }
+    )
+
+    whole_frame = CytoDataFrame(df, display_options={"render_whole_image": True})
+    assert whole_frame._custom_attrs["data_bounding_box"] is None
+    assert whole_frame._custom_attrs["compartment_center_xy"] is None
+
+    non_transposed_html = whole_frame.head(2)._repr_html_(debug=True)
+    transposed_html = whole_frame.head(2).T._repr_html_(debug=True)
+
+    non_transposed_images = re.findall(
+        r"data:image/png;base64,([^\"]+)", non_transposed_html
+    )
+    transposed_images = re.findall(r"data:image/png;base64,([^\"]+)", transposed_html)
+
+    # the transposed rendering must still embed the same images as the
+    # non-transposed rendering (previously it silently rendered none).
+    assert len(transposed_images) == len(non_transposed_images) > 0
+
+    # the transposed rendering must actually be transposed: the
+    # FileName_OrigDNA column becomes a row label instead of appearing
+    # in the header row.
+    assert ">FileName_OrigDNA<" in transposed_html
+
+
 def test_repr_html_offset_bounding_box_warns_when_centers_missing_with_bbox(
     cytotable_NF1_data_parquet_shrunken: str,
     caplog: pytest.LogCaptureFixture,
@@ -3153,6 +3202,73 @@ def test_generate_jupyter_dataframe_html_with_joined_components(
     html = cdf._generate_jupyter_dataframe_html()
     assert "<img src='x'/>" in html
     assert "<div>OME</div>" in html
+
+
+def test_generate_jupyter_dataframe_html_preserves_center_join_with_existing_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+):
+    """
+    Regression test: an externally joined compartment center must survive
+    rendering even when image-path columns are already present on the
+    frame (so the image-path re-add block takes its "already present"
+    branch instead of re-joining). Before the fix, that branch discarded
+    the joined compartment center columns, and the later ``.drop(...)``
+    of those columns raised a ``KeyError``.
+    """
+    base = pd.DataFrame(
+        {
+            "Image_FileName_DNA": ["dna.tiff"],
+            "Image_PathName_DNA": [str(tmp_path)],
+        },
+        index=[0],
+    )
+    cdf = CytoDataFrame(
+        base,
+        data_context_dir=str(tmp_path),
+        display_options={"render_whole_image": True},
+    )
+    assert cdf._custom_attrs["data_bounding_box"] is None
+    cdf._custom_attrs["compartment_center_xy"] = pd.DataFrame(
+        {"Cells_Location_Center_X": [5], "Cells_Location_Center_Y": [6]},
+        index=[0],
+    )
+    cdf._custom_attrs["data_image_paths"] = pd.DataFrame(
+        {"Image_PathName_DNA": [str(tmp_path)]},
+        index=[0],
+    )
+
+    options = {
+        "display.notebook_repr_html": True,
+        "display.max_rows": 10,
+        "display.min_rows": 10,
+        "display.max_columns": 10,
+        "display.show_dimensions": False,
+    }
+
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda name: options[name])
+    monkeypatch.setattr(
+        "cytodataframe.frame.CytoDataFrame.find_image_columns",
+        lambda self: ["Image_FileName_DNA"],
+    )
+    monkeypatch.setattr(
+        "cytodataframe.frame.CytoDataFrame.find_image_path_columns",
+        lambda self, image_cols, all_cols: {"Image_FileName_DNA": "Image_PathName_DNA"},
+    )
+    monkeypatch.setattr(
+        "cytodataframe.frame.CytoDataFrame.get_displayed_rows",
+        lambda self: [0],
+    )
+    monkeypatch.setattr(
+        cdf,
+        "process_image_data_as_html_display",
+        lambda **_kwargs: "<img src='x'/>",
+    )
+
+    # previously raised KeyError from dropping compartment center columns
+    # that had been silently discarded earlier in the method.
+    html = cdf._generate_jupyter_dataframe_html()
+    assert "<img src='x'/>" in html
 
 
 def test_render_output_displays_js_and_print_html(monkeypatch: pytest.MonkeyPatch):

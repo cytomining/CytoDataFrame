@@ -19,10 +19,14 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 dynamic = [ "version" ]
-# ipyvolume, matplotlib, nest-asyncio2, and pywavelets are intentionally
-# dropped from core dependencies here: 3D rendering already moved to
-# pyvista/trame (see optional-dependencies.viz3d below) before this change,
-# leaving these four as dead weight - none are imported anywhere in src/.
+# ipyvolume, matplotlib, and pywavelets are intentionally dropped from core
+# dependencies here: 3D rendering already moved to pyvista/trame (see
+# optional-dependencies.viz3d below) before this change, leaving these three
+# as dead weight - none are imported anywhere in src/. nest-asyncio2 moved to
+# optional-dependencies.viz3d instead of being dropped: pyvista's trame
+# notebook backend imports it directly to launch without an explicit
+# `await`, and silently falls back to a static (non-interactive) render with
+# a UserWarning when it is missing.
 dependencies = [
   "imagecodecs>=2024.9.22,<2027",
   "imageio>=2.37,<3",
@@ -45,6 +49,10 @@ optional-dependencies.ome = [
 ]
 optional-dependencies.viz3d = [
   # Interactive 3D volume rendering (trame/pyvista views in notebooks).
+  # nest-asyncio2 lets pyvista launch its notebook trame server without an
+  # explicit `await`; without it, 3D views silently fall back to a static
+  # render.
+  "nest-asyncio2>=1.7,<2",
   "pyvista>=0.46.4",
   "trame>=3.12",
   "trame-vtk>=2.10",
@@ -64,6 +72,7 @@ dev = [
   "jupyterlab-code-formatter>=3.0.2,<4",
   "jupytext>=1.16.4,<2",
   # optional-feature stacks needed to exercise the full test suite
+  "nest-asyncio2>=1.7,<2",
   "ome-arrow>=0.0.3,<0.1.1",
   "poethepoet>=0.37,<0.49",
   "pytest>=8.3.3,<10",

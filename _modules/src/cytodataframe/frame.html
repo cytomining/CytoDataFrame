@@ -402,6 +402,7 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">base64</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">contextlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">html</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pathlib</span>
@@ -440,6 +441,7 @@
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">skimage.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">img_as_ubyte</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">engine</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.image</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">add_image_scale_bar</span><span class="p">,</span>
     <span class="n">adjust_with_adaptive_histogram_equalization</span><span class="p">,</span>
@@ -448,6 +450,9 @@
     <span class="n">get_pixel_bbox_from_offsets</span><span class="p">,</span>
     <span class="n">image_array_to_grayscale</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.lazy</span><span class="w"> </span><span class="kn">import</span> <span class="n">CytoLazyFrame</span><span class="p">,</span> <span class="n">build_context</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.lazy</span><span class="w"> </span><span class="kn">import</span> <span class="n">scan_parquet</span> <span class="k">as</span> <span class="n">_lazy_scan_parquet</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">CytoSchema</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.volume</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">build_3d_html_from_path</span><span class="p">,</span>
     <span class="n">build_3d_image_html_stub</span><span class="p">,</span>
@@ -557,7 +562,7 @@
     <span class="c1"># while avoiding oversized outputs in typical Jupyter viewports.</span>
     <span class="n">_DEFAULT_TABLE_MAX_HEIGHT</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;700px&quot;</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>  <span class="c1"># noqa: PLR0913, PLR0917</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>  <span class="c1"># noqa: PLR0913, PLR0917, C901, PLR0912</span>
         <span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span>
         <span class="n">data</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">CytoDataFrame_type</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">],</span>
         <span class="n">data_context_dir</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -817,6 +822,19 @@
 
             <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 
+        <span class="c1"># polars/arrow inputs are probed last so the common pandas/path cases</span>
+        <span class="c1"># never trigger a polars/pyarrow import.</span>
+        <span class="k">elif</span> <span class="n">engine</span><span class="o">.</span><span class="n">is_polars_lazyframe</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
+            <span class="c1"># Lazy polars input: collect through the Arrow contract into the</span>
+            <span class="c1"># pandas compatibility facade.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_source&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;polars.LazyFrame&quot;</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">engine</span><span class="o">.</span><span class="n">normalize_to_pandas</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="n">engine</span><span class="o">.</span><span class="n">is_polars_dataframe</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_source&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;polars.DataFrame&quot;</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">engine</span><span class="o">.</span><span class="n">normalize_to_pandas</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="n">engine</span><span class="o">.</span><span class="n">is_arrow_table</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;data_source&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;pyarrow.Table&quot;</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">engine</span><span class="o">.</span><span class="n">normalize_to_pandas</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 
@@ -2066,6 +2084,129 @@
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Unsupported file format for export.&quot;</span><span class="p">)</span></div>
 
 
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+    <span class="c1"># Backend / interchange conversions (Polars engine, Arrow contract)</span>
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+<div class="viewcode-block" id="CytoDataFrame.to_pandas">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame.to_pandas">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_pandas</span><span class="p">(</span><span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return the data as a plain :class:`pandas.DataFrame`.</span>
+
+<span class="sd">        The pandas layer is CytoDataFrame&#39;s compatibility boundary; this</span>
+<span class="sd">        returns a standard pandas DataFrame (not a CytoDataFrame) for use with</span>
+<span class="sd">        pandas-native tooling.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame.to_polars">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame.to_polars">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_polars</span><span class="p">(</span><span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return the tabular data as an eager :class:`polars.DataFrame`.</span>
+
+<span class="sd">        Note: polars has no row-index concept, so the pandas index is dropped.</span>
+<span class="sd">        Object columns holding non-Arrow values (e.g. numpy image arrays) cannot</span>
+<span class="sd">        be converted and will raise a ``TypeError``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">engine</span><span class="o">.</span><span class="n">to_polars</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame.to_lazy">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame.to_lazy">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_lazy</span><span class="p">(</span><span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CytoLazyFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return a lazy, Polars-backed :class:`CytoLazyFrame` view.</span>
+
+<span class="sd">        The returned object carries this frame&#39;s image/display context so that a</span>
+<span class="sd">        subsequent ``.collect()`` rebuilds an equivalently-configured</span>
+<span class="sd">        CytoDataFrame.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">CytoLazyFrame</span><span class="p">(</span>
+            <span class="n">engine</span><span class="o">.</span><span class="n">to_lazyframe</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="p">)),</span>
+            <span class="n">context</span><span class="o">=</span><span class="n">build_context</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">),</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame.to_arrow">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame.to_arrow">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_arrow</span><span class="p">(</span><span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">,</span> <span class="n">preserve_index</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return the tabular data as a :class:`pyarrow.Table`.</span>
+
+<span class="sd">        Arrow is CytoDataFrame&#39;s canonical schema and interchange contract.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">engine</span><span class="o">.</span><span class="n">to_arrow</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="p">),</span> <span class="n">preserve_index</span><span class="o">=</span><span class="n">preserve_index</span><span class="p">)</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cyto_schema</span><span class="p">(</span><span class="bp">self</span><span class="p">:</span> <span class="n">CytoDataFrame_type</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CytoSchema</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The inferred :class:`CytoSchema` describing this frame&#39;s columns.</span>
+
+<span class="sd">        Classifies columns into image/object keys, metadata, feature, and</span>
+<span class="sd">        geometry roles using the Arrow-native schema contract.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">CytoSchema</span><span class="o">.</span><span class="n">from_pandas</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="p">))</span>
+
+<div class="viewcode-block" id="CytoDataFrame.from_file">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame.from_file">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_file</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">source</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">],</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;CytoDataFrame&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Eagerly construct a CytoDataFrame from a file path.</span>
+
+<span class="sd">        A thin, explicit alias for ``CytoDataFrame(source, ...)`` matching the</span>
+<span class="sd">        domain-oriented API in the evolution plan.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CytoDataFrame.scan_parquet">
+<a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame.scan_parquet">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">scan_parquet</span><span class="p">(</span>  <span class="c1"># noqa: PLR0913, PLR0917</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">source</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">],</span>
+        <span class="n">data_context_dir</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">data_mask_context_dir</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">data_outline_context_dir</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">segmentation_file_regex</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">image_adjustment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">display_options</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CytoLazyFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Lazily scan a Parquet source into a :class:`CytoLazyFrame`.</span>
+
+<span class="sd">        Enables predicate/projection pushdown for large profiling datasets::</span>
+
+<span class="sd">            (</span>
+<span class="sd">                CytoDataFrame.scan_parquet(&quot;profiles.parquet&quot;)</span>
+<span class="sd">                .filter(...)</span>
+<span class="sd">                .select_features()</span>
+<span class="sd">                .collect()</span>
+<span class="sd">            )</span>
+
+<span class="sd">        The image/display context provided here is carried through the lazy</span>
+<span class="sd">        pipeline and applied when the result is ``.collect()``-ed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">context</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;data_context_dir&quot;</span><span class="p">:</span> <span class="n">data_context_dir</span><span class="p">,</span>
+            <span class="s2">&quot;data_mask_context_dir&quot;</span><span class="p">:</span> <span class="n">data_mask_context_dir</span><span class="p">,</span>
+            <span class="s2">&quot;data_outline_context_dir&quot;</span><span class="p">:</span> <span class="n">data_outline_context_dir</span><span class="p">,</span>
+            <span class="s2">&quot;segmentation_file_regex&quot;</span><span class="p">:</span> <span class="n">segmentation_file_regex</span><span class="p">,</span>
+            <span class="s2">&quot;image_adjustment&quot;</span><span class="p">:</span> <span class="n">image_adjustment</span><span class="p">,</span>
+            <span class="s2">&quot;display_options&quot;</span><span class="p">:</span> <span class="n">display_options</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="k">return</span> <span class="n">_lazy_scan_parquet</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="n">context</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="CytoDataFrame.to_ome_parquet">
 <a class="viewcode-back" href="../../../python-api.html#src.cytodataframe.frame.CytoDataFrame.to_ome_parquet">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">to_ome_parquet</span><span class="p">(</span>  <span class="c1"># noqa: PLR0915, PLR0912, C901</span>
@@ -2084,7 +2225,9 @@
         <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
                 <span class="s2">&quot;CytoDataFrame.to_ome_parquet requires the optional &#39;ome-arrow&#39; &quot;</span>
-                <span class="s2">&quot;dependency. Install it via `pip install ome-arrow`.&quot;</span>
+                <span class="s2">&quot;dependency, which core CytoDataFrame installs do not include. &quot;</span>
+                <span class="s2">&quot;Install it via `pip install cytodataframe[ome]` (or &quot;</span>
+                <span class="s2">&quot;`pip install ome-arrow` directly).&quot;</span>
             <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="kn">from</span><span class="w"> </span><span class="nn">ome_arrow</span><span class="w"> </span><span class="kn">import</span> <span class="n">from_numpy</span> <span class="k">as</span> <span class="n">ome_from_numpy</span>  <span class="c1"># type: ignore</span>
@@ -4158,7 +4301,21 @@
             <span class="n">disable_option</span><span class="o">=</span><span class="s2">&quot;volume_disable_cache&quot;</span><span class="p">,</span>
             <span class="n">max_entries_option</span><span class="o">=</span><span class="s2">&quot;volume_cache_max_entries&quot;</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="n">cache_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">row</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">column</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="c1"># The cached value is the *cropped* volume (bbox cropping is applied</span>
+        <span class="c1"># below, before caching), so the key must change whenever the crop</span>
+        <span class="c1"># settings do; otherwise a display_options change would silently</span>
+        <span class="c1"># return a stale crop for the same row/column. A tuple key also</span>
+        <span class="c1"># avoids the (unlikely but possible) collisions a &quot;row::column&quot;</span>
+        <span class="c1"># string join could produce.</span>
+        <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">bbox_column_map</span> <span class="o">=</span> <span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;volume_bbox_column_map&quot;</span><span class="p">)</span>
+        <span class="n">crop_state</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="nb">bool</span><span class="p">(</span><span class="n">display_options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;volume_disable_bbox_crop&quot;</span><span class="p">)),</span>
+            <span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">bbox_column_map</span><span class="o">.</span><span class="n">items</span><span class="p">()))</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">bbox_column_map</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
+            <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">cache_key</span> <span class="o">=</span> <span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">column</span><span class="p">,</span> <span class="n">crop_state</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">cache_disabled</span> <span class="ow">and</span> <span class="n">cache_key</span> <span class="ow">in</span> <span class="n">cache</span><span class="p">:</span>
             <span class="n">cached</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
             <span class="n">cache</span><span class="p">[</span><span class="n">cache_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">cached</span>
@@ -4168,8 +4325,17 @@
         <span class="c1"># _find_3d_columns_for_display on every render) decodes the image. For</span>
         <span class="c1"># 2D inputs that probe always fails, so remember cells already found to</span>
         <span class="c1"># be non-3D and short-circuit before re-reading the same .tif/.tiff.</span>
-        <span class="n">not_3d_cache</span><span class="p">:</span> <span class="nb">set</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;_volume_not_3d_cache&quot;</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span>
+        <span class="c1"># Bounded and LRU-evicted the same way as ``cache`` above, so this</span>
+        <span class="c1"># negative cache cannot grow without limit across a large DataFrame.</span>
+        <span class="n">raw_not_3d_cache</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span>
+            <span class="s2">&quot;_volume_not_3d_cache&quot;</span><span class="p">,</span> <span class="n">OrderedDict</span><span class="p">()</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">raw_not_3d_cache</span><span class="p">,</span> <span class="n">OrderedDict</span><span class="p">):</span>
+            <span class="n">raw_not_3d_cache</span> <span class="o">=</span> <span class="n">OrderedDict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">raw_not_3d_cache</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="p">[</span><span class="s2">&quot;_volume_not_3d_cache&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">raw_not_3d_cache</span>
+        <span class="n">not_3d_cache</span><span class="p">:</span> <span class="s2">&quot;OrderedDict[Any, None]&quot;</span> <span class="o">=</span> <span class="n">raw_not_3d_cache</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">cache_disabled</span> <span class="ow">and</span> <span class="n">cache_key</span> <span class="ow">in</span> <span class="n">not_3d_cache</span><span class="p">:</span>
+            <span class="n">not_3d_cache</span><span class="o">.</span><span class="n">move_to_end</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Selected cell does not contain a 3D volume.&quot;</span><span class="p">)</span>
 
         <span class="k">try</span><span class="p">:</span>
@@ -4331,7 +4497,10 @@
 
         <span class="k">if</span> <span class="n">volume</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">dims</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">cache_disabled</span><span class="p">:</span>
-                <span class="n">not_3d_cache</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
+                <span class="n">not_3d_cache</span><span class="p">[</span><span class="n">cache_key</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="n">not_3d_cache</span><span class="o">.</span><span class="n">move_to_end</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
+                <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">not_3d_cache</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">cache_max_entries</span><span class="p">:</span>
+                    <span class="n">not_3d_cache</span><span class="o">.</span><span class="n">popitem</span><span class="p">(</span><span class="n">last</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Selected cell does not contain a 3D volume.&quot;</span><span class="p">)</span>
 
         <span class="c1"># Apply per-row bounding box cropping when available (XYZ).</span>
@@ -5033,7 +5202,10 @@
             <span class="kn">import</span><span class="w"> </span><span class="nn">pyvista</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pv</span>  <span class="c1"># type: ignore</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="s2">&quot;PyVista is required for trame-based 3D rendering.&quot;</span>
+                <span class="s2">&quot;PyVista is required for trame-based 3D rendering, which core &quot;</span>
+                <span class="s2">&quot;CytoDataFrame installs do not include. Install it via &quot;</span>
+                <span class="s2">&quot;`pip install cytodataframe[viz3d]` (or `pip install pyvista &quot;</span>
+                <span class="s2">&quot;trame trame-vtk trame-vuetify` directly).&quot;</span>
             <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
 
         <span class="n">display_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;display_options&quot;</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
@@ -5213,7 +5385,10 @@
             <span class="kn">import</span><span class="w"> </span><span class="nn">pyvista</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pv</span>  <span class="c1"># type: ignore</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="s2">&quot;PyVista is required for trame-based 3D rendering.&quot;</span>
+                <span class="s2">&quot;PyVista is required for trame-based 3D rendering, which core &quot;</span>
+                <span class="s2">&quot;CytoDataFrame installs do not include. Install it via &quot;</span>
+                <span class="s2">&quot;`pip install cytodataframe[viz3d]` (or `pip install pyvista &quot;</span>
+                <span class="s2">&quot;trame trame-vtk trame-vuetify` directly).&quot;</span>
             <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
 
         <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">pv</span><span class="p">,</span> <span class="s2">&quot;set_jupyter_backend&quot;</span><span class="p">):</span>
@@ -5966,7 +6141,8 @@
                             <span class="c1"># set the image path based on the image_path cols.</span>
                             <span class="n">image_path</span><span class="o">=</span><span class="p">(</span>
                                 <span class="n">row</span><span class="p">[</span><span class="n">image_path_cols</span><span class="p">[</span><span class="n">image_col</span><span class="p">]]</span>
-                                <span class="k">if</span> <span class="n">image_path_cols</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">image_path_cols</span> <span class="o">!=</span> <span class="p">{}</span>
+                                <span class="k">if</span> <span class="n">image_path_cols</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                                <span class="ow">and</span> <span class="n">image_col</span> <span class="ow">in</span> <span class="n">image_path_cols</span>
                                 <span class="k">else</span> <span class="kc">None</span>
                             <span class="p">),</span>
                         <span class="p">),</span>
@@ -6064,10 +6240,11 @@
         <span class="n">items</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">column</span><span class="p">,</span> <span class="n">color</span> <span class="ow">in</span> <span class="n">channel_specs</span><span class="p">:</span>
             <span class="n">column_str</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">column</span><span class="p">)</span>
-            <span class="n">channel</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">channel</span> <span class="o">=</span> <span class="n">html</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span>
                 <span class="n">column_str</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;FileName_&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
                 <span class="k">if</span> <span class="s2">&quot;FileName_&quot;</span> <span class="ow">in</span> <span class="n">column_str</span>
-                <span class="k">else</span> <span class="n">column_str</span>
+                <span class="k">else</span> <span class="n">column_str</span><span class="p">,</span>
+                <span class="n">quote</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="n">swatch</span> <span class="o">=</span> <span class="p">(</span>
                 <span class="s2">&quot;display:inline-block;width:11px;height:11px;margin-right:4px;&quot;</span>

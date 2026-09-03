@@ -2332,19 +2332,25 @@ def test_get_3d_volume_from_cell_uses_bounded_lru_cache() -> None:
         display_options={"volume_cache_max_entries": 2},
     )
 
+    # Cache keys include row, column, and the crop-affecting display options
+    # (here: no bbox-crop override, no column map), as a tuple rather than a
+    # "row::column" string.
+    crop_state = (False, None)
+    key0, key1, key2 = (0, "A", crop_state), (1, "A", crop_state), (2, "A", crop_state)
+
     cdf._get_3d_volume_from_cell(row=0, column="A")
     cdf._get_3d_volume_from_cell(row=1, column="A")
     cache = cdf._custom_attrs["_volume_cache"]
     assert isinstance(cache, OrderedDict)
-    assert list(cache.keys()) == ["0::A", "1::A"]
+    assert list(cache.keys()) == [key0, key1]
 
     # Access row 0 again, making it the most-recent entry.
     cdf._get_3d_volume_from_cell(row=0, column="A")
-    assert list(cache.keys()) == ["1::A", "0::A"]
+    assert list(cache.keys()) == [key1, key0]
 
     # Inserting a third entry evicts the least-recently used one (row 1).
     cdf._get_3d_volume_from_cell(row=2, column="A")
-    assert list(cache.keys()) == ["0::A", "2::A"]
+    assert list(cache.keys()) == [key0, key2]
     assert len(cache) == 2
 
 

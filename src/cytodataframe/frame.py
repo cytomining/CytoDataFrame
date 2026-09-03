@@ -4,6 +4,7 @@ Defines a CytoDataFrame class.
 
 import base64
 import contextlib
+import html
 import logging
 import os
 import pathlib
@@ -42,6 +43,7 @@ from pandas.io.formats import (
 )
 from skimage.util import img_as_ubyte
 
+from . import engine
 from .image import (
     add_image_scale_bar,
     adjust_with_adaptive_histogram_equalization,
@@ -50,6 +52,9 @@ from .image import (
     get_pixel_bbox_from_offsets,
     image_array_to_grayscale,
 )
+from .lazy import CytoLazyFrame, build_context
+from .lazy import scan_parquet as _lazy_scan_parquet
+from .schema import CytoSchema
 from .volume import (
     build_3d_html_from_path,
     build_3d_image_html_stub,
@@ -157,7 +162,7 @@ class CytoDataFrame(pd.DataFrame):
     # while avoiding oversized outputs in typical Jupyter viewports.
     _DEFAULT_TABLE_MAX_HEIGHT: ClassVar[str] = "700px"
 
-    def __init__(  # noqa: PLR0913, PLR0917
+    def __init__(  # noqa: PLR0913, PLR0917, C901, PLR0912
         self: CytoDataFrame_type,
         data: Union[CytoDataFrame_type, pd.DataFrame, str, pathlib.Path],
         data_context_dir: Optional[str] = None,
@@ -417,6 +422,19 @@ class CytoDataFrame(pd.DataFrame):
 
             super().__init__(data)
 
+        # polars/arrow inputs are probed last so the common pandas/path cases
+        # never trigger a polars/pyarrow import.
+        elif engine.is_polars_lazyframe(data):
+            # Lazy polars input: collect through the Arrow contract into the
+            # pandas compatibility facade.
+            self._custom_attrs["data_source"] = "polars.LazyFrame"
+            super().__init__(engine.normalize_to_pandas(data))
+        elif engine.is_polars_dataframe(data):
+            self._custom_attrs["data_source"] = "polars.DataFrame"
+            super().__init__(engine.normalize_to_pandas(data))
+        elif engine.is_arrow_table(data):
+            self._custom_attrs["data_source"] = "pyarrow.Table"
+            super().__init__(engine.normalize_to_pandas(data))
         else:
             super().__init__(data)
 
@@ -1606,6 +1624,111 @@ class CytoDataFrame(pd.DataFrame):
         else:
             raise ValueError("Unsupported file format for export.")
 
+    # ------------------------------------------------------------------ #
+    # Backend / interchange conversions (Polars engine, Arrow contract)
+    # ------------------------------------------------------------------ #
+    def to_pandas(self: CytoDataFrame_type) -> pd.DataFrame:
+        """
+        Return the data as a plain :class:`pandas.DataFrame`.
+
+        The pandas layer is CytoDataFrame's compatibility boundary; this
+        returns a standard pandas DataFrame (not a CytoDataFrame) for use with
+        pandas-native tooling.
+        """
+        return pd.DataFrame(self)
+
+    def to_polars(self: CytoDataFrame_type) -> Any:
+        """
+        Return the tabular data as an eager :class:`polars.DataFrame`.
+
+        Note: polars has no row-index concept, so the pandas index is dropped.
+        Object columns holding non-Arrow values (e.g. numpy image arrays) cannot
+        be converted and will raise a ``TypeError``.
+        """
+        return engine.to_polars(pd.DataFrame(self))
+
+    def to_lazy(self: CytoDataFrame_type) -> CytoLazyFrame:
+        """
+        Return a lazy, Polars-backed :class:`CytoLazyFrame` view.
+
+        The returned object carries this frame's image/display context so that a
+        subsequent ``.collect()`` rebuilds an equivalently-configured
+        CytoDataFrame.
+        """
+        return CytoLazyFrame(
+            engine.to_lazyframe(pd.DataFrame(self)),
+            context=build_context(self._custom_attrs),
+        )
+
+    def to_arrow(self: CytoDataFrame_type, preserve_index: bool = False) -> Any:
+        """
+        Return the tabular data as a :class:`pyarrow.Table`.
+
+        Arrow is CytoDataFrame's canonical schema and interchange contract.
+        """
+        return engine.to_arrow(pd.DataFrame(self), preserve_index=preserve_index)
+
+    @property
+    def cyto_schema(self: CytoDataFrame_type) -> CytoSchema:
+        """
+        The inferred :class:`CytoSchema` describing this frame's columns.
+
+        Classifies columns into image/object keys, metadata, feature, and
+        geometry roles using the Arrow-native schema contract.
+        """
+        return CytoSchema.from_pandas(pd.DataFrame(self))
+
+    @classmethod
+    def from_file(
+        cls,
+        source: Union[str, pathlib.Path],
+        **kwargs: Any,
+    ) -> "CytoDataFrame":
+        """
+        Eagerly construct a CytoDataFrame from a file path.
+
+        A thin, explicit alias for ``CytoDataFrame(source, ...)`` matching the
+        domain-oriented API in the evolution plan.
+        """
+        return cls(source, **kwargs)
+
+    @classmethod
+    def scan_parquet(  # noqa: PLR0913, PLR0917
+        cls,
+        source: Union[str, pathlib.Path],
+        data_context_dir: Optional[str] = None,
+        data_mask_context_dir: Optional[str] = None,
+        data_outline_context_dir: Optional[str] = None,
+        segmentation_file_regex: Optional[Dict[str, str]] = None,
+        image_adjustment: Optional[Callable] = None,
+        display_options: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> CytoLazyFrame:
+        """
+        Lazily scan a Parquet source into a :class:`CytoLazyFrame`.
+
+        Enables predicate/projection pushdown for large profiling datasets::
+
+            (
+                CytoDataFrame.scan_parquet("profiles.parquet")
+                .filter(...)
+                .select_features()
+                .collect()
+            )
+
+        The image/display context provided here is carried through the lazy
+        pipeline and applied when the result is ``.collect()``-ed.
+        """
+        context = {
+            "data_context_dir": data_context_dir,
+            "data_mask_context_dir": data_mask_context_dir,
+            "data_outline_context_dir": data_outline_context_dir,
+            "segmentation_file_regex": segmentation_file_regex,
+            "image_adjustment": image_adjustment,
+            "display_options": display_options,
+        }
+        return _lazy_scan_parquet(source, context=context, **kwargs)
+
     def to_ome_parquet(  # noqa: PLR0915, PLR0912, C901
         self: CytoDataFrame_type,
         file_path: Union[str, pathlib.Path],
@@ -1622,7 +1745,9 @@ class CytoDataFrame(pd.DataFrame):
         except ImportError as exc:
             raise ImportError(
                 "CytoDataFrame.to_ome_parquet requires the optional 'ome-arrow' "
-                "dependency. Install it via `pip install ome-arrow`."
+                "dependency, which core CytoDataFrame installs do not include. "
+                "Install it via `pip install cytodataframe[ome]` (or "
+                "`pip install ome-arrow` directly)."
             ) from exc
         try:
             from ome_arrow import from_numpy as ome_from_numpy  # type: ignore
@@ -3594,7 +3719,21 @@ class CytoDataFrame(pd.DataFrame):
             disable_option="volume_disable_cache",
             max_entries_option="volume_cache_max_entries",
         )
-        cache_key = f"{row}::{column}"
+        # The cached value is the *cropped* volume (bbox cropping is applied
+        # below, before caching), so the key must change whenever the crop
+        # settings do; otherwise a display_options change would silently
+        # return a stale crop for the same row/column. A tuple key also
+        # avoids the (unlikely but possible) collisions a "row::column"
+        # string join could produce.
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        bbox_column_map = display_options.get("volume_bbox_column_map")
+        crop_state = (
+            bool(display_options.get("volume_disable_bbox_crop")),
+            tuple(sorted(bbox_column_map.items()))
+            if isinstance(bbox_column_map, dict)
+            else None,
+        )
+        cache_key = (row, column, crop_state)
         if not cache_disabled and cache_key in cache:
             cached = cache.pop(cache_key)
             cache[cache_key] = cached
@@ -3604,8 +3743,17 @@ class CytoDataFrame(pd.DataFrame):
         # _find_3d_columns_for_display on every render) decodes the image. For
         # 2D inputs that probe always fails, so remember cells already found to
         # be non-3D and short-circuit before re-reading the same .tif/.tiff.
-        not_3d_cache: set = self._custom_attrs.setdefault("_volume_not_3d_cache", set())
+        # Bounded and LRU-evicted the same way as ``cache`` above, so this
+        # negative cache cannot grow without limit across a large DataFrame.
+        raw_not_3d_cache = self._custom_attrs.setdefault(
+            "_volume_not_3d_cache", OrderedDict()
+        )
+        if not isinstance(raw_not_3d_cache, OrderedDict):
+            raw_not_3d_cache = OrderedDict.fromkeys(raw_not_3d_cache)
+            self._custom_attrs["_volume_not_3d_cache"] = raw_not_3d_cache
+        not_3d_cache: "OrderedDict[Any, None]" = raw_not_3d_cache
         if not cache_disabled and cache_key in not_3d_cache:
+            not_3d_cache.move_to_end(cache_key)
             raise ValueError("Selected cell does not contain a 3D volume.")
 
         try:
@@ -3767,7 +3915,10 @@ class CytoDataFrame(pd.DataFrame):
 
         if volume is None or dims is None:
             if not cache_disabled:
-                not_3d_cache.add(cache_key)
+                not_3d_cache[cache_key] = None
+                not_3d_cache.move_to_end(cache_key)
+                while len(not_3d_cache) > cache_max_entries:
+                    not_3d_cache.popitem(last=False)
             raise ValueError("Selected cell does not contain a 3D volume.")
 
         # Apply per-row bounding box cropping when available (XYZ).
@@ -4427,7 +4578,10 @@ class CytoDataFrame(pd.DataFrame):
             import pyvista as pv  # type: ignore
         except Exception as exc:
             raise RuntimeError(
-                "PyVista is required for trame-based 3D rendering."
+                "PyVista is required for trame-based 3D rendering, which core "
+                "CytoDataFrame installs do not include. Install it via "
+                "`pip install cytodataframe[viz3d]` (or `pip install pyvista "
+                "trame trame-vtk trame-vuetify` directly)."
             ) from exc
 
         display_options = self._custom_attrs.get("display_options", {}) or {}
@@ -4604,7 +4758,10 @@ class CytoDataFrame(pd.DataFrame):
             import pyvista as pv  # type: ignore
         except Exception as exc:
             raise RuntimeError(
-                "PyVista is required for trame-based 3D rendering."
+                "PyVista is required for trame-based 3D rendering, which core "
+                "CytoDataFrame installs do not include. Install it via "
+                "`pip install cytodataframe[viz3d]` (or `pip install pyvista "
+                "trame trame-vtk trame-vuetify` directly)."
             ) from exc
 
         if hasattr(pv, "set_jupyter_backend"):
@@ -5345,7 +5502,8 @@ class CytoDataFrame(pd.DataFrame):
                             # set the image path based on the image_path cols.
                             image_path=(
                                 row[image_path_cols[image_col]]
-                                if image_path_cols is not None and image_path_cols != {}
+                                if image_path_cols is not None
+                                and image_col in image_path_cols
                                 else None
                             ),
                         ),
@@ -5440,10 +5598,11 @@ class CytoDataFrame(pd.DataFrame):
         items = []
         for column, color in channel_specs:
             column_str = str(column)
-            channel = (
+            channel = html.escape(
                 column_str.split("FileName_", 1)[1]
                 if "FileName_" in column_str
-                else column_str
+                else column_str,
+                quote=True,
             )
             swatch = (
                 "display:inline-block;width:11px;height:11px;margin-right:4px;"

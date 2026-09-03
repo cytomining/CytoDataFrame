@@ -2,7 +2,10 @@
 Initialization for cytodataframe package
 """
 
+from . import engine
 from .frame import CytoDataFrame
+from .lazy import CytoLazyFrame
+from .schema import CytoSchema
 
 # Resolve the installed package version. Prefer the setuptools-scm generated
 # ``_version.py`` (written during build / editable install and kept in step with
@@ -17,3 +20,10 @@ except ImportError:
         __version__ = version("cytodataframe")
     except PackageNotFoundError:
         __version__ = "0.0.0"
+
+__all__ = [
+    "CytoDataFrame",
+    "CytoLazyFrame",
+    "CytoSchema",
+    "engine",
+]

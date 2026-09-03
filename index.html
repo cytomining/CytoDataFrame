@@ -394,50 +394,7 @@ With CytoDataFrame you can:</p>
 <li><p>Adjust image displays on-the-fly using interactive slider widgets.</p></li>
 <li><p>Display image objects even when bounding box columns are missing, by cropping from compartment-center offsets or rendering whole fields of view.</p></li>
 <li><p>Automatically detect 3D image volumes and render interactive <a class="reference external" href="https://github.com/Kitware/trame">trame</a> views in notebooks when 3D dependencies are installed (with graceful fallback otherwise).</p></li>
-<li><p>Interoperate with the <a class="reference external" href="https://pola.rs/">Polars</a> and <a class="reference external" href="https://arrow.apache.org/">Apache Arrow</a> ecosystems while keeping the familiar Pandas-based experience.</p></li>
 </ul>
-<section id="polars-and-arrow-interoperability">
-<h2>Polars and Arrow interoperability<a class="headerlink" href="#polars-and-arrow-interoperability" title="Link to this heading">#</a></h2>
-<p>CytoDataFrame uses Apache Arrow as its canonical schema/interchange contract.
-Polars is the execution engine for lazy/scalable queries.
-Pandas remains the compatibility layer that CytoDataFrame itself is built on.
-You can move between all three representations, and run lazy queries, without leaving the CytoDataFrame API:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">cytodataframe</span><span class="w"> </span><span class="kn">import</span> <span class="n">CytoDataFrame</span>
-
-<span class="c1"># Construct from pandas, polars (DataFrame or LazyFrame), or a pyarrow Table.</span>
-<span class="n">cdf</span> <span class="o">=</span> <span class="n">CytoDataFrame</span><span class="p">(</span><span class="s2">&quot;profiles.parquet&quot;</span><span class="p">)</span>
-
-<span class="c1"># Convert to any representation. Pandas is CytoDataFrame&#39;s compatibility</span>
-<span class="c1"># boundary (CytoDataFrame is a pandas.DataFrame subclass internally), so</span>
-<span class="c1"># `to_pandas()` just returns a plain, un-subclassed pandas.DataFrame view of</span>
-<span class="c1"># the same data; the other `to_*` calls convert it into that library&#39;s type.</span>
-<span class="n">cdf</span><span class="o">.</span><span class="n">to_pandas</span><span class="p">()</span>  <span class="c1"># pandas.DataFrame</span>
-<span class="n">cdf</span><span class="o">.</span><span class="n">to_polars</span><span class="p">()</span>  <span class="c1"># polars.DataFrame</span>
-<span class="n">cdf</span><span class="o">.</span><span class="n">to_arrow</span><span class="p">()</span>  <span class="c1"># pyarrow.Table</span>
-<span class="n">cdf</span><span class="o">.</span><span class="n">to_lazy</span><span class="p">()</span>  <span class="c1"># CytoLazyFrame (lazy, Polars-backed)</span>
-
-<span class="c1"># Inspect the inferred schema (metadata / feature / geometry roles), e.g.:</span>
-<span class="c1"># CytoSchema(image_key=&#39;Image_FileName_DNA&#39;, object_key=&#39;Metadata_ObjectNumber&#39;,</span>
-<span class="c1">#            metadata_columns=[...], feature_columns=[...],</span>
-<span class="c1">#            geometry_columns=[...], image_columns=[&#39;Image_FileName_DNA&#39;])</span>
-<span class="n">cdf</span><span class="o">.</span><span class="n">cyto_schema</span>
-</pre></div>
-</div>
-<p>Large Parquet datasets can be scanned lazily rather than loaded into memory up
-front. Polars only reads the rows/columns it actually needs once <code class="docutils literal notranslate"><span class="pre">.collect()</span></code>
-runs (“predicate pushdown” for the <code class="docutils literal notranslate"><span class="pre">.filter(...)</span></code> row condition, “projection
-pushdown” for the columns <code class="docutils literal notranslate"><span class="pre">.select_features()</span></code> keeps):</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">polars</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pl</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">cytodataframe</span><span class="w"> </span><span class="kn">import</span> <span class="n">CytoDataFrame</span>
-
-<span class="n">result</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">CytoDataFrame</span><span class="o">.</span><span class="n">scan_parquet</span><span class="p">(</span><span class="s2">&quot;profiles.parquet&quot;</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">&quot;Metadata_Well&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;A01&quot;</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">select_features</span><span class="p">()</span>
-    <span class="o">.</span><span class="n">collect</span><span class="p">()</span>  <span class="c1"># -&gt; CytoDataFrame</span>
-<span class="p">)</span>
-</pre></div>
-</div>
 <p>For 3D notebook display behavior:</p>
 <ul class="simple">
 <li><p>3D-aware rendering is enabled by default (<code class="docutils literal notranslate"><span class="pre">display_options={&quot;auto_trame_for_3d&quot;:</span> <span class="pre">True}</span></code>).</p></li>
@@ -460,7 +417,6 @@ pushdown” for the columns <code class="docutils literal notranslate"><span cla
 <div><p>✨ CytoDataFrame development began within <strong><a class="reference external" href="https://github.com/cytomining/coSMicQC">coSMicQC</a></strong> - a single-cell profile quality control package.
 Please check out our work there as well!</p>
 </div></blockquote>
-</section>
 <section id="installation">
 <h2>Installation<a class="headerlink" href="#installation" title="Link to this heading">#</a></h2>
 <p>Install CytoDataFrame from source using the following:</p>
@@ -471,23 +427,6 @@ pip<span class="w"> </span>install<span class="w"> </span>cytodataframe
 pip<span class="w"> </span>install<span class="w"> </span>git+https://github.com/cytomining/CytoDataFrame.git
 </pre></div>
 </div>
-<p>The core install is intentionally lean. Heavier, feature-specific stacks are
-available as optional extras:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="c1"># interactive 3D volume rendering (trame / pyvista)</span>
-pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;cytodataframe[viz3d]&quot;</span>
-
-<span class="c1"># OME-Arrow image read/write/embedding (to_ome_parquet, OME-Arrow columns)</span>
-pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;cytodataframe[ome]&quot;</span>
-
-<span class="c1"># everything</span>
-pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;cytodataframe[all]&quot;</span>
-</pre></div>
-</div>
-<p>Everything else in CytoDataFrame (including its Jupyter table/image display)
-works without these extras. If you skip them, calling a feature that needs
-one - <code class="docutils literal notranslate"><span class="pre">to_ome_parquet()</span></code>, or 3D rendering when <code class="docutils literal notranslate"><span class="pre">pyvista</span></code>/<code class="docutils literal notranslate"><span class="pre">trame</span></code> aren’t
-installed - raises an error naming the missing package and the extra to
-install, rather than failing silently.</p>
 </section>
 <section id="contributing-development-and-testing">
 <h2>Contributing, Development, and Testing<a class="headerlink" href="#contributing-development-and-testing" title="Link to this heading">#</a></h2>

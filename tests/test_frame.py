@@ -2,6 +2,8 @@
 Tests cosmicqc CytoDataFrame module
 """
 
+import base64
+import importlib.metadata
 import logging
 import pathlib
 import re
@@ -11,6 +13,7 @@ import warnings
 from collections import OrderedDict
 from contextlib import nullcontext
 from importlib.machinery import ModuleSpec
+from io import BytesIO
 
 import imageio.v2 as imageio
 import ipywidgets as widgets
@@ -19,18 +22,88 @@ import pandas as pd
 import pytest
 import tifffile
 from _pytest.monkeypatch import MonkeyPatch
+from PIL import Image
 from pyarrow import parquet
 
+import cytodataframe
 from cytodataframe.frame import (
+    COMPOSITE_DEFAULT_PALETTE,
     FILTER_SLIDER_LABEL_WIDTH_PX,
     FILTER_SLIDER_READOUT_WIDTH_PX,
     FILTER_SLIDER_TOTAL_WIDTH_PX,
     MAX_FILTER_SLIDER_STOPS,
     CytoDataFrame,
 )
+from cytodataframe.image import adjust_with_adaptive_histogram_equalization
 from tests.utils import (
     cytodataframe_image_display_contains_pixels,
 )
+
+
+def test_package_exposes_resolved_version() -> None:
+    """``cytodataframe.__version__`` reports the real version, not a placeholder.
+
+    The version is resolved from the setuptools-scm ``_version.py`` (or the
+    installed package metadata as a fallback). ``"0.0.0"`` is only used when
+    resolution fails entirely, so seeing it here would mean the version display
+    is broken.
+    """
+    version = cytodataframe.__version__
+    assert isinstance(version, str) and version
+    assert version != "0.0.0"
+    # setuptools-scm versions start with the numeric release (e.g. "0.3.1...").
+    assert version[0].isdigit()
+    # Version resolution must succeed via one of the real sources (the
+    # setuptools-scm ``_version.py`` or the installed distribution metadata).
+    # We deliberately do not require these two to be byte-equal: in an
+    # actively-developed editable install ``_version.py`` is regenerated on each
+    # build while the installed distribution metadata reflects the last full
+    # install, so the two can legitimately drift.
+    assert importlib.metadata.version("cytodataframe")
+
+
+def test_3d_probe_skips_ome_decode_for_missing_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """3D detection must not OME-decode image files that do not exist.
+
+    When image filename columns cannot be resolved to files on disk (e.g. bare
+    filenames read back from an ``.ome.parquet`` without a ``data_context_dir``),
+    the routine 3D-detection probe used to call ``OMEArrow`` on the missing path,
+    making bioio emit noisy "Exclusive reader attempt failed" errors. The probe
+    must skip OME decoding entirely when there is no file to read.
+    """
+    ome_arrow = pytest.importorskip("ome_arrow")
+
+    attempted_paths: list[str] = []
+
+    class SpyOMEArrow:
+        def __init__(self, data: object) -> None:
+            attempted_paths.append(str(data))
+
+        @property
+        def data(self) -> None:
+            return None
+
+    monkeypatch.setattr(ome_arrow, "OMEArrow", SpyOMEArrow)
+
+    frame = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "Image_FileName_GFP": ["missing_a.tif", "missing_b.tif"],
+                "Nuclei_AreaShape_BoundingBoxMinimum_X": [0, 0],
+                "Nuclei_AreaShape_BoundingBoxMinimum_Y": [0, 0],
+                "Nuclei_AreaShape_BoundingBoxMaximum_X": [5, 5],
+                "Nuclei_AreaShape_BoundingBoxMaximum_Y": [5, 5],
+            }
+        )
+    )
+
+    # Running 3D detection must not attempt to OME-decode the missing files.
+    assert frame._find_3d_columns_for_display() == []
+    assert attempted_paths == [], (
+        f"OME-Arrow was attempted on missing files: {attempted_paths}"
+    )
 
 
 def test_to_ome_parquet_adds_arrow_column(
@@ -459,7 +532,7 @@ def test_find_matching_segmentation_path_prefers_candidate_parent_tree(
     assert matched.parent.name == "plate_a"
 
 
-def test_cytodataframe_input(
+def test_cytodataframe_input(  # noqa: PLR0917
     tmp_path: pathlib.Path,
     basic_outlier_dataframe: pd.DataFrame,
     basic_outlier_csv: str,
@@ -782,6 +855,779 @@ def test_repr_html_red_pixels(
         ],
         color_conditions={"green": None, "red": 255, "blue": None},
     ), "The pediatric cancer atlas speckles images do not contain red dots."
+
+
+def _decode_html_images(html_output: str) -> list:
+    """Decode every base64 PNG embedded in rendered CytoDataFrame HTML."""
+    decoded = []
+    for base64_data in re.findall(r'data:image/png;base64,([^"]+)', html_output):
+        image = Image.open(BytesIO(base64.b64decode(base64_data))).convert("RGB")
+        decoded.append(np.array(image))
+    return decoded
+
+
+def test_composite_channels_single_channel_is_tinted(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+):
+    """
+    A single-channel composite tinted a pure color produces an image where the
+    other two color channels are zero. Individual (grayscale) channel crops
+    always have R == G == B, so an image with only one non-zero color channel
+    can only be the tinted composite. This makes the assertion deterministic.
+    The center dot is disabled here so the pure-tint invariant holds (the dot
+    and outline overlays are exercised in a dedicated test).
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+
+    # tint the DNA channel pure blue -> composite has red==0, green==0, blue>0
+    blue_frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={
+            "composite_channels": {"OrigDNA": "blue"},
+            "center_dot": False,
+        },
+    )[["Image_FileName_OrigDNA"]][:2]
+    blue_html = blue_frame._repr_html_(debug=True)
+    assert "Image_Composite" in blue_html
+    blue_images = _decode_html_images(blue_html)
+    assert any(
+        img[:, :, 0].max() == 0 and img[:, :, 1].max() == 0 and img[:, :, 2].max() > 0
+        for img in blue_images
+    ), "Expected a blue-tinted composite image (red==0, green==0, blue>0)."
+
+    # tint the DNA channel pure red -> composite has green==0, blue==0, red>0
+    red_frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={
+            "composite_channels": {"OrigDNA": (255, 0, 0)},
+            "center_dot": False,
+        },
+    )[["Image_FileName_OrigDNA"]][:2]
+    red_images = _decode_html_images(red_frame._repr_html_(debug=True))
+    assert any(
+        img[:, :, 0].max() > 0 and img[:, :, 1].max() == 0 and img[:, :, 2].max() == 0
+        for img in red_images
+    ), "Expected a red-tinted composite image (green==0, blue==0, red>0)."
+
+
+def test_composite_channels_match_size_and_show_outline_and_dot(
+    cytotable_NF1_data_parquet_shrunken: str,
+):
+    """
+    The merged composite is rendered at the same size as the individual channel
+    crops and, when a segmentation outline and center dot are configured, shows
+    them just like the other images.
+    """
+    parent = pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent
+    frame = CytoDataFrame(
+        data=cytotable_NF1_data_parquet_shrunken,
+        data_context_dir=f"{parent}/Plate_2_images",
+        data_mask_context_dir=f"{parent}/Plate_2_masks",
+        # tint the single channel blue so the green outline and red dot stand
+        # out unambiguously against the blue-tinted cell body.
+        display_options={"composite_channels": {"DAPI": "blue"}},
+    )[["Image_FileName_DAPI"]][:2]
+
+    images = _decode_html_images(frame._repr_html_(debug=True))
+    # with a single selected channel column, images alternate per row as
+    # [channel, composite]; the composite is every second image.
+    channel_image, composite_image = images[0], images[1]
+
+    # the composite is the same size as the individual channel crop
+    assert composite_image.shape == channel_image.shape
+
+    # the composite shows the segmentation outline (green) and center dot (red)
+    green_outline = (
+        (composite_image[:, :, 1] >= 200)
+        & (composite_image[:, :, 0] <= 80)
+        & (composite_image[:, :, 2] <= 80)
+    )
+    red_dot = (
+        (composite_image[:, :, 0] >= 200)
+        & (composite_image[:, :, 1] <= 80)
+        & (composite_image[:, :, 2] <= 80)
+    )
+    assert np.any(green_outline), "Composite is missing the green segmentation outline."
+    assert np.any(red_dot), "Composite is missing the red center dot."
+
+
+def test_fit_to_shape_resizes_and_passes_through() -> None:
+    """``_fit_to_shape`` resizes to the target and no-ops on a match."""
+    same = np.full((8, 8, 3), 5, dtype=np.uint8)
+    # identical shape returns the array unchanged (byte-identical)
+    assert CytoDataFrame._fit_to_shape(same, (8, 8), smooth=True) is same
+
+    smaller = np.full((4, 4), 200, dtype=np.uint8)
+    grown = CytoDataFrame._fit_to_shape(smaller, (8, 8), smooth=False)
+    assert grown.shape == (8, 8)
+    assert grown.dtype == np.uint8
+
+
+def test_composite_resizes_mismatched_channels(
+    monkeypatch: MonkeyPatch,
+    cytotable_NF1_data_parquet_shrunken: str,
+) -> None:
+    """
+    Channels whose crops differ in size (e.g. different source resolutions) are
+    fit to a single canvas so the composite is a consistent size and every
+    channel still contributes to the blend.
+    """
+    frame = CytoDataFrame(data=cytotable_NF1_data_parquet_shrunken)
+
+    def fake_layers(data_value: object, **_: object) -> dict:
+        # channel "a" renders 20x20, channel "b" renders a smaller 10x10 crop
+        if data_value == "a":
+            arr = np.full((20, 20, 3), 120, dtype=np.uint8)
+        else:
+            arr = np.full((10, 10, 3), 200, dtype=np.uint8)
+        return {"original": arr, "composite": arr}
+
+    monkeypatch.setattr(frame, "_prepare_cropped_image_layers", fake_layers)
+
+    row = pd.Series({"Image_FileName_A": "a", "Image_FileName_B": "b"})
+    channel_specs = [
+        ("Image_FileName_A", (255, 0, 0)),  # red
+        ("Image_FileName_B", (0, 0, 255)),  # blue
+    ]
+    composite = frame._build_channel_composite_array(
+        row=row,
+        channel_specs=channel_specs,
+        bounding_box=None,
+        compartment_center_xy=None,
+        image_path_cols={},
+    )
+    # composite matches the first channel's canvas size, not the smaller channel
+    assert composite.shape == (20, 20, 3)
+    # both channels contributed to the blend (red from "a", blue from "b")
+    assert composite[:, :, 0].max() > 0
+    assert composite[:, :, 2].max() > 0
+
+
+def test_composite_channels_all_and_custom_name(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+):
+    """
+    The ``composite_channels: 'all'`` form adds a merged composite column and
+    ``composite_column_name`` controls the column label.
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={
+            "composite_channels": "all",
+            "composite_column_name": "Image_Merged",
+        },
+    )[["Image_FileName_OrigAGP", "Image_FileName_OrigDNA"]][:2]
+    html_output = frame._repr_html_(debug=True)
+    assert "Image_Merged" in html_output
+    assert "Image_Composite" not in html_output
+
+    # the merged composite of multiple differently-colored channels is not
+    # grayscale: at least one pixel has channels that differ meaningfully.
+    assert any(
+        int(img[:, :, 0].astype(int).max()) - int(img[:, :, 2].astype(int).min()) > 30
+        and np.any(np.abs(img[:, :, 0].astype(int) - img[:, :, 2].astype(int)) > 30)
+        for img in _decode_html_images(html_output)
+    ), "Expected the merged composite to contain non-grayscale (colored) pixels."
+
+
+def test_image_cells_have_min_width_floor(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    Displayed images carry a ``min-width`` floor so image columns keep a
+    consistent, readable size under table width pressure (applied by notebook
+    environments' ``img {max-width:100%}``) instead of a short-headed column
+    such as the merged composite collapsing, or many image columns (e.g. an
+    OME-Arrow table) shrinking to tiny thumbnails.
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={"composite_channels": "all"},
+    )[["Image_FileName_OrigAGP", "Image_FileName_OrigDNA"]][:2]
+    html_output = frame._repr_html_(debug=True)
+    # every displayed image (channels and composite) carries the floor
+    image_styles = re.findall(
+        r'<img[^>]*style="([^"]*)"',
+        re.sub(r"base64,[A-Za-z0-9+/=]+", "", html_output),
+    )
+    assert image_styles
+    assert all("min-width:200px" in style for style in image_styles)
+    # the fragile header-wrap approach is not used (it mangled text headers and
+    # shrank many-column OME-Arrow tables)
+    assert "overflow-wrap" not in html_output
+    # column headers stay on one line so names are never scrunched narrower than
+    # the header (giving each column a reasonable minimum width)
+    assert "table.dataframe thead th {background:#EBEBEB;white-space:nowrap;}" in (
+        html_output
+    )
+
+
+def test_resolve_image_min_width_only_floors_large_pixel_widths() -> None:
+    """The image min-width floor applies only to explicit px widths above it."""
+    # default width gets floored
+    assert CytoDataFrame._resolve_image_min_width("300px") == "200px"
+    # widths at or below the floor, or non-pixel widths, stay responsive
+    assert CytoDataFrame._resolve_image_min_width("200px") is None
+    assert CytoDataFrame._resolve_image_min_width("120px") is None
+    assert CytoDataFrame._resolve_image_min_width("auto") is None
+    assert CytoDataFrame._resolve_image_min_width("100%") is None
+
+
+def test_normalize_css_width_converts_bare_numbers_to_pixels() -> None:
+    """Bare numeric widths become px strings; unit/keyword widths are kept."""
+    # bare numbers (int, float, numeric string) become pixel strings
+    assert CytoDataFrame._normalize_css_width(300) == "300px"
+    assert CytoDataFrame._normalize_css_width("300") == "300px"
+    assert CytoDataFrame._normalize_css_width(300.0) == "300px"
+    assert CytoDataFrame._normalize_css_width("100") == "100px"
+    # values that already carry a unit or keyword are returned unchanged
+    assert CytoDataFrame._normalize_css_width("300px") == "300px"
+    assert CytoDataFrame._normalize_css_width("100%") == "100%"
+    assert CytoDataFrame._normalize_css_width("auto") == "auto"
+
+
+def test_integer_width_emits_valid_css_and_floors(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    An integer ``width`` (as documented) emits a valid pixel width and still
+    participates in the min-width floor.
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={"width": 300},
+    )[["Image_FileName_OrigDNA"]][:1]
+    html_output = frame._repr_html_(debug=True)
+    image_styles = re.findall(
+        r'<img[^>]*style="([^"]*)"',
+        re.sub(r"base64,[A-Za-z0-9+/=]+", "", html_output),
+    )
+    assert image_styles
+    assert all("width:300px" in style for style in image_styles)
+    assert all("min-width:200px" in style for style in image_styles)
+
+
+def test_composite_channels_no_option_adds_no_column(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+):
+    """Without the display option, no composite column is added."""
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+    )[["Image_FileName_OrigAGP", "Image_FileName_OrigDNA"]][:2]
+    assert "Image_Composite" not in frame._repr_html_(debug=True)
+
+
+def test_resolve_composite_color_and_channel_matching() -> None:
+    """Unit tests for the composite color and channel-matching helpers."""
+    # named colors (case-insensitive) and RGB sequences resolve to tuples
+    assert CytoDataFrame._resolve_composite_color("Blue") == (0, 0, 255)
+    assert CytoDataFrame._resolve_composite_color([0, 255, 0]) == (0, 255, 0)
+    assert CytoDataFrame._resolve_composite_color((300, -5, 10)) == (255, 0, 10)
+    assert CytoDataFrame._resolve_composite_color("not-a-color") is None
+    assert CytoDataFrame._resolve_composite_color((1, 2)) is None
+
+    # hex colors (6-digit, 3-digit shorthand, case-insensitive) resolve too
+    assert CytoDataFrame._resolve_composite_color("#0000ff") == (0, 0, 255)
+    assert CytoDataFrame._resolve_composite_color("#00FF00") == (0, 255, 0)
+    assert CytoDataFrame._resolve_composite_color("#0af") == (0, 170, 255)
+    assert CytoDataFrame._resolve_composite_color("#zzzzzz") is None
+    assert CytoDataFrame._resolve_composite_color("#12") is None
+
+    image_cols = ["Image_FileName_OrigDNA", "Image_FileName_OrigRNA"]
+    # exact column name, channel suffix, and substring all match
+    assert (
+        CytoDataFrame._match_channel_column("Image_FileName_OrigDNA", image_cols)
+        == "Image_FileName_OrigDNA"
+    )
+    assert (
+        CytoDataFrame._match_channel_column("OrigRNA", image_cols)
+        == "Image_FileName_OrigRNA"
+    )
+    assert (
+        CytoDataFrame._match_channel_column("dna", image_cols)
+        == "Image_FileName_OrigDNA"
+    )
+    assert CytoDataFrame._match_channel_column("missing", image_cols) is None
+
+
+def test_resolve_composite_channels_forms(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """The composite channel spec resolves across all supported forms."""
+    image_cols = ["Image_FileName_OrigAGP", "Image_FileName_OrigDNA"]
+
+    def _resolved(spec: object) -> list:
+        frame = CytoDataFrame(
+            data=cytotable_pediatric_cancer_atlas_parquet,
+            display_options={"composite_channels": spec},
+        )
+        return frame._resolve_composite_channels(image_cols)
+
+    # "all" uses every channel with palette colors in column order
+    all_resolved = _resolved("all")
+    assert [col for col, _ in all_resolved] == image_cols
+    assert all_resolved[0][1] == (0, 255, 255)  # first palette color (cyan)
+
+    # a mapping uses the requested channels and explicit colors
+    mapping_resolved = _resolved({"OrigDNA": "green", "OrigAGP": (10, 20, 30)})
+    assert mapping_resolved == [
+        ("Image_FileName_OrigDNA", (0, 255, 0)),
+        ("Image_FileName_OrigAGP", (10, 20, 30)),
+    ]
+
+    # unknown channels are skipped
+    assert _resolved(["OrigDNA", "DoesNotExist"]) == [
+        ("Image_FileName_OrigDNA", (0, 255, 255))
+    ]
+
+
+def test_composite_default_palette_assigned_in_order(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    When colors are not specified, channels get the default (CMY-forward)
+    palette in order. This documents how ``"all"`` and bare channel lists are
+    colored.
+    """
+    image_cols = [
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+        "Image_FileName_OrigER",
+    ]
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        display_options={"composite_channels": "all"},
+    )
+    resolved = frame._resolve_composite_channels(image_cols)
+    assert [col for col, _ in resolved] == image_cols
+    # colors follow the default palette order (cyan, magenta, yellow, ...)
+    assert [color for _, color in resolved] == list(
+        COMPOSITE_DEFAULT_PALETTE[: len(image_cols)]
+    )
+    assert resolved[0][1] == (0, 255, 255)  # cyan leads the palette
+
+
+def test_composite_render_includes_color_legend(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    Rendering a composite includes a color legend mapping each channel to its
+    color, so an auto-colored (``"all"``) composite can still be interpreted.
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={"composite_channels": "all"},
+    )[["Image_FileName_OrigAGP", "Image_FileName_OrigDNA"]][:2]
+    html_output = frame._repr_html_(debug=True)
+    assert "Composite colors:" in html_output
+    # legend lists each channel with its default (CMY-forward) palette swatch
+    assert "OrigAGP" in html_output and "rgb(0,255,255)" in html_output
+    assert "OrigDNA" in html_output and "rgb(255,0,255)" in html_output
+
+    # no composite -> no legend
+    plain = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+    )[["Image_FileName_OrigAGP", "Image_FileName_OrigDNA"]][:2]
+    assert "Composite colors:" not in plain._repr_html_(debug=True)
+
+
+def test_equalize_clip_limit_option_changes_rendered_image(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    The ``equalize_clip_limit`` display option provides a simple contrast knob
+    (a milder value avoids over-saturated crops) and changes the rendered image.
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    cols = ["Image_FileName_OrigDNA"]
+
+    def _first_image(display_options: dict) -> np.ndarray:
+        frame = CytoDataFrame(
+            data=cytotable_pediatric_cancer_atlas_parquet,
+            data_context_dir=image_dir,
+            display_options=display_options,
+        )[cols][:1]
+        return _decode_html_images(frame._repr_html_(debug=True))[0]
+
+    default_image = _first_image({})
+    mild_image = _first_image({"equalize_clip_limit": 0.01})
+    assert default_image.shape == mild_image.shape
+    assert not np.array_equal(default_image, mild_image)
+
+
+def test_equalize_clip_limit_passed_to_equalization() -> None:
+    """A provided clip_limit overrides the brightness-derived one."""
+    rng = np.random.default_rng(0)
+    image = (rng.random((64, 80)) * 255).astype(np.uint8)
+    default = adjust_with_adaptive_histogram_equalization(image, brightness=50)
+    mild = adjust_with_adaptive_histogram_equalization(
+        image, brightness=50, clip_limit=0.01
+    )
+    assert default.shape == mild.shape
+    assert not np.array_equal(default, mild)
+
+
+def test_equalize_clip_limit_change_invalidates_image_cache(
+    cytotable_pediatric_cancer_atlas_parquet: str,
+) -> None:
+    """
+    The image cache key includes ``equalize_clip_limit``, so changing it on the
+    same frame produces a cache miss and recomputes the pixels (rather than
+    returning the previously cached, differently-equalized image).
+    """
+    image_dir = (
+        f"{pathlib.Path(cytotable_pediatric_cancer_atlas_parquet).parent}/images/orig"
+    )
+    frame = CytoDataFrame(
+        data=cytotable_pediatric_cancer_atlas_parquet,
+        data_context_dir=image_dir,
+        display_options={"equalize_clip_limit": 0.01},
+    )[["Image_FileName_OrigDNA"]][:1]
+
+    before = _decode_html_images(frame._repr_html_(debug=True))[0]
+    # change the clip limit on the same frame (which shares the image cache)
+    frame._custom_attrs["display_options"]["equalize_clip_limit"] = 0.2
+    after = _decode_html_images(frame._repr_html_(debug=True))[0]
+    assert before.shape == after.shape
+    assert not np.array_equal(before, after)
+
+    # reverting reproduces the original (cache hit on the original key)
+    frame._custom_attrs["display_options"]["equalize_clip_limit"] = 0.01
+    reverted = _decode_html_images(frame._repr_html_(debug=True))[0]
+    assert np.array_equal(before, reverted)
+
+
+def test_repr_html_offset_bounding_box_without_bounding_box_columns(
+    cytotable_NF1_data_parquet_shrunken: str,
+):
+    """
+    Tests that images are cropped via the ``offset_bounding_box`` display option
+    when the input lacks AreaShape bounding box columns (e.g. older CellProfiler
+    outputs such as LINCS), relying instead on compartment center coordinates.
+
+    See https://github.com/cytomining/CytoDataFrame/issues/215.
+    """
+
+    image_dir = (
+        f"{pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent}/Plate_2_images"
+    )
+    image_cols = [
+        "Image_FileName_DAPI",
+        "Image_FileName_GFP",
+        "Image_FileName_RFP",
+    ]
+
+    # Simulate old CellProfiler outputs by removing all bounding box columns
+    # while keeping the Location_Center columns.
+    nf1_data = pd.read_parquet(path=cytotable_NF1_data_parquet_shrunken)
+    data_without_bounding_box = nf1_data.drop(
+        columns=[col for col in nf1_data.columns if "BoundingBox" in col],
+    )
+
+    def displayed_image_sizes(frame: CytoDataFrame) -> list:
+        """Decode every cropped image embedded in the HTML and return its size."""
+        html_output = frame[image_cols]._repr_html_(debug=True)
+        matches = re.findall(r"data:image/png;base64,([^\"]+)", html_output)
+        return [Image.open(BytesIO(base64.b64decode(match))).size for match in matches]
+
+    # Sanity check: no bounding box columns but compartment centers are present.
+    no_offset_frame = CytoDataFrame(
+        data=data_without_bounding_box,
+        data_context_dir=image_dir,
+    )
+    assert no_offset_frame._custom_attrs["data_bounding_box"] is None
+    assert no_offset_frame._custom_attrs["compartment_center_xy"] is not None
+
+    # Without an offset_bounding_box and without bounding box columns there is
+    # nothing to crop with, so no cropped images are produced.
+    assert displayed_image_sizes(no_offset_frame) == []
+
+    # With an offset_bounding_box, images are cropped using the compartment
+    # center coordinates plus the provided offsets.
+    offset = {"x_min": -20, "y_min": -20, "x_max": 20, "y_max": 20}
+    offset_frame = CytoDataFrame(
+        data=data_without_bounding_box,
+        data_context_dir=image_dir,
+        display_options={"offset_bounding_box": offset},
+    )
+    sizes = displayed_image_sizes(offset_frame)
+
+    # One cropped image is produced per displayed row and image column.
+    assert len(sizes) == len(offset_frame) * len(image_cols)
+    # Each crop spans the full offset range (clamped at the image edges), so it
+    # should be no larger than the requested width/height.
+    expected_width = offset["x_max"] - offset["x_min"]
+    expected_height = offset["y_max"] - offset["y_min"]
+    for width, height in sizes:
+        assert 0 < width <= expected_width
+        assert 0 < height <= expected_height
+
+    # The cropped images should still include the red compartment center dot.
+    assert cytodataframe_image_display_contains_pixels(
+        frame=offset_frame,
+        image_cols=image_cols,
+        color_conditions={"green": None, "red": 255, "blue": None},
+    ), "The offset-cropped NF1 images do not contain red dots."
+
+
+def test_repr_html_offset_bounding_box_without_center_columns_warns(
+    cytotable_NF1_data_parquet_shrunken: str,
+    caplog: pytest.LogCaptureFixture,
+):
+    """
+    Tests that an offset_bounding_box with no bounding box and no compartment
+    center columns logs a warning and produces no cropped images.
+
+    See https://github.com/cytomining/CytoDataFrame/issues/215.
+    """
+
+    image_dir = (
+        f"{pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent}/Plate_2_images"
+    )
+    image_cols = ["Image_FileName_DAPI", "Image_FileName_GFP", "Image_FileName_RFP"]
+
+    nf1_data = pd.read_parquet(path=cytotable_NF1_data_parquet_shrunken)
+    data_without_bbox_or_center = nf1_data.drop(
+        columns=[
+            col
+            for col in nf1_data.columns
+            if "BoundingBox" in col or "Location_Center" in col
+        ],
+    )
+
+    frame = CytoDataFrame(
+        data=data_without_bbox_or_center,
+        data_context_dir=image_dir,
+        display_options={
+            "offset_bounding_box": {
+                "x_min": -20,
+                "y_min": -20,
+                "x_max": 20,
+                "y_max": 20,
+            }
+        },
+    )
+    assert frame._custom_attrs["data_bounding_box"] is None
+    assert frame._custom_attrs["compartment_center_xy"] is None
+
+    with caplog.at_level(logging.WARNING):
+        html_output = frame[image_cols]._repr_html_(debug=True)
+
+    assert "no compartment center xy columns were found" in caplog.text
+    assert re.findall(r"data:image/png;base64,([^\"]+)", html_output) == []
+
+
+def test_repr_html_render_whole_image_without_bounding_box_or_center(
+    cytotable_NF1_data_parquet_shrunken: str,
+):
+    """
+    Tests that the ``render_whole_image`` display option renders full fields of
+    view for image-level inputs that have neither bounding box nor compartment
+    center columns (e.g. whole-FOV quality control metrics).
+
+    See https://github.com/cytomining/CytoDataFrame/issues/202.
+    """
+
+    image_dir = (
+        f"{pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent}/Plate_2_images"
+    )
+    image_cols = ["Image_FileName_DAPI", "Image_FileName_GFP", "Image_FileName_RFP"]
+
+    # Simulate whole-FOV inputs by removing both bounding box and center columns.
+    nf1_data = pd.read_parquet(path=cytotable_NF1_data_parquet_shrunken)
+    fov_data = nf1_data.drop(
+        columns=[
+            col
+            for col in nf1_data.columns
+            if "BoundingBox" in col or "Location_Center" in col
+        ],
+    )
+
+    def displayed_image_sizes(frame: CytoDataFrame) -> list:
+        """Decode every image embedded in the HTML and return its size."""
+        html_output = frame[image_cols]._repr_html_(debug=True)
+        matches = re.findall(r"data:image/png;base64,([^\"]+)", html_output)
+        return [Image.open(BytesIO(base64.b64decode(match))).size for match in matches]
+
+    # Without the flag, there is nothing to crop with so nothing renders.
+    plain_frame = CytoDataFrame(data=fov_data, data_context_dir=image_dir)
+    assert plain_frame._custom_attrs["data_bounding_box"] is None
+    assert plain_frame._custom_attrs["compartment_center_xy"] is None
+    assert displayed_image_sizes(plain_frame) == []
+
+    # With render_whole_image, full fields of view render uncropped.
+    whole_frame = CytoDataFrame(
+        data=fov_data,
+        data_context_dir=image_dir,
+        display_options={"render_whole_image": True},
+    )
+    sizes = displayed_image_sizes(whole_frame)
+    assert len(sizes) == len(whole_frame) * len(image_cols)
+
+    # Each rendered image matches the dimensions of its source field of view.
+    source_image = imageio.imread(
+        next(pathlib.Path(image_dir).rglob(fov_data["Image_FileName_DAPI"].iloc[0]))
+    )
+    expected_height, expected_width = source_image.shape[:2]
+    assert all(size == (expected_width, expected_height) for size in sizes)
+
+
+def test_repr_html_transposed_render_whole_image_without_bounding_box_or_center(
+    cytotable_NF1_data_parquet_shrunken: str,
+):
+    """
+    Tests that ``.T`` on a whole-FOV CytoDataFrame (no bounding box or
+    compartment center columns) still renders a transposed table with the
+    embedded image intact, rather than falling back to an untransposed table
+    of raw filenames.
+
+    See https://github.com/cytomining/CytoDataFrame/issues/226.
+    """
+
+    image_dir = (
+        f"{pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent}/Plate_2_images"
+    )
+    image_filename = next(pathlib.Path(image_dir).glob("*.tif")).name
+
+    # a minimal whole-FOV frame with no bounding box or compartment
+    # center columns at all (mirrors the issue's reproduction).
+    df = pd.DataFrame(
+        {
+            "FileName_OrigDNA": [image_filename, image_filename],
+            "PathName_OrigDNA": [image_dir, image_dir],
+            "SomeMetric": [-2.5, -2.7],
+        }
+    )
+
+    whole_frame = CytoDataFrame(df, display_options={"render_whole_image": True})
+    assert whole_frame._custom_attrs["data_bounding_box"] is None
+    assert whole_frame._custom_attrs["compartment_center_xy"] is None
+
+    non_transposed_html = whole_frame.head(2)._repr_html_(debug=True)
+    transposed_html = whole_frame.head(2).T._repr_html_(debug=True)
+
+    non_transposed_images = re.findall(
+        r"data:image/png;base64,([^\"]+)", non_transposed_html
+    )
+    transposed_images = re.findall(r"data:image/png;base64,([^\"]+)", transposed_html)
+
+    # the transposed rendering must still embed the same images as the
+    # non-transposed rendering (previously it silently rendered none).
+    assert len(transposed_images) == len(non_transposed_images) > 0
+
+    # the transposed rendering must actually be transposed: the
+    # FileName_OrigDNA column becomes a row label instead of appearing
+    # in the header row.
+    assert ">FileName_OrigDNA<" in transposed_html
+
+
+def test_repr_html_offset_bounding_box_warns_when_centers_missing_with_bbox(
+    cytotable_NF1_data_parquet_shrunken: str,
+    caplog: pytest.LogCaptureFixture,
+):
+    """
+    Tests that an offset_bounding_box with bounding box columns but no
+    compartment center columns warns that the offset is ignored, while still
+    cropping via the bounding box columns.
+
+    See https://github.com/cytomining/CytoDataFrame/issues/215.
+    """
+
+    image_dir = (
+        f"{pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent}/Plate_2_images"
+    )
+    image_cols = ["Image_FileName_DAPI", "Image_FileName_GFP", "Image_FileName_RFP"]
+
+    nf1_data = pd.read_parquet(path=cytotable_NF1_data_parquet_shrunken)
+    data_without_center = nf1_data.drop(
+        columns=[col for col in nf1_data.columns if "Location_Center" in col],
+    )
+
+    frame = CytoDataFrame(
+        data=data_without_center,
+        data_context_dir=image_dir,
+        display_options={
+            "offset_bounding_box": {
+                "x_min": -20,
+                "y_min": -20,
+                "x_max": 20,
+                "y_max": 20,
+            }
+        },
+    )
+    assert frame._custom_attrs["data_bounding_box"] is not None
+    assert frame._custom_attrs["compartment_center_xy"] is None
+
+    with caplog.at_level(logging.WARNING):
+        html_output = frame[image_cols]._repr_html_(debug=True)
+
+    assert "no compartment center xy columns were found" in caplog.text
+    assert "offset_bounding_box will be ignored" in caplog.text
+    # the bounding box columns are still used to crop the images.
+    assert re.findall(r"data:image/png;base64,([^\"]+)", html_output) != []
+
+
+def test_repr_html_offset_bounding_box_with_missing_key_raises_value_error(
+    cytotable_NF1_data_parquet_shrunken: str,
+):
+    """
+    Tests that a misspelled/missing offset_bounding_box key raises a clear
+    ValueError instead of a raw KeyError.
+
+    See https://github.com/cytomining/CytoDataFrame/issues/215.
+    """
+
+    image_dir = (
+        f"{pathlib.Path(cytotable_NF1_data_parquet_shrunken).parent}/Plate_2_images"
+    )
+    image_cols = ["Image_FileName_DAPI", "Image_FileName_GFP", "Image_FileName_RFP"]
+
+    frame = CytoDataFrame(
+        data=cytotable_NF1_data_parquet_shrunken,
+        data_context_dir=image_dir,
+        display_options={
+            # "ymin" is a typo for "y_min".
+            "offset_bounding_box": {
+                "x_min": -20,
+                "ymin": -20,
+                "x_max": 20,
+                "y_max": 20,
+            }
+        },
+    )
+
+    with pytest.raises(
+        ValueError, match=r"offset_bounding_box.*missing a required key"
+    ):
+        frame[image_cols]._repr_html_(debug=True)
 
 
 def test_return_cytodataframe(cytotable_NF1_data_parquet_shrunken: str):
@@ -1366,6 +2212,49 @@ def test_find_image_columns_accepts_pathlike_values(tmp_path: pathlib.Path) -> N
     )
     assert "PathLikeCol" in cdf.find_image_columns()
     assert "NotImage" not in cdf.find_image_columns()
+
+
+def test_get_image_paths_excludes_non_filename_image_columns() -> None:
+    """Only FileName->PathName columns become image-path metadata.
+
+    ``Image_URL_*`` columns are legitimately detected as image columns (their
+    values are ``file:...tiff`` URLs), but they do not follow the
+    FileName->PathName convention. They must not be pulled into
+    ``data_image_paths``; otherwise they get re-joined and re-decoded during
+    rendering only to be dropped again.
+    """
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "Image_FileName_DNA": ["a.tiff"],
+                "Image_PathName_DNA": ["/imgs"],
+                "Image_URL_DNA": ["file:/imgs/a.tiff"],
+            }
+        )
+    )
+    paths = cdf._custom_attrs["data_image_paths"]
+    assert paths is not None
+    assert list(paths.columns) == ["Image_PathName_DNA"]
+
+
+def test_find_image_columns_skips_numeric_and_finds_strings() -> None:
+    """Numeric feature columns are skipped; string image columns are found.
+
+    This guards the dtype-based fast path in ``find_image_columns`` so that
+    optimizing away the scan of numeric columns never hides a real image column.
+    """
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "Feature_X": [1.0, 2.0, 3.0],
+                "Feature_Count": [1, 2, 3],
+                "Image_FileName_DNA": ["a.tiff", "b.tif", "c.TIFF"],
+                "Metadata_Note": ["nuc", "cyto", "cell"],
+            }
+        )
+    )
+    found = cdf.find_image_columns()
+    assert found == ["Image_FileName_DNA"]
 
 
 def test_get_3d_volume_from_cell_uses_image_pathname_column(
@@ -2313,6 +3202,73 @@ def test_generate_jupyter_dataframe_html_with_joined_components(
     html = cdf._generate_jupyter_dataframe_html()
     assert "<img src='x'/>" in html
     assert "<div>OME</div>" in html
+
+
+def test_generate_jupyter_dataframe_html_preserves_center_join_with_existing_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+):
+    """
+    Regression test: an externally joined compartment center must survive
+    rendering even when image-path columns are already present on the
+    frame (so the image-path re-add block takes its "already present"
+    branch instead of re-joining). Before the fix, that branch discarded
+    the joined compartment center columns, and the later ``.drop(...)``
+    of those columns raised a ``KeyError``.
+    """
+    base = pd.DataFrame(
+        {
+            "Image_FileName_DNA": ["dna.tiff"],
+            "Image_PathName_DNA": [str(tmp_path)],
+        },
+        index=[0],
+    )
+    cdf = CytoDataFrame(
+        base,
+        data_context_dir=str(tmp_path),
+        display_options={"render_whole_image": True},
+    )
+    assert cdf._custom_attrs["data_bounding_box"] is None
+    cdf._custom_attrs["compartment_center_xy"] = pd.DataFrame(
+        {"Cells_Location_Center_X": [5], "Cells_Location_Center_Y": [6]},
+        index=[0],
+    )
+    cdf._custom_attrs["data_image_paths"] = pd.DataFrame(
+        {"Image_PathName_DNA": [str(tmp_path)]},
+        index=[0],
+    )
+
+    options = {
+        "display.notebook_repr_html": True,
+        "display.max_rows": 10,
+        "display.min_rows": 10,
+        "display.max_columns": 10,
+        "display.show_dimensions": False,
+    }
+
+    monkeypatch.setattr("cytodataframe.frame.get_option", lambda name: options[name])
+    monkeypatch.setattr(
+        "cytodataframe.frame.CytoDataFrame.find_image_columns",
+        lambda self: ["Image_FileName_DNA"],
+    )
+    monkeypatch.setattr(
+        "cytodataframe.frame.CytoDataFrame.find_image_path_columns",
+        lambda self, image_cols, all_cols: {"Image_FileName_DNA": "Image_PathName_DNA"},
+    )
+    monkeypatch.setattr(
+        "cytodataframe.frame.CytoDataFrame.get_displayed_rows",
+        lambda self: [0],
+    )
+    monkeypatch.setattr(
+        cdf,
+        "process_image_data_as_html_display",
+        lambda **_kwargs: "<img src='x'/>",
+    )
+
+    # previously raised KeyError from dropping compartment center columns
+    # that had been silently discarded earlier in the method.
+    html = cdf._generate_jupyter_dataframe_html()
+    assert "<img src='x'/>" in html
 
 
 def test_render_output_displays_js_and_print_html(monkeypatch: pytest.MonkeyPatch):

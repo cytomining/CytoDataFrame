@@ -49,6 +49,7 @@ from .image import (
     draw_outline_on_image_from_mask,
     draw_outline_on_image_from_outline,
     get_pixel_bbox_from_offsets,
+    image_array_to_grayscale,
 )
 from .lazy import CytoLazyFrame, build_context
 from .lazy import scan_parquet as _lazy_scan_parquet
@@ -87,6 +88,50 @@ FILTER_PLOT_Y_GAMMA_DEFAULT = 0.6
 FILTER_PLOT_Y_TAIL_LOG_SCALE_DEFAULT = 0.35
 FILTER_SLIDER_CSS_CLASS = "cdf-filter-range-slider"
 
+# Named colors that may be used to tint channels within a merged composite
+# (see the ``composite_channels`` display option). Values are RGB tuples.
+COMPOSITE_NAMED_COLORS: Dict[str, Tuple[int, int, int]] = {
+    "red": (255, 0, 0),
+    "green": (0, 255, 0),
+    "blue": (0, 0, 255),
+    "cyan": (0, 255, 255),
+    "magenta": (255, 0, 255),
+    "yellow": (255, 255, 0),
+    "gray": (255, 255, 255),
+    "grey": (255, 255, 255),
+    "white": (255, 255, 255),
+    "orange": (255, 165, 0),
+}
+
+# Default per-channel colors used when a composite is requested without
+# explicit colors. Cyan/magenta/yellow (CMY) lead the palette because those
+# colors blend more legibly than red/green/blue in additive composites (they
+# stay distinguishable where channels overlap). Remaining colors follow as
+# fallbacks, and channels beyond the palette length cycle.
+COMPOSITE_DEFAULT_PALETTE: Tuple[Tuple[int, int, int], ...] = (
+    (0, 255, 255),  # cyan
+    (255, 0, 255),  # magenta
+    (255, 255, 0),  # yellow
+    (0, 255, 0),  # green
+    (255, 0, 0),  # red
+    (0, 0, 255),  # blue
+    (255, 255, 255),  # gray
+)
+
+# Default column name used to hold the merged single-cell channel composite.
+COMPOSITE_DEFAULT_COLUMN_NAME = "Image_Composite"
+
+# Minimum on-screen width (px) for displayed image cells. Notebook environments
+# apply ``img {max-width:100%}``, so under table width pressure each image column
+# shrinks toward its header width -- which lets a short-headed column (such as
+# the merged "Image_Composite" column) collapse smaller than the longer channel
+# columns, and squeezes rows with many image columns (e.g. OME-Arrow tables that
+# expand each channel into several columns) down to unreadably small thumbnails.
+# Flooring the image width keeps all image cells a consistent, readable size and
+# lets the table scroll instead. Only applied when the configured display width
+# is an explicit pixel value larger than this floor.
+IMAGE_MIN_DISPLAY_WIDTH_PX = 200
+
 # provide backwards compatibility for Self type in earlier Python versions.
 # see: https://peps.python.org/pep-0484/#annotating-instance-and-class-methods
 CytoDataFrame_type = TypeVar("CytoDataFrame_type", bound="CytoDataFrame")
@@ -116,7 +161,7 @@ class CytoDataFrame(pd.DataFrame):
     # while avoiding oversized outputs in typical Jupyter viewports.
     _DEFAULT_TABLE_MAX_HEIGHT: ClassVar[str] = "700px"
 
-    def __init__(  # noqa: PLR0913, C901, PLR0912
+    def __init__(  # noqa: PLR0913, PLR0917, C901, PLR0912
         self: CytoDataFrame_type,
         data: Union[CytoDataFrame_type, pd.DataFrame, str, pathlib.Path],
         data_context_dir: Optional[str] = None,
@@ -186,12 +231,21 @@ class CytoDataFrame(pd.DataFrame):
                 None will default to display a center dot.
                 e.g. {'center_dot': True} to draw a red dot at the compartment center.
                 - 'offset_bounding_box': declare a relative bounding box using
-                the nuclei center xy coordinates to dynamically crop all images
-                by offsets from the center of the bounding box.
-                (overriding the bounding box data from the dataframe).
-                e.g. {'bounding_box':
+                the compartment center xy coordinates to dynamically crop all
+                images by offsets from the center. This overrides any bounding
+                box columns found in the dataframe and also enables cropping for
+                inputs that do not include AreaShape bounding box columns (e.g.
+                older CellProfiler outputs such as LINCS), as long as compartment
+                center xy columns are available.
+                e.g. {'offset_bounding_box':
                 {'x_min': -100, 'y_min': -100, 'x_max': 100, 'y_max': 100}
                 }
+                - 'render_whole_image': When True, render the full field of view
+                without cropping. This supports image-level inputs that have
+                neither bounding box nor compartment center columns (e.g.
+                whole-FOV quality control metrics) and takes precedence over any
+                bounding box columns.
+                e.g. {'render_whole_image': True}
                 - 'scale_bar': Adds a physical scale bar to each displayed crop.
                   note: um / pixel details can often be found within the metadata
                   of the images themselves or within the experiment documentation.
@@ -207,6 +261,39 @@ class CytoDataFrame(pd.DataFrame):
                   }
                 - Alternatively, set a global pixel size in 'display_options':
                   {'um_per_pixel': 0.325}  # used if not provided under 'scale_bar'
+                - 'composite_channels': Merge several channels into a single
+                  single-cell crop composite (similar to a Fiji composite),
+                  rendered as an additional column. Channels are cropped to the
+                  same cell, tinted per channel, and additively blended. Accepts:
+                    * "all" to merge every image channel using default colors
+                      (cyan/magenta/yellow, which read more clearly than
+                      red/green/blue where channels overlap),
+                      e.g. {'composite_channels': 'all'}
+                    * a list of channel identifiers (full column name, channel
+                      suffix such as "OrigDNA", or a substring),
+                      e.g. {'composite_channels': ['OrigDNA', 'OrigRNA']}
+                    * a mapping of channel identifier to color (a named color
+                      such as "cyan", a hex string such as "#ff00ff", or an
+                      (r, g, b) tuple),
+                      e.g. {'composite_channels':
+                      {'OrigDNA': 'cyan', 'OrigRNA': '#ff00ff'}}
+                  The composite is the same size as the individual channel
+                  crops and also shows the segmentation outline and red center
+                  dot when those are configured. Individual channel columns
+                  still render as usual. A small color legend mapping each
+                  channel to its color is shown with the table so auto-colored
+                  ("all") composites can still be interpreted.
+                - 'composite_column_name': Name of the column used to hold the
+                  merged composite. Defaults to "Image_Composite".
+                  e.g. {'composite_column_name': 'Image_Merged'}
+                - 'equalize_clip_limit': Contrast clip limit for the adaptive
+                  histogram equalization applied to displayed crops. By default
+                  the clip limit is derived from 'brightness'; provide a small
+                  value (e.g. 0.01) for a milder, less over-saturated result,
+                  which is often preferable for merged channel composites. This
+                  is a simpler alternative to supplying a custom
+                  'image_adjustment' function.
+                  e.g. {'equalize_clip_limit': 0.01}
                 - 'ignore_image_path_columns': When True and a data_context_dir is set,
                   ignore any PathName_* or other image path columns and resolve images
                   only via data_context_dir + filename.
@@ -264,6 +351,10 @@ class CytoDataFrame(pd.DataFrame):
             },
             "_snapshot_cache": {},
             "_volume_cache": {},
+            # Caches decoded + contrast-enhanced 2D field-of-view images keyed by
+            # (resolved path, brightness) so images shared across displayed
+            # objects, and repeat renders, are not re-decoded/re-equalized.
+            "_image_cache": {},
             "_scale_slider": widgets.IntSlider(
                 value=initial_brightness,
                 min=0,
@@ -844,7 +935,7 @@ class CytoDataFrame(pd.DataFrame):
         return position
 
     @staticmethod
-    def _build_filter_distribution_html(  # noqa: C901, PLR0912, PLR0913, PLR0915
+    def _build_filter_distribution_html(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917
         values: pd.Series,
         selected_range: Tuple[float, float],
         threshold_x: Optional[float] = None,
@@ -1401,19 +1492,24 @@ class CytoDataFrame(pd.DataFrame):
             ],
         }
 
+        # Membership is checked against a set built once (O(1) lookups) rather
+        # than rebuilding ``self.columns.tolist()`` for every column checked,
+        # which is O(n) per check and adds up on wide feature tables.
+        column_set = set(self.columns)
+
         # Determine which group of columns to select based on availability in self.data
         selected_group = None
         ordered_groups = ("cyto", "nuclei", "cells", "generic")
         for group in ordered_groups:
             cols = column_groups[group]
-            if all(col in self.columns.tolist() for col in cols):
+            if all(col in column_set for col in cols):
                 selected_group = group
                 break
 
         # Assign the selected columns to self.bounding_box_df
         if selected_group:
             z_cols = column_groups_z.get(selected_group, [])
-            if z_cols and all(col in self.columns.tolist() for col in z_cols):
+            if z_cols and all(col in column_set for col in z_cols):
                 column_groups[selected_group] = column_groups[selected_group] + z_cols
             logger.debug(
                 "Bounding box columns found: %s",
@@ -1475,10 +1571,14 @@ class CytoDataFrame(pd.DataFrame):
             ],
         }
 
+        # Build the column set once for O(1) membership checks (see the note in
+        # get_bounding_box_from_data) rather than rebuilding a list per check.
+        column_set = set(self.columns)
+
         # Determine which group of columns to select based on availability in self.data
         selected_group = None
         for group, cols in column_groups.items():
-            if all(col in self.columns.tolist() for col in cols):
+            if all(col in column_set for col in cols):
                 selected_group = group
                 break
 
@@ -1592,7 +1692,7 @@ class CytoDataFrame(pd.DataFrame):
         return cls(source, **kwargs)
 
     @classmethod
-    def scan_parquet(  # noqa: PLR0913
+    def scan_parquet(  # noqa: PLR0913, PLR0917
         cls,
         source: Union[str, pathlib.Path],
         data_context_dir: Optional[str] = None,
@@ -1993,29 +2093,45 @@ class CytoDataFrame(pd.DataFrame):
         that contain image file names with extensions .tif
         or .tiff (case insensitive).
 
+        Performance note:
+            Single-cell profiles typically have thousands of numeric feature
+            columns and only a handful of image-name columns. Scanning every
+            value of every column on each render is expensive, so columns whose
+            dtype cannot hold a filename string (numeric, boolean, datetime)
+            are skipped before the per-value regex check.
+
         Returns:
             List[str]:
                 A list of column names that contain
                 image file names.
 
         """
-        # build a pattern to match image file names
-        pattern = r".*\.(tif|tiff)$"
+        # Image file names end in ``.tif``/``.tiff`` (case insensitive).
+        compiled_pattern = re.compile(r".*\.(tif|tiff)$", flags=re.IGNORECASE)
 
-        # search for columns containing image file names
-        # based on pattern above.
-        image_cols = [
-            column
-            for column in self.columns
-            if self[column]
-            .apply(
-                lambda value: (
-                    isinstance(value, (str, os.PathLike))
-                    and re.match(pattern, str(value), flags=re.IGNORECASE)
-                )
+        def _value_is_image_name(value: Any) -> bool:
+            return (
+                isinstance(value, (str, os.PathLike))
+                and compiled_pattern.match(str(value)) is not None
             )
-            .any()
-        ]
+
+        image_cols: List[str] = []
+        # ``self.dtypes`` reports every column's dtype in one shot without
+        # materializing each column (``self[col]`` is surprisingly costly on a
+        # CytoDataFrame). Columns whose dtype cannot hold a filename string
+        # (numeric, boolean, datetime) can never be image columns, so we skip
+        # them before ever touching their values. Single-cell profiles are
+        # overwhelmingly numeric feature columns, so this keeps the per-value
+        # scan to the handful of string columns that might actually be images.
+        for column, dtype in self.dtypes.items():
+            if (
+                pd.api.types.is_numeric_dtype(dtype)
+                or pd.api.types.is_bool_dtype(dtype)
+                or pd.api.types.is_datetime64_any_dtype(dtype)
+            ):
+                continue
+            if self[column].apply(_value_is_image_name).any():
+                image_cols.append(column)
 
         logger.debug("Found image columns: %s", image_cols)
 
@@ -2069,10 +2185,17 @@ class CytoDataFrame(pd.DataFrame):
 
         """
 
+        # Only map columns that actually follow the FileName -> PathName naming
+        # convention. Requiring "FileName" in the name is important: image
+        # detection can also match columns like ``Image_URL_*`` (whose values are
+        # ``file:...tiff`` URLs), and for those ``replace`` is a no-op that would
+        # wrongly pull the column into the path set -- causing it to be re-joined
+        # and re-decoded during rendering only to be dropped again.
         image_path_columns = [
             col.replace("FileName", "PathName")
             for col in image_cols
-            if col.replace("FileName", "PathName") in self.columns
+            if "FileName" in str(col)
+            and col.replace("FileName", "PathName") in self.columns
         ]
 
         logger.debug("Found image path columns: %s", image_path_columns)
@@ -2102,13 +2225,17 @@ class CytoDataFrame(pd.DataFrame):
 
         """
 
+        # Require the FileName -> PathName convention so non-FileName image
+        # columns (e.g. ``Image_URL_*``) are not mapped to themselves. See the
+        # note in get_image_paths_from_data.
         return {
             str(col): str(col).replace("FileName", "PathName")
             for col in image_cols
-            if str(col).replace("FileName", "PathName") in all_cols
+            if "FileName" in str(col)
+            and str(col).replace("FileName", "PathName") in all_cols
         }
 
-    def search_for_mask_or_outline(  # noqa: PLR0913, PLR0911, C901
+    def search_for_mask_or_outline(  # noqa: PLR0913, PLR0911, PLR0917, C901
         self: CytoDataFrame_type,
         data_value: str,
         pattern_map: dict,
@@ -2536,7 +2663,200 @@ class CytoDataFrame(pd.DataFrame):
         looks_like_rgb_2d = aspect_ratio <= MAX_RGB_ASPECT_RATIO
         return not looks_like_rgb_2d
 
-    def _prepare_cropped_image_layers(  # noqa: C901, PLR0915, PLR0912, PLR0913
+    def _resolve_cache_settings(
+        self: CytoDataFrame_type,
+        cache_attr: str,
+        disable_option: str,
+        max_entries_option: str,
+        default_max_entries: int = 32,
+    ) -> Tuple["OrderedDict[Any, Any]", bool, int]:
+        """Resolve a display cache and its disabled flag / size limit.
+
+        Shared by the 2D image cache and the 3D volume cache so both read their
+        display options, normalize the max-entries value, and wrap any existing
+        cache into an ``OrderedDict`` the same way.
+
+        Args:
+            cache_attr: ``_custom_attrs`` key holding the cache mapping.
+            disable_option: display option that disables the cache when truthy.
+            max_entries_option: display option overriding the LRU size limit.
+            default_max_entries: size limit used when the option is unset/invalid.
+
+        Returns:
+            ``(cache, disabled, max_entries)``. When disabled, a throwaway empty
+            ``OrderedDict`` is returned and ``_custom_attrs`` is left untouched;
+            callers guard all cache access with ``disabled``.
+        """
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        disabled = bool(display_options.get(disable_option))
+        try:
+            max_entries = max(
+                1, int(display_options.get(max_entries_option, default_max_entries))
+            )
+        except (TypeError, ValueError):
+            max_entries = default_max_entries
+
+        if disabled:
+            return OrderedDict(), True, max_entries
+
+        raw_cache = self._custom_attrs.get(cache_attr)
+        if isinstance(raw_cache, OrderedDict):
+            cache = raw_cache
+        else:
+            cache = OrderedDict(raw_cache or {})
+            self._custom_attrs[cache_attr] = cache
+        return cache, disabled, max_entries
+
+    def _get_image_display_cache(
+        self: CytoDataFrame_type,
+    ) -> Tuple["OrderedDict[Tuple[str, int], np.ndarray]", bool, int]:
+        """Return the 2D image cache plus its disabled flag and size limit.
+
+        The cache stores decoded + contrast-enhanced full field-of-view images.
+        It can be turned off with the ``image_disable_cache`` display option and
+        bounded with ``image_cache_max_entries`` (default 32).
+        """
+        return self._resolve_cache_settings(
+            cache_attr="_image_cache",
+            disable_option="image_disable_cache",
+            max_entries_option="image_cache_max_entries",
+        )
+
+    def _load_enhanced_image_for_display(  # noqa: C901
+        self: CytoDataFrame_type,
+        candidate_path: pathlib.Path,
+        data_value: str,
+        pattern_map: Optional[dict],
+        layers: Dict[str, Optional[np.ndarray]],
+    ) -> Optional[np.ndarray]:
+        """Load and contrast-enhance a 2D field-of-view image, with caching.
+
+        Reading a TIFF and running adaptive histogram equalization are the most
+        expensive steps in rendering, and the same field-of-view image is often
+        shared by many displayed objects (and re-processed on every re-render,
+        e.g. brightness/filter changes). Results are therefore cached by
+        (resolved path, brightness, equalize clip limit) so that work happens
+        once per unique image and recomputes when any of those inputs change.
+
+        The returned array is always a private copy that the caller may mutate
+        freely (e.g. drawing a center dot) without corrupting the cache.
+
+        For 3D inputs, this populates ``layers`` with the appropriate 3D HTML
+        view/stub and returns ``None``. It also returns ``None`` when decoding
+        fails. In both cases the caller should stop and return ``layers``.
+        """
+        brightness = int(self._custom_attrs["_widget_state"]["scale"])
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        # The equalize clip limit changes the equalized pixels, so include it in
+        # the cache key (normalized to a float) alongside path and brightness;
+        # otherwise changing it on the same frame would return stale pixels.
+        raw_clip_limit = display_options.get("equalize_clip_limit")
+        clip_limit_key = None if raw_clip_limit is None else float(raw_clip_limit)
+        cache, cache_disabled, cache_max_entries = self._get_image_display_cache()
+        cache_key = (
+            (str(candidate_path), brightness, clip_limit_key)
+            if not cache_disabled
+            else None
+        )
+
+        if cache_key is not None:
+            cached = cache.get(cache_key)
+            if cached is not None:
+                cache.move_to_end(cache_key)  # mark as most-recently-used
+                return cached.copy()
+
+        try:
+            orig_image_array = imageio.imread(candidate_path)
+        except (FileNotFoundError, ValueError) as exc:
+            logger.error(exc)
+            return None
+
+        if self._is_3d_image_array(orig_image_array):
+            logger.debug(
+                "Detected 3D image at %s; returning HTML view.", candidate_path
+            )
+            html_view = None
+            volume_array = np.asarray(orig_image_array)
+            if (
+                volume_array.ndim > MIN_VOLUME_NDIM
+                and volume_array.shape[-1] in RGB_LIKE_CHANNEL_COUNTS
+            ):
+                volume_array = volume_array[..., 0]
+
+            if volume_array.ndim == MIN_VOLUME_NDIM:
+                label_overlay = None
+                segmentation_path = self._find_matching_segmentation_in_dirs(
+                    data_value=data_value,
+                    pattern_map=pattern_map,
+                    candidate_path=candidate_path,
+                    file_dirs=(
+                        self._custom_attrs.get("data_mask_context_dir"),
+                        self._custom_attrs.get("data_outline_context_dir"),
+                    ),
+                )
+                if segmentation_path is not None:
+                    label_overlay = self._prepare_3d_label_overlay(
+                        segmentation_path=segmentation_path,
+                        expected_shape=volume_array.shape,
+                    )
+                with contextlib.suppress(Exception):
+                    volume = self._ensure_uint8(volume_array)
+                    dims = (volume.shape[2], volume.shape[1], volume.shape[0])
+                    html_view = build_3d_image_html_view(
+                        volume=volume,
+                        dims=dims,
+                        data_value=data_value,
+                        candidate_path=candidate_path,
+                        display_options=self._custom_attrs.get("display_options"),
+                        label_volume=label_overlay,
+                    )
+
+            if html_view is None:
+                html_view = build_3d_html_from_path(
+                    data_value=data_value,
+                    candidate_path=candidate_path,
+                    display_options=self._custom_attrs.get("display_options"),
+                    ensure_uint8=self._ensure_uint8,
+                    is_ome_arrow_value=self._is_ome_arrow_value,
+                    logger=logger,
+                )
+            layers[self._HTML_3D_STUB_KEY] = (
+                html_view
+                if html_view is not None
+                else build_3d_image_html_stub(
+                    data_value=data_value,
+                    candidate_path=candidate_path,
+                    display_options=self._custom_attrs.get("display_options"),
+                )
+            )
+            return None
+
+        if self._custom_attrs["image_adjustment"] is not None:
+            logger.debug("Adjusting image with custom image adjustment function.")
+            orig_image_array = self._custom_attrs["image_adjustment"](
+                orig_image_array, brightness
+            )
+        else:
+            logger.debug("Adjusting image with adaptive histogram equalization.")
+            orig_image_array = adjust_with_adaptive_histogram_equalization(
+                image=orig_image_array,
+                brightness=brightness,
+                clip_limit=raw_clip_limit,
+            )
+
+        orig_image_array = self._ensure_uint8(orig_image_array)
+
+        if cache_key is not None:
+            # Store the pristine enhanced image; hand back a copy so downstream
+            # per-cell edits never mutate the cached array.
+            cache[cache_key] = orig_image_array
+            while len(cache) > cache_max_entries:
+                cache.popitem(last=False)
+            return orig_image_array.copy()
+
+        return orig_image_array
+
+    def _prepare_cropped_image_layers(  # noqa: C901, PLR0915, PLR0912, PLR0913, PLR0917
         self: CytoDataFrame_type,
         data_value: Any,
         bounding_box: Tuple[int, int, int, int],
@@ -2623,85 +2943,16 @@ class CytoDataFrame(pd.DataFrame):
             logger.debug("No candidate file found for: %s", data_value)
             return layers
 
-        try:
-            orig_image_array = imageio.imread(candidate_path)
-        except (FileNotFoundError, ValueError) as exc:
-            logger.error(exc)
+        orig_image_array = self._load_enhanced_image_for_display(
+            candidate_path=candidate_path,
+            data_value=data_value,
+            pattern_map=pattern_map,
+            layers=layers,
+        )
+        if orig_image_array is None:
+            # Either decoding failed or the cell was handled as a 3D image
+            # (``layers`` populated with a 3D HTML view/stub by the helper).
             return layers
-
-        if self._is_3d_image_array(orig_image_array):
-            logger.debug(
-                "Detected 3D image at %s; returning HTML view.", candidate_path
-            )
-            html_view = None
-            volume_array = np.asarray(orig_image_array)
-            if (
-                volume_array.ndim > MIN_VOLUME_NDIM
-                and volume_array.shape[-1] in RGB_LIKE_CHANNEL_COUNTS
-            ):
-                volume_array = volume_array[..., 0]
-
-            if volume_array.ndim == MIN_VOLUME_NDIM:
-                label_overlay = None
-                segmentation_path = self._find_matching_segmentation_in_dirs(
-                    data_value=data_value,
-                    pattern_map=pattern_map,
-                    candidate_path=candidate_path,
-                    file_dirs=(
-                        self._custom_attrs.get("data_mask_context_dir"),
-                        self._custom_attrs.get("data_outline_context_dir"),
-                    ),
-                )
-                if segmentation_path is not None:
-                    label_overlay = self._prepare_3d_label_overlay(
-                        segmentation_path=segmentation_path,
-                        expected_shape=volume_array.shape,
-                    )
-                with contextlib.suppress(Exception):
-                    volume = self._ensure_uint8(volume_array)
-                    dims = (volume.shape[2], volume.shape[1], volume.shape[0])
-                    html_view = build_3d_image_html_view(
-                        volume=volume,
-                        dims=dims,
-                        data_value=data_value,
-                        candidate_path=candidate_path,
-                        display_options=self._custom_attrs.get("display_options"),
-                        label_volume=label_overlay,
-                    )
-
-            if html_view is None:
-                html_view = build_3d_html_from_path(
-                    data_value=data_value,
-                    candidate_path=candidate_path,
-                    display_options=self._custom_attrs.get("display_options"),
-                    ensure_uint8=self._ensure_uint8,
-                    is_ome_arrow_value=self._is_ome_arrow_value,
-                    logger=logger,
-                )
-            layers[self._HTML_3D_STUB_KEY] = (
-                html_view
-                if html_view is not None
-                else build_3d_image_html_stub(
-                    data_value=data_value,
-                    candidate_path=candidate_path,
-                    display_options=self._custom_attrs.get("display_options"),
-                )
-            )
-            return layers
-
-        if self._custom_attrs["image_adjustment"] is not None:
-            logger.debug("Adjusting image with custom image adjustment function.")
-            orig_image_array = self._custom_attrs["image_adjustment"](
-                orig_image_array, self._custom_attrs["_widget_state"]["scale"]
-            )
-        else:
-            logger.debug("Adjusting image with adaptive histogram equalization.")
-            orig_image_array = adjust_with_adaptive_histogram_equalization(
-                image=orig_image_array,
-                brightness=self._custom_attrs["_widget_state"]["scale"],
-            )
-
-        orig_image_array = self._ensure_uint8(orig_image_array)
 
         original_image_copy = orig_image_array.copy() if include_original else None
 
@@ -2745,43 +2996,27 @@ class CytoDataFrame(pd.DataFrame):
                 )
                 mask_source_array = None
 
-        if (
-            compartment_center_xy is not None
-            and self._custom_attrs.get("display_options", None) is None
-        ) or (
-            self._custom_attrs.get("display_options", None) is not None
-            and self._custom_attrs["display_options"].get("center_dot", True)
-        ):
-            center_x, center_y = map(int, compartment_center_xy)
-
-            if len(prepared_image.shape) == 2:  # noqa: PLR2004
-                prepared_image = skimage.color.gray2rgb(prepared_image)
-
-            if (
-                0 <= center_y < prepared_image.shape[0]
-                and 0 <= center_x < prepared_image.shape[1]
-            ):
-                x_min, y_min, x_max, y_max = map(int, bounding_box)
-                box_width = x_max - x_min
-                box_height = y_max - y_min
-                radius = max(1, int(min(box_width, box_height) * 0.03))
-
-                rr, cc = skimage.draw.disk(
-                    (center_y, center_x), radius=radius, shape=prepared_image.shape[:2]
-                )
-                prepared_image[rr, cc] = [255, 0, 0]
-
+        # Resolve the effective bounding box used for cropping. When an
+        # ``offset_bounding_box`` display option is provided together with
+        # compartment center coordinates, derive the crop region from the
+        # center and the offsets (overriding any bounding box columns). This
+        # also supports inputs that lack AreaShape bounding box columns (e.g.
+        # older CellProfiler outputs such as LINCS), where ``bounding_box`` is
+        # None. See https://github.com/cytomining/CytoDataFrame/issues/215.
+        display_options = self._custom_attrs.get("display_options", None) or {}
+        offset_bounding_box = display_options.get("offset_bounding_box", None)
+        render_whole_image = bool(display_options.get("render_whole_image", False))
         try:
-            x_min, y_min, x_max, y_max = map(int, bounding_box)
-
-            if self._custom_attrs.get("display_options", None) and self._custom_attrs[
-                "display_options"
-            ].get("offset_bounding_box", None):
+            if render_whole_image:
+                # Render the full field of view without cropping. Supports
+                # image-level inputs that have neither bounding box nor
+                # compartment center columns (e.g. whole-FOV quality control
+                # metrics), and takes precedence over any bounding box columns.
+                # See https://github.com/cytomining/CytoDataFrame/issues/202.
+                image_height, image_width = prepared_image.shape[:2]
+                x_min, y_min, x_max, y_max = 0, 0, image_width, image_height
+            elif offset_bounding_box is not None and compartment_center_xy is not None:
                 center_x, center_y = map(int, compartment_center_xy)
-
-                offset_bounding_box = self._custom_attrs["display_options"].get(
-                    "offset_bounding_box"
-                )
                 x_min, y_min, x_max, y_max = get_pixel_bbox_from_offsets(
                     center_x=center_x,
                     center_y=center_y,
@@ -2792,7 +3027,52 @@ class CytoDataFrame(pd.DataFrame):
                         offset_bounding_box["y_max"],
                     ),
                 )
+            elif bounding_box is not None:
+                x_min, y_min, x_max, y_max = map(int, bounding_box)
+            else:
+                # Without a bounding box (or an offset + center to derive one)
+                # we cannot crop, so return the requested layers uncropped.
+                logger.debug(
+                    "No bounding box or offset_bounding_box available to crop "
+                    "image; returning layers without a cropped image."
+                )
+                return layers
+        except KeyError as exc:
+            # the only dict access above is offset_bounding_box[...], so a
+            # KeyError here means a required offset key is missing or misspelled.
+            raise ValueError(
+                "The 'offset_bounding_box' display option is missing a required "
+                f"key: {exc}. Expected keys are 'x_min', 'y_min', 'x_max', and "
+                "'y_max'."
+            ) from exc
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Bounding box contains invalid values: {bounding_box}"
+            ) from exc
 
+        if compartment_center_xy is not None and (
+            self._custom_attrs.get("display_options", None) is None
+            or display_options.get("center_dot", True)
+        ):
+            center_x, center_y = map(int, compartment_center_xy)
+
+            if len(prepared_image.shape) == 2:  # noqa: PLR2004
+                prepared_image = skimage.color.gray2rgb(prepared_image)
+
+            if (
+                0 <= center_y < prepared_image.shape[0]
+                and 0 <= center_x < prepared_image.shape[1]
+            ):
+                box_width = x_max - x_min
+                box_height = y_max - y_min
+                radius = max(1, int(min(box_width, box_height) * 0.03))
+
+                rr, cc = skimage.draw.disk(
+                    (center_y, center_x), radius=radius, shape=prepared_image.shape[:2]
+                )
+                prepared_image[rr, cc] = [255, 0, 0]
+
+        try:
             cropped_img_array = prepared_image[y_min:y_max, x_min:x_max]
 
             cropped_original = (
@@ -2926,6 +3206,43 @@ class CytoDataFrame(pd.DataFrame):
         )
         return layers.get("composite"), layers.get(self._HTML_3D_STUB_KEY)
 
+    @staticmethod
+    def _normalize_css_width(width: Any) -> Any:
+        """
+        Normalize a bare numeric width to a CSS pixel string.
+
+        Integer/float widths (e.g. ``300``) and pure-numeric strings (e.g.
+        ``"300"``) become ``"300px"`` so they emit valid CSS and participate in
+        the min-width floor. Values already carrying a unit or keyword (e.g.
+        ``"300px"``, ``"100%"``, ``"auto"``) are returned unchanged.
+        """
+        if isinstance(width, bool):
+            return width
+        if isinstance(width, (int, float)):
+            number = int(width) if float(width).is_integer() else width
+            return f"{number}px"
+        if isinstance(width, str) and re.fullmatch(r"\s*\d+(?:\.\d+)?\s*", width):
+            number = float(width)
+            number = int(number) if number.is_integer() else number
+            return f"{number}px"
+        return width
+
+    @staticmethod
+    def _resolve_image_min_width(width: Any) -> Optional[str]:
+        """
+        Return a CSS ``min-width`` floor for a displayed image, or None.
+
+        Only explicit pixel widths larger than ``IMAGE_MIN_DISPLAY_WIDTH_PX``
+        get a floor (so custom small/auto widths stay fully responsive). See
+        ``IMAGE_MIN_DISPLAY_WIDTH_PX`` for why the floor exists.
+        """
+        match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)px\s*", str(width))
+        if match is None:
+            return None
+        if float(match.group(1)) <= IMAGE_MIN_DISPLAY_WIDTH_PX:
+            return None
+        return f"{IMAGE_MIN_DISPLAY_WIDTH_PX}px"
+
     def _image_array_to_html(self: CytoDataFrame_type, image_array: np.ndarray) -> str:
         """Encode an image array as an HTML <img> tag."""
 
@@ -2940,10 +3257,19 @@ class CytoDataFrame(pd.DataFrame):
             raise
 
         display_options = self._custom_attrs.get("display_options", {}) or {}
-        width = display_options.get("width", "300px")
+        # Normalize bare numeric widths (e.g. 300 or "300") to CSS pixel strings
+        # so they emit valid CSS and feed the min-width floor consistently.
+        width = self._normalize_css_width(display_options.get("width", "300px"))
         height = display_options.get("height")
 
         html_style = [f"width:{width}"]
+        # Floor the on-screen image width so image cells stay a consistent,
+        # readable size instead of collapsing under table width pressure (see
+        # IMAGE_MIN_DISPLAY_WIDTH_PX). Kept below the configured width so it only
+        # bounds shrinking and never enlarges the image past its target.
+        min_width = self._resolve_image_min_width(width)
+        if min_width is not None:
+            html_style.append(f"min-width:{min_width}")
         if height is not None:
             html_style.append(f"height:{height}")
 
@@ -2984,6 +3310,33 @@ class CytoDataFrame(pd.DataFrame):
             return self._image_array_to_html(array)
         except Exception:
             return str(data_value)
+
+    @staticmethod
+    def _row_bounding_box(
+        row: Any, bounding_box_cols: Sequence[Any]
+    ) -> Tuple[Any, Any, Any, Any]:
+        """
+        Build a ``(x_min, y_min, x_max, y_max)`` bounding box tuple from a row.
+
+        Bounding box columns are matched by substring so the underlying column
+        order does not matter.
+
+        Args:
+            row (Any):
+                A row (mapping of column name to value) to read values from.
+            bounding_box_cols (Sequence[Any]):
+                The bounding box column names to match against.
+
+        Returns:
+            Tuple[Any, Any, Any, Any]:
+                The ``(x_min, y_min, x_max, y_max)`` bounding box values.
+        """
+        return (
+            row[next(col for col in bounding_box_cols if "Minimum_X" in str(col))],
+            row[next(col for col in bounding_box_cols if "Minimum_Y" in str(col))],
+            row[next(col for col in bounding_box_cols if "Maximum_X" in str(col))],
+            row[next(col for col in bounding_box_cols if "Maximum_Y" in str(col))],
+        )
 
     def process_image_data_as_html_display(
         self: CytoDataFrame_type,
@@ -3047,34 +3400,335 @@ class CytoDataFrame(pd.DataFrame):
         except Exception:
             return data_value
 
+    @staticmethod
+    def _resolve_composite_color(value: Any) -> Optional[Tuple[int, int, int]]:
+        """
+        Resolve a channel color specification to an ``(r, g, b)`` tuple.
+
+        Accepts a named color (e.g. ``"blue"``), a hex string (e.g.
+        ``"#0000ff"`` or ``"#00f"``), or an explicit RGB sequence (e.g.
+        ``(0, 0, 255)`` or ``[0, 0, 255]``). Returns None when the value
+        cannot be understood as a color.
+        """
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("#"):
+                return CytoDataFrame._hex_to_rgb(text)
+            return COMPOSITE_NAMED_COLORS.get(text.lower())
+        if isinstance(value, (tuple, list)) and len(value) == 3:  # noqa: PLR2004
+            try:
+                return tuple(
+                    int(max(0, min(255, int(component)))) for component in value
+                )
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    @staticmethod
+    def _hex_to_rgb(value: str) -> Optional[Tuple[int, int, int]]:
+        """
+        Convert a ``#RGB`` or ``#RRGGBB`` hex string to an ``(r, g, b)`` tuple.
+
+        Returns None when the string is not a valid 3- or 6-digit hex color.
+        """
+        digits = value.lstrip("#").strip()
+        if len(digits) == 3:  # noqa: PLR2004
+            # expand shorthand (e.g. "0af" -> "00aaff")
+            digits = "".join(component * 2 for component in digits)
+        if len(digits) != 6:  # noqa: PLR2004
+            return None
+        try:
+            return (
+                int(digits[0:2], 16),
+                int(digits[2:4], 16),
+                int(digits[4:6], 16),
+            )
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _match_channel_column(identifier: Any, image_cols: Sequence[Any]) -> Any:
+        """
+        Match a user-provided channel identifier to an image column.
+
+        Matching is attempted, in order, by: exact column name, the channel
+        suffix following ``FileName_`` (or the final underscore) and finally a
+        case-insensitive substring. Returns the matched column or None.
+        """
+        identifier_str = str(identifier)
+
+        # exact column-name match
+        for col in image_cols:
+            if str(col) == identifier_str:
+                return col
+
+        # match on the channel suffix (e.g. "OrigDNA" from
+        # "Image_FileName_OrigDNA")
+        for col in image_cols:
+            col_str = str(col)
+            if "FileName_" in col_str:
+                suffix = col_str.split("FileName_", 1)[1]
+            else:
+                suffix = col_str.rsplit("_", 1)[-1]
+            if suffix == identifier_str:
+                return col
+
+        # case-insensitive substring fallback
+        for col in image_cols:
+            if identifier_str.lower() in str(col).lower():
+                return col
+
+        return None
+
+    def _resolve_composite_channels(
+        self: CytoDataFrame_type, image_cols: Sequence[Any]
+    ) -> List[Tuple[Any, Tuple[int, int, int]]]:
+        """
+        Resolve the ``composite_channels`` display option to ordered channel
+        columns paired with the RGB color used to tint each channel.
+
+        The option may be:
+        - ``"all"``: use every image channel column, colored from the default
+          palette in column order.
+        - a list of channel identifiers: use those channels (color from the
+          default palette in the given order).
+        - a mapping of ``{identifier: color}``: use those channels with the
+          specified colors (named color or RGB tuple). ``color`` may be None
+          to fall back to the default palette.
+        """
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        spec = display_options.get("composite_channels")
+        if not spec:
+            return []
+
+        if isinstance(spec, str):
+            if spec.strip().lower() == "all":
+                requested: List[Tuple[Any, Any]] = [(col, None) for col in image_cols]
+            else:
+                requested = [(spec, None)]
+        elif isinstance(spec, dict):
+            requested = list(spec.items())
+        elif isinstance(spec, (list, tuple, set)):
+            requested = [(identifier, None) for identifier in spec]
+        else:
+            logger.warning(
+                "Unrecognized 'composite_channels' display option: %s; "
+                "expected 'all', a list of channels, or a mapping.",
+                spec,
+            )
+            return []
+
+        resolved: List[Tuple[Any, Tuple[int, int, int]]] = []
+        for position, (identifier, color_value) in enumerate(requested):
+            column = self._match_channel_column(identifier, image_cols)
+            if column is None:
+                logger.warning(
+                    "Composite channel '%s' did not match any image column; "
+                    "skipping it.",
+                    identifier,
+                )
+                continue
+            color = self._resolve_composite_color(color_value)
+            if color is None:
+                color = COMPOSITE_DEFAULT_PALETTE[
+                    position % len(COMPOSITE_DEFAULT_PALETTE)
+                ]
+            resolved.append((column, color))
+
+        return resolved
+
+    @staticmethod
+    def _as_rgb(image: np.ndarray) -> np.ndarray:
+        """Return an ``(H, W, 3)`` RGB view of a grayscale/RGB/RGBA array."""
+        array = np.asarray(image)
+        if array.ndim == 2:  # noqa: PLR2004
+            return np.stack([array] * 3, axis=-1)
+        if array.ndim == 3 and array.shape[2] == 4:  # noqa: PLR2004
+            return array[:, :, :3]
+        return array
+
+    @staticmethod
+    def _fit_to_shape(
+        image: np.ndarray, target_shape: Tuple[int, int], smooth: bool
+    ) -> np.ndarray:
+        """Resize ``image`` to ``target_shape`` (height, width) as uint8.
+
+        Used to place each channel of a merged composite onto a shared canvas so
+        the composite is always the same size as the other images. ``smooth``
+        selects bilinear (for intensity) vs. nearest-neighbor (to keep outlines
+        and the center dot crisp) interpolation. Returns the input unchanged when
+        it already matches ``target_shape``.
+        """
+        array = np.asarray(image)
+        if array.shape[:2] == target_shape:
+            return array
+        resized = skimage.transform.resize(
+            array,
+            target_shape,
+            order=1 if smooth else 0,
+            preserve_range=True,
+            anti_aliasing=smooth,
+        )
+        return resized.astype(np.uint8)
+
+    def _build_channel_composite_array(
+        self: CytoDataFrame_type,
+        row: Any,
+        channel_specs: Sequence[Tuple[Any, Tuple[int, int, int]]],
+        bounding_box: Optional[Tuple[int, int, int, int]],
+        compartment_center_xy: Optional[Tuple[int, int]],
+        image_path_cols: Dict[Any, Any],
+    ) -> Optional[np.ndarray]:
+        """
+        Build a merged, color-tinted composite crop from several channels.
+
+        Each channel is cropped to the same single-cell region using the same
+        pipeline as the individual channel columns, so the composite is always
+        the same size as the other images. The clean (pre-overlay) crop of each
+        channel is converted to a grayscale intensity, tinted by the channel's
+        color, and additively blended (Fiji-style). The segmentation outline and
+        red center dot that appear on the individual channels (when configured)
+        are then laid back on top of the blended result so the composite matches
+        the other images. Returns an ``(H, W, 3)`` uint8 array, or None when no
+        channel could be rendered.
+        """
+        composite: Optional[np.ndarray] = None
+        # Overlay canvas holds the outline/center-dot pixels drawn on the
+        # individual channels, to be applied on top of the blended composite.
+        overlay_rgb: Optional[np.ndarray] = None
+        overlay_mask: Optional[np.ndarray] = None
+
+        for column, color in channel_specs:
+            data_value = row[column]
+            if data_value is None or pd.isna(data_value):
+                continue
+
+            image_path = (
+                row[image_path_cols[column]]
+                if image_path_cols and column in image_path_cols
+                else None
+            )
+
+            # ``original`` is the clean equalized crop (used for the color
+            # blend); ``composite`` is the same crop with the segmentation
+            # outline and center dot applied (per the display configuration),
+            # exactly as the individual channel column is rendered.
+            layers = self._prepare_cropped_image_layers(
+                data_value=data_value,
+                bounding_box=bounding_box,
+                compartment_center_xy=compartment_center_xy,
+                image_path=image_path,
+                include_original=True,
+                include_composite=True,
+            )
+            clean_crop = layers.get("original")
+            if clean_crop is None:
+                continue
+
+            gray = image_array_to_grayscale(np.asarray(clean_crop))
+            if gray.dtype != np.uint8:
+                gray = img_as_ubyte(gray)
+
+            if composite is None:
+                # The first rendered channel establishes the composite canvas,
+                # which is exactly the crop size the individual channel columns
+                # display. Every other channel is fit to this canvas so the
+                # composite is always the same size as the other images, even if
+                # a channel's source image has a different resolution.
+                composite = np.zeros((*gray.shape[:2], 3), dtype=np.float32)
+                overlay_rgb = np.zeros((*gray.shape[:2], 3), dtype=np.uint8)
+                overlay_mask = np.zeros(gray.shape[:2], dtype=bool)
+
+            target_h, target_w = composite.shape[:2]
+            target_shape = (target_h, target_w)
+
+            # Fit this channel to the canvas so the composite is a consistent
+            # size regardless of any per-channel resolution differences.
+            gray = self._fit_to_shape(gray, target_shape, smooth=True)
+
+            tint = np.asarray(color, dtype=np.float32) / 255.0
+            composite += gray[:, :, np.newaxis].astype(np.float32) * tint
+
+            # Capture the outline/center-dot decorations by diffing the
+            # decorated crop against the clean crop; those pixels are laid over
+            # the blended composite so it matches the individual channels.
+            decorated_crop = layers.get("composite")
+            if decorated_crop is not None:
+                # Nearest-neighbor keeps thin outlines and the center dot crisp.
+                clean_rgb = self._fit_to_shape(
+                    self._as_rgb(clean_crop), target_shape, smooth=False
+                )
+                decorated_rgb = self._fit_to_shape(
+                    self._as_rgb(decorated_crop), target_shape, smooth=False
+                )
+                diff = np.any(
+                    decorated_rgb.astype(np.int16) != clean_rgb.astype(np.int16),
+                    axis=-1,
+                )
+                overlay_rgb[diff] = decorated_rgb[diff]
+                overlay_mask |= diff
+
+        if composite is None:
+            return None
+
+        result = np.clip(composite, 0, 255).astype(np.uint8)
+        if overlay_mask is not None and overlay_mask.any():
+            result[overlay_mask] = overlay_rgb[overlay_mask]
+
+        return result
+
+    def process_channel_composite_as_html_display(
+        self: CytoDataFrame_type,
+        row: Any,
+        channel_specs: Sequence[Tuple[Any, Tuple[int, int, int]]],
+        bounding_box: Optional[Tuple[int, int, int, int]],
+        compartment_center_xy: Optional[Tuple[int, int]],
+        image_path_cols: Dict[Any, Any],
+    ) -> str:
+        """
+        Render a merged multi-channel composite crop for a row as HTML.
+
+        Returns an HTML ``<img>`` string for the blended composite, or an
+        empty string when no channel could be rendered for the row.
+        """
+        composite_array = self._build_channel_composite_array(
+            row=row,
+            channel_specs=channel_specs,
+            bounding_box=bounding_box,
+            compartment_center_xy=compartment_center_xy,
+            image_path_cols=image_path_cols,
+        )
+        if composite_array is None:
+            return ""
+
+        try:
+            return self._image_array_to_html(composite_array)
+        except Exception:
+            return ""
+
     def _get_3d_volume_from_cell(  # noqa: C901, PLR0912, PLR0915
         self: CytoDataFrame_type,
         row: Any,
         column: Any,
     ) -> Tuple[np.ndarray, Tuple[int, int, int]]:
-        display_options = self._custom_attrs.get("display_options", {}) or {}
-        cache_disabled = bool(display_options.get("volume_disable_cache"))
-        cache_max_entries_raw = display_options.get("volume_cache_max_entries", 32)
-        try:
-            cache_max_entries = max(1, int(cache_max_entries_raw))
-        except (TypeError, ValueError):
-            cache_max_entries = 32
-
-        cache: "OrderedDict[str, Tuple[np.ndarray, Tuple[int, int, int]]]" = (
-            OrderedDict()
+        cache, cache_disabled, cache_max_entries = self._resolve_cache_settings(
+            cache_attr="_volume_cache",
+            disable_option="volume_disable_cache",
+            max_entries_option="volume_cache_max_entries",
         )
-        if not cache_disabled:
-            raw_cache = self._custom_attrs.get("_volume_cache", {})
-            if isinstance(raw_cache, OrderedDict):
-                cache = raw_cache
-            else:
-                cache = OrderedDict(raw_cache or {})
-                self._custom_attrs["_volume_cache"] = cache
         cache_key = f"{row}::{column}"
         if not cache_disabled and cache_key in cache:
             cached = cache.pop(cache_key)
             cache[cache_key] = cached
             return cached
+
+        # Negative cache: probing whether a cell is 3D (e.g. from
+        # _find_3d_columns_for_display on every render) decodes the image. For
+        # 2D inputs that probe always fails, so remember cells already found to
+        # be non-3D and short-circuit before re-reading the same .tif/.tiff.
+        not_3d_cache: set = self._custom_attrs.setdefault("_volume_not_3d_cache", set())
+        if not cache_disabled and cache_key in not_3d_cache:
+            raise ValueError("Selected cell does not contain a 3D volume.")
 
         try:
             value = self.loc[row, column]
@@ -3195,7 +3849,18 @@ class CytoDataFrame(pd.DataFrame):
                 from ome_arrow import OMEArrow  # type: ignore
 
                 if volume is None:
-                    decode_candidates = candidate_paths or [data_path]
+                    # Only attempt an OME-Arrow decode on paths that exist on
+                    # disk. ``candidate_paths`` already holds resolved files;
+                    # falling back to ``data_path`` when it does not exist makes
+                    # OMEArrow/bioio try to open a missing file and emit noisy
+                    # "Exclusive reader attempt failed" errors during the routine
+                    # 3D-detection probe (e.g. bare filename columns read back
+                    # from an .ome.parquet without a data_context_dir).
+                    decode_candidates = candidate_paths or (
+                        [data_path]
+                        if data_path is not None and data_path.exists()
+                        else []
+                    )
                     for decode_path in decode_candidates:
                         ome_struct = OMEArrow(data=str(decode_path)).data
                         if hasattr(ome_struct, "as_py"):
@@ -3223,6 +3888,8 @@ class CytoDataFrame(pd.DataFrame):
                 )
 
         if volume is None or dims is None:
+            if not cache_disabled:
+                not_3d_cache.add(cache_key)
             raise ValueError("Selected cell does not contain a 3D volume.")
 
         # Apply per-row bounding box cropping when available (XYZ).
@@ -3527,7 +4194,7 @@ class CytoDataFrame(pd.DataFrame):
 
         return columns_3d
 
-    def _add_label_overlay_to_plotter(  # noqa: PLR0913
+    def _add_label_overlay_to_plotter(  # noqa: PLR0913, PLR0917
         self: CytoDataFrame_type,
         plotter: Any,
         volume: np.ndarray,
@@ -3866,7 +4533,7 @@ class CytoDataFrame(pd.DataFrame):
         with contextlib.suppress(Exception):
             plotter.render()
 
-    def _build_pyvista_viewer(  # noqa: C901, PLR0912, PLR0913, PLR0915
+    def _build_pyvista_viewer(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917
         self: CytoDataFrame_type,
         volume: np.ndarray,
         backend: str,
@@ -4484,7 +5151,10 @@ class CytoDataFrame(pd.DataFrame):
             # Re-add bounding box columns if they are no longer available
             bounding_box_externally_joined = False
             if self._custom_attrs["data_bounding_box"] is not None and not all(
-                col in self.columns.tolist()
+                col
+                in (
+                    data if self._custom_attrs["is_transposed"] else self
+                ).columns.tolist()
                 for col in self._custom_attrs["data_bounding_box"].columns.tolist()
             ):
                 logger.debug("Re-adding bounding box columns.")
@@ -4504,15 +5174,18 @@ class CytoDataFrame(pd.DataFrame):
 
             # Re-add compartment center xy columns if they are no longer available
             compartment_center_externally_joined = False
+            use_data_for_compartment_center = (
+                self._custom_attrs["is_transposed"] or bounding_box_externally_joined
+            )
             if self._custom_attrs["compartment_center_xy"] is not None and not all(
                 col
-                in (data if bounding_box_externally_joined else self).columns.tolist()
+                in (data if use_data_for_compartment_center else self).columns.tolist()
                 for col in self._custom_attrs["compartment_center_xy"].columns.tolist()
             ):
                 logger.debug("Re-adding compartment center xy columns.")
                 data = (
                     data.join(other=self._custom_attrs["compartment_center_xy"])
-                    if bounding_box_externally_joined
+                    if use_data_for_compartment_center
                     else self.join(other=self._custom_attrs["compartment_center_xy"])
                 )
                 compartment_center_externally_joined = True
@@ -4527,11 +5200,13 @@ class CytoDataFrame(pd.DataFrame):
 
             # Re-add image path columns if they are no longer available
             image_paths_externally_joined = False
+            use_data_for_image_paths = (
+                self._custom_attrs["is_transposed"]
+                or compartment_center_externally_joined
+                or bounding_box_externally_joined
+            )
             if self._custom_attrs["data_image_paths"] is not None and not all(
-                col
-                in (
-                    data if compartment_center_externally_joined else self
-                ).columns.tolist()
+                col in (data if use_data_for_image_paths else self).columns.tolist()
                 for col in self._custom_attrs["data_image_paths"].columns.tolist()
             ):
                 logger.debug("Re-adding image path columns.")
@@ -4542,30 +5217,36 @@ class CytoDataFrame(pd.DataFrame):
                 )
                 data = (
                     data.join(other=self._custom_attrs["data_image_paths"])
-                    if compartment_center_externally_joined
-                    or bounding_box_externally_joined
+                    if use_data_for_image_paths
                     else self.join(other=self._custom_attrs["data_image_paths"])
                 )
                 image_paths_externally_joined = True
             else:
                 data = (
                     data
-                    if self._custom_attrs["is_transposed"]
-                    or image_paths_externally_joined
-                    or bounding_box_externally_joined
+                    if use_data_for_image_paths or image_paths_externally_joined
                     else self.copy()
                 )
 
-            # determine if we have image_cols to display
-            image_cols = CytoDataFrame(data).find_image_columns() or []
+            # ``data`` is already a DataFrame here (a CytoDataFrame from
+            # copy()/join(), or a plain DataFrame from the transpose path).
+            # ``find_image_columns``/``find_image_path_columns``/
+            # ``get_displayed_rows`` only read DataFrame structure (columns,
+            # index, values) and not any CytoDataFrame state, so we call them
+            # unbound on ``data`` instead of constructing a fresh CytoDataFrame.
+            # Constructing one per render would needlessly re-run bounding-box /
+            # center / image-path detection and method wrapping over every
+            # column. (If these helpers ever start reading ``_custom_attrs``,
+            # revisit this.)
+            image_cols = CytoDataFrame.find_image_columns(data) or []
             # normalize both the set of image cols and the pool of all cols to strings
             all_cols_str, all_cols_back = self._normalize_labels(data.columns)
             image_cols_str = [str(c) for c in image_cols]
 
             # If your helper expects strings, pass strings; then map the result back
             image_path_cols_str = (
-                CytoDataFrame(data).find_image_path_columns(
-                    image_cols=image_cols_str, all_cols=all_cols_str
+                CytoDataFrame.find_image_path_columns(
+                    data, image_cols=image_cols_str, all_cols=all_cols_str
                 )
                 or {}
             )
@@ -4591,7 +5272,7 @@ class CytoDataFrame(pd.DataFrame):
             logger.debug("Image columns found: %s", image_cols)
 
             # gather indices which will be displayed based on pandas configuration
-            display_indices = CytoDataFrame(data).get_displayed_rows()
+            display_indices = CytoDataFrame.get_displayed_rows(data)
             active_filter_columns = (
                 self._custom_attrs["_widget_state"].get("filter_columns") or []
             )
@@ -4622,24 +5303,126 @@ class CytoDataFrame(pd.DataFrame):
                     display_indices=data.index.tolist(),
                 )
                 data = data.loc[full_filtered_indices]
-                display_indices = CytoDataFrame(data).get_displayed_rows()
+                display_indices = CytoDataFrame.get_displayed_rows(data)
             else:
                 display_indices = self._filter_display_indices_by_widget_range(
                     data=data,
                     display_indices=display_indices,
                 )
 
-            # gather bounding box columns for use below
-            if self._custom_attrs["data_bounding_box"] is not None:
-                bounding_box_cols = self._custom_attrs[
-                    "data_bounding_box"
-                ].columns.tolist()
+            # Gather bounding box columns for use below. Images are cropped
+            # using either explicit bounding box columns or, when those are
+            # unavailable, an ``offset_bounding_box`` display option applied to
+            # the compartment center coordinates. The latter lets inputs without
+            # AreaShape bounding box columns (e.g. older CellProfiler outputs
+            # such as LINCS) still display cropped images.
+            # See https://github.com/cytomining/CytoDataFrame/issues/215.
+            has_bounding_box = self._custom_attrs["data_bounding_box"] is not None
+            has_compartment_center = (
+                self._custom_attrs["compartment_center_xy"] is not None
+            )
+            offset_crop_without_bbox = (
+                not has_bounding_box
+                and has_compartment_center
+                and display_options.get("offset_bounding_box") is not None
+            )
+            # The render_whole_image display option renders full fields of view
+            # without cropping, supporting image-level inputs that have neither
+            # bounding box nor compartment center columns (e.g. whole-FOV quality
+            # control metrics).
+            # See https://github.com/cytomining/CytoDataFrame/issues/202.
+            render_whole_image = bool(display_options.get("render_whole_image", False))
+
+            if (
+                display_options.get("offset_bounding_box") is not None
+                and not has_compartment_center
+                and not render_whole_image
+            ):
+                logger.warning(
+                    "An 'offset_bounding_box' display option was provided but no "
+                    "compartment center xy columns were found to apply it to; the "
+                    "offset_bounding_box will be ignored. Provide compartment "
+                    "center columns (e.g. Nuclei_Location_Center_X/Y) or pass "
+                    "compartment_center_xy explicitly."
+                )
+
+            # Resolved (channel, color) pairs for the composite, captured so a
+            # color legend can be shown alongside the table (e.g. so users of
+            # the "all" form can tell which channel is which color).
+            composite_legend_specs: List[Tuple[Any, Tuple[int, int, int]]] = []
+
+            if has_bounding_box or offset_crop_without_bbox or render_whole_image:
+                bounding_box_cols = (
+                    self._custom_attrs["data_bounding_box"].columns.tolist()
+                    if has_bounding_box
+                    else None
+                )
 
                 # gather compartment_xy columns for use below
-                if self._custom_attrs["compartment_center_xy"] is not None:
+                if has_compartment_center:
                     compartment_center_xy_cols = self._custom_attrs[
                         "compartment_center_xy"
                     ].columns.tolist()
+
+                def _row_crop_geometry(
+                    row: Any,
+                ) -> Tuple[
+                    Optional[Tuple[Any, Any, Any, Any]], Optional[Tuple[Any, Any]]
+                ]:
+                    """Return the per-row bounding box and compartment center."""
+                    row_bounding_box = (
+                        self._row_bounding_box(row, bounding_box_cols)
+                        if bounding_box_cols is not None
+                        else None
+                    )
+                    row_center = (
+                        (
+                            row[
+                                next(
+                                    col
+                                    for col in compartment_center_xy_cols
+                                    if "X" in col
+                                )
+                            ],
+                            row[
+                                next(
+                                    col
+                                    for col in compartment_center_xy_cols
+                                    if "Y" in col
+                                )
+                            ],
+                        )
+                        if has_compartment_center
+                        else None
+                    )
+                    return row_bounding_box, row_center
+
+                # Build a merged multi-channel composite column when requested
+                # via the ``composite_channels`` display option. This is done
+                # before the per-channel columns are overwritten with rendered
+                # HTML below, since the composite reads the raw image filenames.
+                composite_channel_specs = self._resolve_composite_channels(image_cols)
+                if composite_channel_specs:
+                    composite_legend_specs = composite_channel_specs
+                    composite_column_name = display_options.get(
+                        "composite_column_name", COMPOSITE_DEFAULT_COLUMN_NAME
+                    )
+                    if composite_column_name not in data.columns:
+                        data[composite_column_name] = ""
+
+                    def _render_composite(row: Any) -> str:
+                        row_bounding_box, row_center = _row_crop_geometry(row)
+                        return self.process_channel_composite_as_html_display(
+                            row=row,
+                            channel_specs=composite_channel_specs,
+                            bounding_box=row_bounding_box,
+                            compartment_center_xy=row_center,
+                            image_path_cols=image_path_cols,
+                        )
+
+                    data.loc[display_indices, composite_column_name] = data.loc[
+                        display_indices
+                    ].apply(_render_composite, axis=1)
 
                 for image_col in image_cols:
                     data.loc[display_indices, image_col] = data.loc[
@@ -4647,39 +5430,14 @@ class CytoDataFrame(pd.DataFrame):
                     ].apply(
                         lambda row: self.process_image_data_as_html_display(
                             data_value=row[image_col],
+                            # use explicit bounding box columns when present;
+                            # otherwise fall back to the offset_bounding_box
+                            # applied to the compartment center within
+                            # process_image_data_as_html_display.
                             bounding_box=(
-                                # rows below are specified using the column name to
-                                # determine which part of the bounding box the columns
-                                # relate to (the list of column names could be in
-                                # various order).
-                                row[
-                                    next(
-                                        col
-                                        for col in bounding_box_cols
-                                        if "Minimum_X" in col
-                                    )
-                                ],
-                                row[
-                                    next(
-                                        col
-                                        for col in bounding_box_cols
-                                        if "Minimum_Y" in col
-                                    )
-                                ],
-                                row[
-                                    next(
-                                        col
-                                        for col in bounding_box_cols
-                                        if "Maximum_X" in col
-                                    )
-                                ],
-                                row[
-                                    next(
-                                        col
-                                        for col in bounding_box_cols
-                                        if "Maximum_Y" in col
-                                    )
-                                ],
+                                self._row_bounding_box(row, bounding_box_cols)
+                                if bounding_box_cols is not None
+                                else None
                             ),
                             compartment_center_xy=(
                                 (
@@ -4770,15 +5528,60 @@ class CytoDataFrame(pd.DataFrame):
             style = (
                 "<style>"
                 "table.dataframe thead tr {background:#EBEBEB;}"
-                "table.dataframe thead th {background:#EBEBEB;}"
+                # Keep column names on a single line so a column is never
+                # narrower than its header. Notebook environments (e.g.
+                # JupyterLab) constrain the table and can break header words,
+                # scrunching names into tall, unreadable one-character-per-line
+                # strips; ``white-space:nowrap`` gives every column a reasonable
+                # minimum width (its header width) and lets the table scroll.
+                "table.dataframe thead th {background:#EBEBEB;white-space:nowrap;}"
                 "table.dataframe tbody tr {background:#FFFFFF;}"
                 "table.dataframe tbody tr:nth-child(even) {background:#F5F5F5;}"
                 "</style>"
             )
-            return style + table_html
+            legend = self._build_composite_legend_html(composite_legend_specs)
+            return style + legend + table_html
 
         else:
             return None
+
+    @staticmethod
+    def _build_composite_legend_html(
+        channel_specs: Sequence[Tuple[Any, Tuple[int, int, int]]],
+    ) -> str:
+        """
+        Build a small color legend for a merged channel composite.
+
+        Shows which channel maps to which color so the composite (including the
+        auto-colored ``"all"`` form) can be interpreted and captioned. Returns
+        an empty string when there are no composite channels.
+        """
+        if not channel_specs:
+            return ""
+
+        items = []
+        for column, color in channel_specs:
+            column_str = str(column)
+            channel = (
+                column_str.split("FileName_", 1)[1]
+                if "FileName_" in column_str
+                else column_str
+            )
+            swatch = (
+                "display:inline-block;width:11px;height:11px;margin-right:4px;"
+                f"border:1px solid #999;background:rgb({color[0]},{color[1]},"
+                f"{color[2]});vertical-align:middle;"
+            )
+            items.append(
+                f'<span style="margin-right:12px;white-space:nowrap;">'
+                f'<span style="{swatch}"></span>{channel}</span>'
+            )
+
+        return (
+            '<div style="font-size:12px;margin:2px 0 6px 0;color:#333;">'
+            '<span style="font-weight:600;margin-right:8px;">Composite colors:'
+            "</span>" + "".join(items) + "</div>"
+        )
 
     def _render_output(self: CytoDataFrame_type) -> None:
         # Return a hidden div that nbconvert will keep but Jupyter will ignore

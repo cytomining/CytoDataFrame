@@ -16,9 +16,9 @@ jobs:
     if: github.actor != 'dependabot[bot]'
     steps:
       # checks out the repo
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Python setup
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install the latest version of uv
@@ -39,9 +39,9 @@ jobs:
       OS: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Python setup
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python_version }}
       - name: Install the latest version of uv

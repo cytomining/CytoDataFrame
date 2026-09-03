@@ -7,7 +7,7 @@
 #       format_version: '1.5'
 #       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: cytodataframe-shAZamSV-py3.12
+#     display_name: CytoDataFrame (3.13.5)
 #     language: python
 #     name: python3
 # ---
@@ -117,6 +117,78 @@ CytoDataFrame(
 ][:3]
 
 # %%time
+# view JUMP plate BR00117006 and merge multiple channels into a single
+# single-cell crop composite (similar to a Fiji composite). Each channel is
+# tinted a color and additively blended so colocalization is easy to see.
+# Here we combine the nucleus (DNA) with the cell-segmentation channel (RNA for
+# JUMP) using cyan/magenta, which read more clearly than red/green/blue where
+# channels overlap. Channels may be named by their column, their channel suffix
+# (e.g. "OrigDNA"), or a substring, and colors may be a name, a hex code, or an
+# (r, g, b) tuple. The merged image is added as a new "Image_Composite" column
+# and a small color legend is shown with the table. "equalize_clip_limit" is an
+# easy contrast knob: a small value gives a milder, less over-saturated result.
+CytoDataFrame(
+    data=f"{jump_data_path}/BR00117006_shrunken.parquet",
+    data_context_dir=f"{jump_data_path}/images/orig",
+    display_options={
+        "composite_channels": {
+            "OrigDNA": "cyan",
+            "OrigRNA": "#ff00ff",
+        },
+        "equalize_clip_limit": 0.01,
+    },
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:3]
+
+# %%time
+# the same composite feature can merge *all* image channels at once by passing
+# "all", using default cyan/magenta/yellow (CMY) colors. The color legend shown
+# with the table indicates which channel each color represents.
+CytoDataFrame(
+    data=f"{jump_data_path}/BR00117006_shrunken.parquet",
+    data_context_dir=f"{jump_data_path}/images/orig",
+    display_options={"composite_channels": "all", "equalize_clip_limit": 0.01},
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:3]
+
+# %%time
+# composites also keep the segmentation outline and red center dot when those
+# are configured, so a single merged view still shows where each object was
+# segmented. Here we merge channels and overlay outlines from the segmentation
+# directory (cyan/magenta channels keep the green outline easy to distinguish).
+CytoDataFrame(
+    data=f"{jump_data_path}/BR00117006_shrunken.parquet",
+    data_context_dir=f"{jump_data_path}/images/orig",
+    data_outline_context_dir=f"{jump_data_path}/images/outlines",
+    display_options={
+        "composite_channels": {
+            "OrigDNA": "cyan",
+            "OrigRNA": "magenta",
+        },
+        "equalize_clip_limit": 0.01,
+    },
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:3]
+
+# %%time
 # view JUMP plate BR00117006 with images and adjust the brightness
 CytoDataFrame(
     data=f"{jump_data_path}/BR00117006_shrunken.parquet",
@@ -219,6 +291,68 @@ CytoDataFrame(
         "Image_FileName_OrigRNA",
     ]
 ][:5]
+
+# %%time
+# CytoDataFrame can also crop images when the data does not include AreaShape
+# bounding box columns (e.g. older CellProfiler outputs such as LINCS). Here we
+# drop the bounding box columns to simulate this case; cropping then relies on
+# offset_bounding_box applied to the compartment center coordinates.
+jump_without_bounding_boxes = pd.read_parquet(
+    f"{jump_data_path}/BR00117006_shrunken.parquet"
+)
+jump_without_bounding_boxes = jump_without_bounding_boxes.drop(
+    columns=[
+        column
+        for column in jump_without_bounding_boxes.columns
+        if "BoundingBox" in column
+    ]
+)
+CytoDataFrame(
+    data=jump_without_bounding_boxes,
+    data_context_dir=f"{jump_data_path}/images/orig",
+    display_options={
+        "offset_bounding_box": {
+            "x_min": -20,
+            "y_min": -20,
+            "x_max": 20,
+            "y_max": 20,
+        },
+    },
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:5]
+
+# %%time
+# For image-level data that has neither bounding box nor compartment center
+# columns (for example, whole-image quality control metrics), use
+# render_whole_image to display the full field of view without cropping.
+jump_image_level = pd.read_parquet(f"{jump_data_path}/BR00117006_shrunken.parquet")
+jump_image_level = jump_image_level.drop(
+    columns=[
+        column
+        for column in jump_image_level.columns
+        if "BoundingBox" in column or "Location_Center" in column
+    ]
+)
+CytoDataFrame(
+    data=jump_image_level,
+    data_context_dir=f"{jump_data_path}/images/orig",
+    display_options={"render_whole_image": True},
+)[
+    [
+        "Metadata_ImageNumber",
+        "Cells_Number_Object_Number",
+        "Image_FileName_OrigAGP",
+        "Image_FileName_OrigDNA",
+        "Image_FileName_OrigRNA",
+    ]
+][:3]
 
 # %%time
 # view NF1 Cell Painting data with images

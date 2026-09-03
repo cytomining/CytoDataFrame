@@ -21,7 +21,9 @@ With CytoDataFrame you can:
 
 - View image objects alongside their feature data using a Pandas DataFrame-like interface.
 - Highlight image objects using mask or outline files to understand their segmentation.
+- Merge multiple channels into a single single-cell crop composite (similar to a Fiji composite) with `display_options={"composite_channels": "all"}` or a per-channel color mapping such as `display_options={"composite_channels": {"OrigDNA": "cyan", "OrigRNA": "#ff00ff"}}` (colors may be names, hex codes, or RGB tuples; cyan/magenta/yellow read more clearly than red/green/blue where channels overlap). A color legend is shown with the table, and `display_options={"equalize_clip_limit": 0.01}` gives a milder, less over-saturated result.
 - Adjust image displays on-the-fly using interactive slider widgets.
+- Display image objects even when bounding box columns are missing, by cropping from compartment-center offsets or rendering whole fields of view.
 - Automatically detect 3D image volumes and render interactive [trame](https://github.com/Kitware/trame) views in notebooks when 3D dependencies are installed (with graceful fallback otherwise).
 - Interoperate with the [Polars](https://pola.rs/) and [Apache Arrow](https://arrow.apache.org/) ecosystems while keeping the familiar Pandas-based experience.
 
@@ -40,10 +42,10 @@ from cytodataframe import CytoDataFrame
 cdf = CytoDataFrame("profiles.parquet")
 
 # Convert out to any representation (Pandas stays a boundary layer).
-cdf.to_pandas()   # pandas.DataFrame
-cdf.to_polars()   # polars.DataFrame
-cdf.to_arrow()    # pyarrow.Table
-cdf.to_lazy()     # CytoLazyFrame (lazy, Polars-backed)
+cdf.to_pandas()  # pandas.DataFrame
+cdf.to_polars()  # polars.DataFrame
+cdf.to_arrow()  # pyarrow.Table
+cdf.to_lazy()  # CytoLazyFrame (lazy, Polars-backed)
 
 # Inspect the inferred schema (metadata / feature / geometry roles).
 cdf.cyto_schema
@@ -62,6 +64,11 @@ For 3D notebook display behavior:
 - 3D-aware rendering is enabled by default (`display_options={"auto_trame_for_3d": True}`).
 - Disable automatic trame switching with `display_options={"auto_trame_for_3d": False}`.
 - Force trame layout regardless of auto-detection with `display_options={"view": "trame"}`.
+
+For images without bounding box columns (e.g. older CellProfiler outputs or image-level data):
+
+- Crop from compartment-center coordinates plus pixel offsets with `display_options={"offset_bounding_box": {"x_min": -20, "y_min": -20, "x_max": 20, "y_max": 20}}` (requires compartment center columns such as `Nuclei_Location_Center_X/Y`).
+- Render the full field of view without cropping with `display_options={"render_whole_image": True}` (works even with no bounding box and no center columns).
 
 For row display in notebook/widget tables:
 

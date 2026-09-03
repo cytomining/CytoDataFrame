@@ -4,6 +4,7 @@ Defines a CytoDataFrame class.
 
 import base64
 import contextlib
+import html
 import logging
 import os
 import pathlib
@@ -3718,7 +3719,21 @@ class CytoDataFrame(pd.DataFrame):
             disable_option="volume_disable_cache",
             max_entries_option="volume_cache_max_entries",
         )
-        cache_key = f"{row}::{column}"
+        # The cached value is the *cropped* volume (bbox cropping is applied
+        # below, before caching), so the key must change whenever the crop
+        # settings do; otherwise a display_options change would silently
+        # return a stale crop for the same row/column. A tuple key also
+        # avoids the (unlikely but possible) collisions a "row::column"
+        # string join could produce.
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        bbox_column_map = display_options.get("volume_bbox_column_map")
+        crop_state = (
+            bool(display_options.get("volume_disable_bbox_crop")),
+            tuple(sorted(bbox_column_map.items()))
+            if isinstance(bbox_column_map, dict)
+            else None,
+        )
+        cache_key = (row, column, crop_state)
         if not cache_disabled and cache_key in cache:
             cached = cache.pop(cache_key)
             cache[cache_key] = cached
@@ -3728,8 +3743,17 @@ class CytoDataFrame(pd.DataFrame):
         # _find_3d_columns_for_display on every render) decodes the image. For
         # 2D inputs that probe always fails, so remember cells already found to
         # be non-3D and short-circuit before re-reading the same .tif/.tiff.
-        not_3d_cache: set = self._custom_attrs.setdefault("_volume_not_3d_cache", set())
+        # Bounded and LRU-evicted the same way as ``cache`` above, so this
+        # negative cache cannot grow without limit across a large DataFrame.
+        raw_not_3d_cache = self._custom_attrs.setdefault(
+            "_volume_not_3d_cache", OrderedDict()
+        )
+        if not isinstance(raw_not_3d_cache, OrderedDict):
+            raw_not_3d_cache = OrderedDict.fromkeys(raw_not_3d_cache)
+            self._custom_attrs["_volume_not_3d_cache"] = raw_not_3d_cache
+        not_3d_cache: "OrderedDict[Any, None]" = raw_not_3d_cache
         if not cache_disabled and cache_key in not_3d_cache:
+            not_3d_cache.move_to_end(cache_key)
             raise ValueError("Selected cell does not contain a 3D volume.")
 
         try:
@@ -3891,7 +3915,10 @@ class CytoDataFrame(pd.DataFrame):
 
         if volume is None or dims is None:
             if not cache_disabled:
-                not_3d_cache.add(cache_key)
+                not_3d_cache[cache_key] = None
+                not_3d_cache.move_to_end(cache_key)
+                while len(not_3d_cache) > cache_max_entries:
+                    not_3d_cache.popitem(last=False)
             raise ValueError("Selected cell does not contain a 3D volume.")
 
         # Apply per-row bounding box cropping when available (XYZ).
@@ -5475,7 +5502,8 @@ class CytoDataFrame(pd.DataFrame):
                             # set the image path based on the image_path cols.
                             image_path=(
                                 row[image_path_cols[image_col]]
-                                if image_path_cols is not None and image_path_cols != {}
+                                if image_path_cols is not None
+                                and image_col in image_path_cols
                                 else None
                             ),
                         ),
@@ -5570,10 +5598,11 @@ class CytoDataFrame(pd.DataFrame):
         items = []
         for column, color in channel_specs:
             column_str = str(column)
-            channel = (
+            channel = html.escape(
                 column_str.split("FileName_", 1)[1]
                 if "FileName_" in column_str
-                else column_str
+                else column_str,
+                quote=True,
             )
             swatch = (
                 "display:inline-block;width:11px;height:11px;margin-right:4px;"

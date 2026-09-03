@@ -88,8 +88,8 @@ def is_arrow_table(data: Any) -> bool:
     return isinstance(data, pa.Table)
 
 
-def is_supported(data: Any) -> bool:
-    """Return True when ``data`` is one of the supported tabular inputs."""
+def is_dataframe_engine_supported(data: Any) -> bool:
+    """Return True when ``data`` is one of the engine's supported tabular inputs."""
     return (
         isinstance(data, (pd.DataFrame, pd.Series))
         or is_polars_dataframe(data)
@@ -132,8 +132,9 @@ def to_polars(data: TabularData) -> "pl.DataFrame":
     if isinstance(data, pd.Series):
         data = data.to_frame()
     if isinstance(data, pd.DataFrame):
-        # Strip any pandas subclass (e.g. CytoDataFrame) and index before handing
-        # the frame to polars, which has no index concept.
+        # `pd.DataFrame(data)` copies out of any pandas subclass (e.g.
+        # CytoDataFrame) into a plain DataFrame; `from_pandas` then drops the
+        # pandas index, since polars has no index concept.
         try:
             return pl.from_pandas(pd.DataFrame(data))
         except Exception as exc:
@@ -159,8 +160,11 @@ def to_arrow(data: TabularData, *, preserve_index: bool = False) -> "pa.Table":
     """
     Convert any supported tabular input to a :class:`pyarrow.Table`.
 
-    Arrow is the canonical schema/serialization contract, so this is the
-    conversion used whenever schema or interchange guarantees matter.
+    Arrow is the canonical schema/serialization contract for this project: use
+    this conversion (rather than ``to_pandas``/``to_polars``) whenever the
+    caller needs a self-describing schema, or needs to hand the data to
+    another library/process (e.g. writing Parquet, sharing data across a
+    process boundary) without relying on pandas- or polars-specific types.
     """
     pa = _pyarrow()
     if is_arrow_table(data):
@@ -201,8 +205,13 @@ def scan_parquet(source: Union[str, pathlib.Path], **kwargs: Any) -> "pl.LazyFra
     """
     Lazily scan a Parquet file/dataset into a :class:`polars.LazyFrame`.
 
-    This enables predicate/projection pushdown for large profiling datasets
-    without materializing them eagerly.
+    Unlike ``read_parquet``, this does not load the data into memory
+    immediately. Instead it returns a query plan that polars only executes
+    once a terminal operation (e.g. ``.collect()``) is called. This lets
+    polars push row filters ("predicate pushdown") and column selections
+    ("projection pushdown") down into the Parquet reader itself, so a large
+    profiling dataset can be filtered/subset without ever reading the
+    unneeded rows or columns off disk.
     """
     pl = _polars()
     return pl.scan_parquet(source, **kwargs)

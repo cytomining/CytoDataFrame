@@ -6,8 +6,7 @@ CytoDataFrame "context" (image directories, display options, ...) so that a
 lazy pipeline can be materialized back into a fully-configured
 :class:`~cytodataframe.frame.CytoDataFrame`.
 
-This is the surface that powers the lazy-execution example from the evolution
-plan::
+This enables lazy, filter-and-project-pushed-down pipelines like::
 
     (
         CytoDataFrame.scan_parquet("profiles.parquet")
@@ -111,6 +110,14 @@ class CytoLazyFrame:
 
     # ------------------------------------------------------------------ #
     # Table operations (delegated to polars, return CytoLazyFrame)
+    #
+    # Polars is the query engine here, so these methods are intentionally
+    # thin, coupled passthroughs, not an abstraction over it: each just calls
+    # the identically-named ``polars.LazyFrame`` method and re-wraps the
+    # result so context (image directories, display options, ...) survives
+    # the chain. Only the handful of operations CytoDataFrame pipelines
+    # actually use are exposed this way, not the full polars API - for
+    # anything else, ``.lazyframe`` returns the underlying LazyFrame directly.
     # ------------------------------------------------------------------ #
     def filter(self, *predicates: Any, **constraints: Any) -> "CytoLazyFrame":
         """Filter rows. Mirrors :meth:`polars.LazyFrame.filter`."""
@@ -161,8 +168,12 @@ class CytoLazyFrame:
         """
         Join against another frame. Mirrors :meth:`polars.LazyFrame.join`.
 
-        ``other`` may be a CytoLazyFrame, polars LazyFrame/DataFrame, or pandas
-        DataFrame; it is normalized to a LazyFrame first.
+        The parameter is named ``other`` (not e.g. ``other_dataframe``) to
+        match polars' own ``LazyFrame.join(other, ...)`` signature, so a
+        caller passing it by keyword (``.join(other=...)``) works the same
+        way here as it does on a plain polars LazyFrame. It may be a
+        CytoLazyFrame, polars LazyFrame/DataFrame, or pandas DataFrame; it is
+        normalized to a LazyFrame first.
         """
         if isinstance(other, CytoLazyFrame):
             other_lf = other._lf
@@ -188,6 +199,11 @@ class CytoLazyFrame:
         are retained alongside the selected features, preserving original column
         order.
         """
+        # Imported locally (not at module level) to match this project's
+        # convention for polars/pyarrow across engine.py/schema.py/frame.py,
+        # which keeps package import cheap for callers who never touch a
+        # lazy/Arrow path. Python caches the module after the first import, so
+        # repeated calls only pay a dict lookup, not a re-import.
         import polars as pl
 
         schema = self.cyto_schema
@@ -208,6 +224,12 @@ class CytoLazyFrame:
 
     # ------------------------------------------------------------------ #
     # Materialization
+    #
+    # Every method above (filter/select/join/...) only records what to do;
+    # no data is read or computed yet. "Materializing" means actually running
+    # that recorded plan now and producing a real, in-memory table - that's
+    # what the ``collect*``/``to_*`` methods below do, each returning a
+    # different concrete type (polars/Arrow/pandas/CytoDataFrame).
     # ------------------------------------------------------------------ #
     def collect_polars(self, **kwargs: Any) -> "pl.DataFrame":
         """Execute the query plan, returning an eager :class:`polars.DataFrame`."""
@@ -229,7 +251,12 @@ class CytoLazyFrame:
         """
         Execute the query plan and return a configured ``CytoDataFrame``.
 
-        The CytoDataFrame is rebuilt with the image/display context that was
+        The "query plan" is the sequence of polars operations (filter,
+        select, join, ...) recorded by the ``CytoLazyFrame`` methods called so
+        far, e.g. ``scan_parquet(...).filter(...).select_features()`` builds a
+        3-step plan without touching disk. Calling ``collect()`` is what
+        actually runs that plan against the data and returns real results -
+        here, a CytoDataFrame rebuilt with the image/display context that was
         carried through the lazy pipeline.
         """
         # Imported lazily to avoid a circular import at module load time.
@@ -252,7 +279,12 @@ class CytoLazyFrame:
 
 
 def build_context(custom_attrs: Dict[str, Any]) -> Dict[str, Any]:
-    """Extract the carry-through context from a CytoDataFrame ``_custom_attrs``."""
+    """
+    Extract the constructor kwargs (``_CONTEXT_KEYS``) from a CytoDataFrame's
+    ``_custom_attrs`` so they can travel alongside a lazy pipeline and be
+    reapplied when ``CytoLazyFrame.collect()`` rebuilds a CytoDataFrame - e.g.
+    so a filtered/selected result still knows where its image files live.
+    """
     return {key: custom_attrs.get(key) for key in _CONTEXT_KEYS}
 
 

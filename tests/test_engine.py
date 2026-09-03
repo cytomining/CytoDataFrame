@@ -1,8 +1,11 @@
 """
 Tests for the CytoDataFrame backend abstraction layer (engine.py).
 
-Covers Arrow round-trip / interchange guarantees described in the evolution
-plan: row counts, nulls, schema, and column ordering must be preserved across
+These tests check that converting data out of a CytoDataFrame into another
+format and back ("round-tripping") never silently changes it. Concretely,
+converting a CytoDataFrame to Arrow/Parquet/pandas/Polars and back to a
+CytoDataFrame ("interchange") must preserve row counts, null values, column
+dtypes, and column ordering:
 
     cdf -> Arrow   -> cdf
     cdf -> Parquet -> cdf
@@ -130,7 +133,9 @@ def test_roundtrip_pandas(profiling_frame: pd.DataFrame):
     _assert_tabular_equivalent(profiling_frame, pd.DataFrame(restored))
 
 
-def test_roundtrip_parquet(profiling_frame: pd.DataFrame, tmp_path: pathlib.Path):
+def test_roundtrip_parquet_from_file(
+    profiling_frame: pd.DataFrame, tmp_path: pathlib.Path
+):
     cdf = CytoDataFrame(profiling_frame)
     out = tmp_path / "profiles.parquet"
     cdf.export(str(out))

@@ -1,8 +1,9 @@
 """
 Formal schema system for CytoDataFrame.
 
-This module implements the Arrow-native schema contract described in the
-CytoDataFrame evolution plan (Phases 2 and 3). It provides:
+This module classifies a profiling table's columns by role (metadata,
+feature, geometry, image) and folds flattened CellProfiler-style geometry
+columns into nested Arrow structs. It provides:
 
     * :class:`CytoSchema` - an explicit, inspectable classification of a
       profiling table's columns into image / object keys, metadata, feature, and
@@ -31,9 +32,24 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 # --------------------------------------------------------------------------- #
 # Column-role detection patterns
+#
+# These are kept as module-level constants (rather than a separate config
+# file) because they're small, static, and specific to this one classifier;
+# CellProfiler's naming conventions for these roles don't vary per pipeline.
+# If per-project overrides are ever needed (e.g. non-CellProfiler naming
+# schemes), that would be a reason to move them out into configuration.
 # --------------------------------------------------------------------------- #
 
-# Geometry columns hold spatial coordinates (bounding boxes / centroids).
+# "Geometry" here means per-object *location* coordinates (where an object
+# sits within its parent image), not shape/size measurements. In CellProfiler
+# output, ``Location_Center_*``, ``AreaShape_Center_*``/``Center_Mass``, and
+# ``BoundingBox`` columns are all pixel coordinates in the whole-image
+# coordinate system for that object (not relative to the object itself), so
+# they behave the same way for our purposes: they should never be treated as
+# a normalizable morphology feature, but they also aren't identifier/
+# annotation metadata, hence the separate "geometry" role. Shape/size
+# descriptors like Area, Perimeter, or Eccentricity are unaffected by this
+# pattern and remain classified as features.
 _GEOMETRY_PATTERN = re.compile(
     r"(boundingbox"
     r"|location_center"
@@ -268,7 +284,14 @@ class CytoSchema:
     # ------------------------------------------------------------------ #
     @property
     def columns(self) -> List[str]:
-        """All classified columns in metadata/geometry/feature order."""
+        """
+        All classified columns in metadata/geometry/feature order.
+
+        ``image_columns`` is not iterated separately here because
+        ``from_columns`` always also appends every image column to
+        ``metadata_columns``, so image columns are already covered by that
+        bucket; nothing is silently dropped.
+        """
         ordered: List[str] = []
         seen: set[str] = set()
         for bucket in (
@@ -285,6 +308,12 @@ class CytoSchema:
     def validate(self, strict: bool = False) -> List[str]:
         """
         Check schema self-consistency.
+
+        For a schema produced by ``from_columns``/``from_pandas``/``from_arrow``/
+        ``from_polars``, the checks below never fire: those classifiers assign
+        each column to exactly one bucket. They exist to catch inconsistency in
+        a ``CytoSchema`` built or edited directly (e.g. constructed by hand, or
+        with its column lists mutated after inference).
 
         Returns a list of human-readable issues. When ``strict`` is True and any
         issue is found, a :class:`ValueError` is raised instead.

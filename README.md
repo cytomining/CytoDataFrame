@@ -29,28 +29,42 @@ With CytoDataFrame you can:
 
 ## Polars and Arrow interoperability
 
-CytoDataFrame uses Apache Arrow as its canonical schema/interchange contract and
-Polars as an execution engine, while Pandas remains the compatibility layer. You
-can move between representations and run lazy, scalable queries without leaving
-the CytoDataFrame API:
+CytoDataFrame uses Apache Arrow as its canonical schema/interchange contract.
+Polars is the execution engine for lazy/scalable queries.
+Pandas remains the compatibility layer that CytoDataFrame itself is built on.
+You can move between all three representations, and run lazy queries, without leaving the CytoDataFrame API:
 
 ```python
-import polars as pl
 from cytodataframe import CytoDataFrame
 
 # Construct from pandas, polars (DataFrame or LazyFrame), or a pyarrow Table.
 cdf = CytoDataFrame("profiles.parquet")
 
-# Convert out to any representation (Pandas stays a boundary layer).
+# Convert to any representation. Pandas is CytoDataFrame's compatibility
+# boundary (CytoDataFrame is a pandas.DataFrame subclass internally), so
+# `to_pandas()` just returns a plain, un-subclassed pandas.DataFrame view of
+# the same data; the other `to_*` calls convert it into that library's type.
 cdf.to_pandas()  # pandas.DataFrame
 cdf.to_polars()  # polars.DataFrame
 cdf.to_arrow()  # pyarrow.Table
 cdf.to_lazy()  # CytoLazyFrame (lazy, Polars-backed)
 
-# Inspect the inferred schema (metadata / feature / geometry roles).
+# Inspect the inferred schema (metadata / feature / geometry roles), e.g.:
+# CytoSchema(image_key='Image_FileName_DNA', object_key='Metadata_ObjectNumber',
+#            metadata_columns=[...], feature_columns=[...],
+#            geometry_columns=[...], image_columns=['Image_FileName_DNA'])
 cdf.cyto_schema
+```
 
-# Lazily scan large Parquet datasets with predicate/projection pushdown.
+Large Parquet datasets can be scanned lazily rather than loaded into memory up
+front. Polars only reads the rows/columns it actually needs once `.collect()`
+runs ("predicate pushdown" for the `.filter(...)` row condition, "projection
+pushdown" for the columns `.select_features()` keeps):
+
+```python
+import polars as pl
+from cytodataframe import CytoDataFrame
+
 result = (
     CytoDataFrame.scan_parquet("profiles.parquet")
     .filter(pl.col("Metadata_Well") == "A01")
@@ -106,6 +120,12 @@ pip install "cytodataframe[ome]"
 # everything
 pip install "cytodataframe[all]"
 ```
+
+Everything else in CytoDataFrame (including its Jupyter table/image display)
+works without these extras. If you skip them, calling a feature that needs
+one - `to_ome_parquet()`, or 3D rendering when `pyvista`/`trame` aren't
+installed - raises an error naming the missing package and the extra to
+install, rather than failing silently.
 
 ## Contributing, Development, and Testing
 

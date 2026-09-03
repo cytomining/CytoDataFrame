@@ -1744,7 +1744,9 @@ class CytoDataFrame(pd.DataFrame):
         except ImportError as exc:
             raise ImportError(
                 "CytoDataFrame.to_ome_parquet requires the optional 'ome-arrow' "
-                "dependency. Install it via `pip install ome-arrow`."
+                "dependency, which core CytoDataFrame installs do not include. "
+                "Install it via `pip install cytodataframe[ome]` (or "
+                "`pip install ome-arrow` directly)."
             ) from exc
         try:
             from ome_arrow import from_numpy as ome_from_numpy  # type: ignore
@@ -4549,7 +4551,10 @@ class CytoDataFrame(pd.DataFrame):
             import pyvista as pv  # type: ignore
         except Exception as exc:
             raise RuntimeError(
-                "PyVista is required for trame-based 3D rendering."
+                "PyVista is required for trame-based 3D rendering, which core "
+                "CytoDataFrame installs do not include. Install it via "
+                "`pip install cytodataframe[viz3d]` (or `pip install pyvista "
+                "trame trame-vtk trame-vuetify` directly)."
             ) from exc
 
         display_options = self._custom_attrs.get("display_options", {}) or {}
@@ -4726,7 +4731,10 @@ class CytoDataFrame(pd.DataFrame):
             import pyvista as pv  # type: ignore
         except Exception as exc:
             raise RuntimeError(
-                "PyVista is required for trame-based 3D rendering."
+                "PyVista is required for trame-based 3D rendering, which core "
+                "CytoDataFrame installs do not include. Install it via "
+                "`pip install cytodataframe[viz3d]` (or `pip install pyvista "
+                "trame trame-vtk trame-vuetify` directly)."
             ) from exc
 
         if hasattr(pv, "set_jupyter_backend"):

@@ -19,6 +19,10 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 dynamic = [ "version" ]
+# ipyvolume, matplotlib, nest-asyncio2, and pywavelets are intentionally
+# dropped from core dependencies here: 3D rendering already moved to
+# pyvista/trame (see optional-dependencies.viz3d below) before this change,
+# leaving these four as dead weight - none are imported anywhere in src/.
 dependencies = [
   "imagecodecs>=2024.9.22,<2027",
   "imageio>=2.37,<3",

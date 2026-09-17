@@ -34,9 +34,17 @@ dependencies = [
   "pyvista>=0.46.4",
   "pywavelets>1.4.1",
   "scikit-image>0.19.3",
+  # tifffile+zarr enable a lazy, windowed read of a per-object 3D bounding
+  # box (see `_try_lazy_windowed_tiff_crop`): only the object's own
+  # z-planes/window are read from a plain TIFF z-stack, instead of decoding
+  # the whole (often hundreds-of-MB) volume just to crop it down afterward.
+  # Without these, 3D volumes still load correctly via the existing eager
+  # `imageio` read -- just slower for large field-of-view TIFFs.
+  "tifffile>=2024.1.30",
   "trame>=3.12",
   "trame-vtk>=2.10",
   "trame-vuetify>=3.1",
+  "zarr>=2.18",
 ]
 
 [dependency-groups]

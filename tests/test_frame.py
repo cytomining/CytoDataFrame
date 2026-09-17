@@ -441,6 +441,101 @@ def test_get_3d_label_overlay_from_cell_applies_bbox_crop(
     assert overlay.max() == 255
 
 
+def test_get_3d_label_overlay_from_cell_uses_lazy_windowed_crop(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The mask/outline file is often just as large as the raw z-stack, so
+    it should get the same lazy, windowed read as the raw volume rather than
+    being fully decoded just to crop it down afterward -- verified by
+    asserting imageio.imread is never called for either file.
+    """
+    pytest.importorskip("zarr")
+    volume = np.arange(4 * 5 * 6, dtype=np.uint8).reshape(4, 5, 6)
+    image_path = tmp_path / "vol3d.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    mask_dir = tmp_path / "masks"
+    mask_dir.mkdir()
+    label = np.zeros((4, 5, 6), dtype=np.uint8)
+    label[1:3, 1:4, 1:5] = 255
+    tifffile.imwrite(mask_dir / "vol3d_mask.tiff", label)
+
+    data = pd.DataFrame(
+        {
+            "Image_FileName_DNA": [image_path.name],
+            "AreaShape_BoundingBoxMinimum_X": [1],
+            "AreaShape_BoundingBoxMaximum_X": [5],
+            "AreaShape_BoundingBoxMinimum_Y": [1],
+            "AreaShape_BoundingBoxMaximum_Y": [4],
+            "AreaShape_BoundingBoxMinimum_Z": [1],
+            "AreaShape_BoundingBoxMaximum_Z": [3],
+        }
+    )
+    cdf = CytoDataFrame(
+        data=data,
+        data_context_dir=str(tmp_path),
+        data_mask_context_dir=str(mask_dir),
+    )
+
+    def _fail_if_called(*args: object, **kwargs: object) -> None:
+        raise AssertionError(
+            "imageio.imread should not run when the lazy windowed crop applies"
+        )
+
+    monkeypatch.setattr(cytodataframe.frame.imageio, "imread", _fail_if_called)
+
+    cropped_volume, _ = cdf._get_3d_volume_from_cell(row=0, column="Image_FileName_DNA")
+    overlay = cdf._get_3d_label_overlay_from_cell(
+        row=0,
+        column="Image_FileName_DNA",
+        expected_shape=cropped_volume.shape,
+    )
+
+    assert overlay is not None
+    assert overlay.shape == cropped_volume.shape
+    assert overlay.max() == 255
+
+
+def test_add_label_overlay_to_plotter_filled_mode_with_real_pyvista() -> None:
+    """Regression guard using the *real* pyvista (not the fake mock used by
+    other ``_build_pyvista_viewer`` tests below, which never validates
+    argument types and so never caught this): "filled" mode used to pass
+    ``cmap=[(0.0, 0.0, 0.0), overlay_color]`` -- a list of raw RGB tuples --
+    to ``Plotter.add_volume``, which raises "When inputting a list as a
+    cmap, each item should be a string." ``_add_label_overlay_to_plotter``
+    swallows that in a bare ``except Exception`` and silently returns no
+    overlay actors, which is what "the masks aren't rendering" turned out to
+    be. A real two-color mask overlay must actually get added.
+    """
+    pv = pytest.importorskip("pyvista")
+
+    cdf = CytoDataFrame(
+        pd.DataFrame({"A": [1]}),
+        display_options={
+            "label_overlay_color": (255, 0, 255),
+            "label_overlay_mode": "filled",
+            "label_overlay_opacity": 0.35,
+        },
+    )
+    volume = np.zeros((4, 5, 6), dtype=np.float32)
+    volume[1:3, 1:4, 1:5] = 200
+    label = np.zeros((4, 5, 6), dtype=np.uint8)
+    label[1:3, 1:4, 1:5] = 255
+
+    plotter = pv.Plotter(off_screen=True)
+    overlay_actors = cdf._add_label_overlay_to_plotter(
+        plotter=plotter,
+        volume=volume,
+        label_volume=label,
+        spacing=(1.0, 1.0, 1.0),
+        base_sample=1.0,
+        display_options=cdf._custom_attrs.get("display_options", {}),
+    )
+
+    assert overlay_actors, "filled-mode overlay was silently dropped"
+    plotter.close()
+
+
 def test_get_3d_bbox_crop_bounds_prefers_cellprofiler_columns() -> None:
     cdf = CytoDataFrame(
         data=pd.DataFrame(
@@ -493,6 +588,90 @@ def test_get_3d_bbox_crop_bounds_accepts_custom_column_map() -> None:
     assert bounds == (1, 5, 2, 6, 0, 3)
 
 
+def test_row_bounding_box_matches_cellprofiler_columns() -> None:
+    row = pd.Series({"Minimum_X": 1, "Minimum_Y": 2, "Maximum_X": 5, "Maximum_Y": 6})
+
+    bounds = CytoDataFrame._row_bounding_box(row=row, bounding_box_cols=list(row.index))
+
+    assert bounds == (1, 2, 5, 6)
+
+
+def test_row_bounding_box_returns_none_for_non_cellprofiler_columns() -> None:
+    """A ``data_bounding_box`` table built for the 3D
+    ``volume_bbox_column_map`` convention (e.g. "Nuclei_MinX") has no
+    ``Minimum_X``/``Maximum_X`` columns for this 2D helper to find. It must
+    signal "no bounding box for this row" rather than raising, so the caller
+    can render without a crop instead of crashing.
+    """
+    row = pd.Series({"Nuclei_MinX": 1, "Nuclei_MaxX": 5})
+
+    bounds = CytoDataFrame._row_bounding_box(row=row, bounding_box_cols=list(row.index))
+
+    assert bounds is None
+
+
+def test_repr_html_does_not_crash_with_non_cellprofiler_data_bounding_box(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Regression guard: passing ``data_bounding_box`` with column names that
+    only match the 3D ``volume_bbox_column_map`` convention (not
+    CellProfiler's ``Minimum_X``/``Maximum_X``) used to raise ``StopIteration``
+    out of the 2D static-snapshot renderer. It must render (without applying
+    a 2D crop) instead.
+    """
+    image_path = tmp_path / "img.tiff"
+    imageio.imwrite(image_path, np.zeros((10, 10), dtype=np.uint8))
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+        data_bounding_box=pd.DataFrame(
+            {
+                "Nuclei_MinX": [1],
+                "Nuclei_MaxX": [5],
+                "Nuclei_MinY": [1],
+                "Nuclei_MaxY": [5],
+            }
+        ),
+    )
+
+    html = cdf._generate_jupyter_dataframe_html()
+
+    assert html is not None
+
+
+def test_repr_html_joins_only_missing_bounding_box_columns_when_some_overlap(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A rich ``data_bounding_box`` table may overlap the displayed data.
+
+    Notebook rendering should only rejoin the missing metadata columns needed
+    for cropping rather than joining the whole table and raising pandas'
+    "columns overlap but no suffix specified" error.
+    """
+    image_path = tmp_path / "img.tiff"
+    imageio.imwrite(image_path, np.zeros((10, 10), dtype=np.uint8))
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+        data_bounding_box=pd.DataFrame(
+            {
+                "Image_FileName_DNA": [image_path.name],
+                "Minimum_X": [1],
+                "Minimum_Y": [1],
+                "Maximum_X": [5],
+                "Maximum_Y": [5],
+            }
+        ),
+    )
+
+    html = cdf._generate_jupyter_dataframe_html()
+
+    assert html is not None
+    assert "Image_FileName_DNA" in html
+
+
 def test_find_matching_segmentation_path_filters_by_image_identifier(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -530,6 +709,55 @@ def test_find_matching_segmentation_path_prefers_candidate_parent_tree(
 
     assert matched is not None
     assert matched.parent.name == "plate_a"
+
+
+def test_find_matching_segmentation_path_skips_identifier_check_when_unambiguous(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A directory scoped to one specimen/well (e.g. one
+    ``segmentation_masks/<well>/`` folder per field of view) may use a fixed,
+    generic mask filename that shares no identifier at all with the raw image
+    filename (e.g. always "nuclei_mask.tiff" regardless of which field of
+    view it segments). When ``file_pattern`` alone already matches exactly
+    one file in that directory, that match is unambiguous on its own --
+    requiring an identifier match too would reject every legitimate match for
+    this naming convention.
+    """
+    mask_dir = tmp_path / "segmentation_masks" / "B10-1"
+    mask_dir.mkdir(parents=True)
+    (mask_dir / "nuclei_mask.tiff").write_bytes(b"")
+
+    matched = CytoDataFrame._find_matching_segmentation_path(
+        data_value="/data/zstack_images/B10-1/B10-1_405.tif",
+        pattern_map={r"^nuclei_mask\.tiff$": r"_405\.tif$"},
+        file_dir=str(mask_dir),
+        candidate_path=pathlib.Path("/data/zstack_images/B10-1/B10-1_405.tif"),
+    )
+
+    assert matched is not None
+    assert matched.name == "nuclei_mask.tiff"
+
+
+def test_find_matching_segmentation_path_disambiguates_multiple_matches(
+    tmp_path: pathlib.Path,
+) -> None:
+    """When ``file_pattern`` alone matches more than one file, identifier
+    based disambiguation still applies (unchanged existing behavior).
+    """
+    mask_dir = tmp_path / "masks"
+    mask_dir.mkdir()
+    (mask_dir / "img_a_mask.tiff").write_bytes(b"")
+    (mask_dir / "img_b_mask.tiff").write_bytes(b"")
+
+    matched = CytoDataFrame._find_matching_segmentation_path(
+        data_value="img_b.tiff",
+        pattern_map={r".*_mask\.tiff$": r".*"},
+        file_dir=str(mask_dir),
+        candidate_path=pathlib.Path("img_b.tiff"),
+    )
+
+    assert matched is not None
+    assert matched.name == "img_b_mask.tiff"
 
 
 def test_cytodataframe_input(  # noqa: PLR0917
@@ -2181,6 +2409,100 @@ def test_get_3d_volume_from_cell_loads_3d_tiff(tmp_path: pathlib.Path) -> None:
     assert dims == (6, 5, 4)
 
 
+def test_get_3d_volume_from_cell_uses_lazy_windowed_crop_when_bbox_available(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A per-row 3D bounding box triggers a lazy, windowed tifffile+zarr read
+    instead of decoding the whole volume with imageio -- verified both by the
+    cropped values matching a direct numpy slice, and by asserting
+    imageio.imread is never called (proving the eager path did not run).
+    """
+    pytest.importorskip("zarr")
+    volume = np.arange(10 * 8 * 6, dtype=np.uint8).reshape(10, 8, 6)
+    image_path = tmp_path / "volume.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    data = pd.DataFrame(
+        {
+            "Image_FileName_DNA": [image_path.name],
+            "bbox_x0": [1],
+            "bbox_x1": [4],
+            "bbox_y0": [2],
+            "bbox_y1": [6],
+            "bbox_z0": [3],
+            "bbox_z1": [7],
+        }
+    )
+    cdf = CytoDataFrame(
+        data=data,
+        data_context_dir=str(tmp_path),
+        display_options={
+            "volume_bbox_column_map": {
+                "x_min": "bbox_x0",
+                "x_max": "bbox_x1",
+                "y_min": "bbox_y0",
+                "y_max": "bbox_y1",
+                "z_min": "bbox_z0",
+                "z_max": "bbox_z1",
+            }
+        },
+    )
+
+    def _fail_if_called(*args: object, **kwargs: object) -> None:
+        raise AssertionError(
+            "imageio.imread should not run when the lazy windowed crop applies"
+        )
+
+    monkeypatch.setattr(cytodataframe.frame.imageio, "imread", _fail_if_called)
+
+    loaded_volume, dims = cdf._get_3d_volume_from_cell(
+        row=0, column="Image_FileName_DNA"
+    )
+
+    expected = volume[3:7, 2:6, 1:4]
+    np.testing.assert_array_equal(loaded_volume, expected)
+    assert dims == (
+        loaded_volume.shape[2],
+        loaded_volume.shape[1],
+        loaded_volume.shape[0],
+    )
+
+
+def test_get_3d_volume_from_cell_falls_back_to_eager_read_without_bbox(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no bounding box configured, the lazy path is a no-op and the
+    existing eager imageio read still runs (regression guard: the lazy
+    optimization must never change output for inputs it doesn't apply to).
+    """
+    pytest.importorskip("zarr")
+    volume = np.arange(4 * 5 * 6, dtype=np.uint8).reshape(4, 5, 6)
+    image_path = tmp_path / "volume.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+    )
+
+    calls = []
+    original_imread = imageio.imread
+
+    def _tracking_imread(*args: object, **kwargs: object) -> np.ndarray:
+        calls.append(args)
+        return original_imread(*args, **kwargs)
+
+    monkeypatch.setattr(cytodataframe.frame.imageio, "imread", _tracking_imread)
+
+    loaded_volume, dims = cdf._get_3d_volume_from_cell(
+        row=0, column="Image_FileName_DNA"
+    )
+
+    assert len(calls) == 1
+    assert loaded_volume.shape == (4, 5, 6)
+    assert dims == (6, 5, 4)
+
+
 def test_get_3d_volume_from_cell_normalizes_file_uri_with_context_dir(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -2401,6 +2723,41 @@ def test_repr_html_auto_trame_for_3d_inputs(
     assert captured["columns_3d"] == ["Image_FileName_DNA"]
     assert captured["backend"] is None
     assert displayed
+
+
+def test_repr_html_auto_trame_respects_disabled_static_snapshot(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    volume = np.arange(3 * 4 * 5, dtype=np.uint8).reshape(3, 4, 5)
+    image_path = tmp_path / "auto_trame_no_snapshot.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+        display_options={"show_static_snapshot_details": False},
+    )
+
+    displayed: list = []
+    calls = {"snapshot": 0}
+
+    def fake_show_widget_table(column: str, **kwargs: object) -> str:
+        return "widget_table"
+
+    def fake_snapshot_html() -> str:
+        calls["snapshot"] += 1
+        return "<table/>"
+
+    def capture_display(value: object) -> None:
+        displayed.append(value)
+
+    monkeypatch.setattr(cdf, "show_widget_table", fake_show_widget_table)
+    monkeypatch.setattr(cdf, "_generate_trame_snapshot_html", fake_snapshot_html)
+    monkeypatch.setattr("cytodataframe.frame.display", capture_display)
+
+    assert cdf._repr_html_() is None
+    assert displayed == ["widget_table"]
+    assert calls["snapshot"] == 0
 
 
 def test_find_3d_columns_for_display_skips_ellipsis(

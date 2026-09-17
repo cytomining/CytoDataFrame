@@ -2235,7 +2235,7 @@ class CytoDataFrame(pd.DataFrame):
         return None, None
 
     @staticmethod
-    def _find_matching_segmentation_path(
+    def _find_matching_segmentation_path(  # noqa: C901
         data_value: str,
         pattern_map: Optional[dict],
         file_dir: Optional[str],
@@ -2311,23 +2311,37 @@ class CytoDataFrame(pd.DataFrame):
             candidate_roots.append(root)
 
             for search_root in candidate_roots:
+                pattern_only_matches = [
+                    file
+                    for file in sorted(search_root.rglob("*"))
+                    if file.is_file() and re.search(file_pattern, file.name)
+                ]
+                # A directory scoped to a single specimen/well (e.g. one
+                # segmentation_masks/<well>/ folder per field of view) often
+                # uses fixed, generic mask filenames (e.g. "nuclei_mask.tiff")
+                # that share no identifier with the raw image filename at all.
+                # When `file_pattern` alone already picks out exactly one file
+                # in this root, that's unambiguous on its own -- requiring an
+                # identifier match too would reject every legitimate match for
+                # such naming conventions. Only fall back to identifier
+                # filtering (below) to disambiguate when the pattern alone
+                # matches more than one file.
+                if len(pattern_only_matches) == 1:
+                    return pattern_only_matches[0]
+
                 normalized_identifiers = [
                     re.escape(idf.lower()) for idf in identifiers if idf
                 ]
                 matching_files = [
                     file
-                    for file in sorted(search_root.rglob("*"))
-                    if file.is_file()
-                    and re.search(file_pattern, file.name)
-                    and (
-                        not normalized_identifiers
-                        or any(
-                            re.search(
-                                rf"(?<![0-9A-Za-z]){idf}(?![0-9A-Za-z])",
-                                file.stem.lower(),
-                            )
-                            for idf in normalized_identifiers
+                    for file in pattern_only_matches
+                    if not normalized_identifiers
+                    or any(
+                        re.search(
+                            rf"(?<![0-9A-Za-z]){idf}(?![0-9A-Za-z])",
+                            file.stem.lower(),
                         )
+                        for idf in normalized_identifiers
                     )
                 ]
                 if matching_files:
@@ -2382,22 +2396,41 @@ class CytoDataFrame(pd.DataFrame):
             A uint8 binary array (0/255) matching ``expected_shape``, or ``None``
             when loading or shape validation fails.
         """
-        try:
-            mask_array = np.asarray(imageio.imread(segmentation_path))
-        except (FileNotFoundError, ValueError):
-            return None
+        # As with the raw volume, try a lazy windowed read first so a mask
+        # file (often just as large as the raw z-stack) doesn't have to be
+        # fully decoded just to crop it down to one object's region.
+        mask_array = (
+            self._try_lazy_windowed_tiff_crop(candidate_path=segmentation_path, row=row)
+            if row is not None
+            else None
+        )
 
-        if mask_array.ndim > MIN_VOLUME_NDIM and mask_array.shape[-1] in (1, 3, 4):
-            mask_array = mask_array[..., 0]
+        if mask_array is None:
+            try:
+                mask_array = np.asarray(imageio.imread(segmentation_path))
+            except (FileNotFoundError, OSError, ValueError) as exc:
+                logger.debug(
+                    "Unable to read mask/outline image %s: %s",
+                    segmentation_path,
+                    exc,
+                )
+                return None
 
-        if row is not None:
-            bounds = self._get_3d_bbox_crop_bounds(
-                row=row,
-                volume_shape=tuple(int(v) for v in mask_array.shape),
-            )
-            if bounds is not None:
-                x_min, x_max, y_min, y_max, z_min, z_max = bounds
-                mask_array = mask_array[z_min:z_max, y_min:y_max, x_min:x_max]
+            if mask_array.ndim > MIN_VOLUME_NDIM and mask_array.shape[-1] in (
+                1,
+                3,
+                4,
+            ):
+                mask_array = mask_array[..., 0]
+
+            if row is not None:
+                bounds = self._get_3d_bbox_crop_bounds(
+                    row=row,
+                    volume_shape=tuple(int(v) for v in mask_array.shape),
+                )
+                if bounds is not None:
+                    x_min, x_max, y_min, y_max, z_min, z_max = bounds
+                    mask_array = mask_array[z_min:z_max, y_min:y_max, x_min:x_max]
 
         if mask_array.shape != expected_shape:
             return None
@@ -3192,7 +3225,7 @@ class CytoDataFrame(pd.DataFrame):
     @staticmethod
     def _row_bounding_box(
         row: Any, bounding_box_cols: Sequence[Any]
-    ) -> Tuple[Any, Any, Any, Any]:
+    ) -> Optional[Tuple[Any, Any, Any, Any]]:
         """
         Build a ``(x_min, y_min, x_max, y_max)`` bounding box tuple from a row.
 
@@ -3206,15 +3239,30 @@ class CytoDataFrame(pd.DataFrame):
                 The bounding box column names to match against.
 
         Returns:
-            Tuple[Any, Any, Any, Any]:
-                The ``(x_min, y_min, x_max, y_max)`` bounding box values.
+            Optional[Tuple[Any, Any, Any, Any]]:
+                The ``(x_min, y_min, x_max, y_max)`` bounding box values, or
+                ``None`` when ``bounding_box_cols`` doesn't include all four
+                CellProfiler-style ``Minimum_X``/``Minimum_Y``/``Maximum_X``/
+                ``Maximum_Y`` names (e.g. a ``data_bounding_box`` table built
+                for the 3D ``volume_bbox_column_map`` convention instead).
+                Callers already treat a missing bounding box as "no crop for
+                this row", so this degrades gracefully rather than raising.
         """
-        return (
-            row[next(col for col in bounding_box_cols if "Minimum_X" in str(col))],
-            row[next(col for col in bounding_box_cols if "Minimum_Y" in str(col))],
-            row[next(col for col in bounding_box_cols if "Maximum_X" in str(col))],
-            row[next(col for col in bounding_box_cols if "Maximum_Y" in str(col))],
+        x_min_col = next(
+            (col for col in bounding_box_cols if "Minimum_X" in str(col)), None
         )
+        y_min_col = next(
+            (col for col in bounding_box_cols if "Minimum_Y" in str(col)), None
+        )
+        x_max_col = next(
+            (col for col in bounding_box_cols if "Maximum_X" in str(col)), None
+        )
+        y_max_col = next(
+            (col for col in bounding_box_cols if "Maximum_Y" in str(col)), None
+        )
+        if any(col is None for col in (x_min_col, y_min_col, x_max_col, y_max_col)):
+            return None
+        return (row[x_min_col], row[y_min_col], row[x_max_col], row[y_max_col])
 
     def process_image_data_as_html_display(
         self: CytoDataFrame_type,
@@ -3584,6 +3632,75 @@ class CytoDataFrame(pd.DataFrame):
         except Exception:
             return ""
 
+    def _try_lazy_windowed_tiff_crop(
+        self: CytoDataFrame_type,
+        candidate_path: pathlib.Path,
+        row: Any,
+    ) -> Optional[np.ndarray]:
+        """Read only a row's own XYZ bounding-box window from a plain TIFF.
+
+        Reading and adaptive-histogram-equalizing a full z-stack (often
+        hundreds of MB) just to crop it down to one object's region afterward
+        wastes most of that work. When ``tifffile`` and ``zarr`` are both
+        installed, this opens the TIFF as a lazy zarr-backed store (no pixel
+        data read yet), resolves the same per-row crop bounds the eager path
+        would (via ``_get_3d_bbox_crop_bounds``), and reads only the touched
+        z-planes/window directly.
+
+        Args:
+            candidate_path: Resolved on-disk path to probe.
+            row: Row label/index used to look up this object's bounding box.
+
+        Returns:
+            The cropped ``(z, y, x)`` volume, or ``None`` when this
+            optimization doesn't apply (not a plain TIFF, ``tifffile``/
+            ``zarr`` aren't installed, the file isn't a 3D volume, no
+            bounding box is configured/available for this row, or any read
+            error) -- callers fall back to the eager full-volume read in
+            every such case, so this can never change what gets rendered,
+            only how fast it gets there.
+        """
+        if candidate_path.suffix.lower() not in (".tif", ".tiff"):
+            return None
+
+        try:
+            import tifffile
+            import zarr
+        except ImportError:
+            return None
+
+        store = None
+        try:
+            store = tifffile.imread(str(candidate_path), aszarr=True)
+            lazy_volume = zarr.open(store, mode="r")
+            if lazy_volume.ndim != MIN_VOLUME_NDIM:
+                # Leave anything other than a plain (Z, Y, X) volume (e.g. an
+                # extra trailing color-channel axis) to the eager path, which
+                # already knows how to squeeze that down.
+                return None
+
+            bounds = self._get_3d_bbox_crop_bounds(
+                row=row,
+                volume_shape=tuple(int(v) for v in lazy_volume.shape),
+            )
+            if bounds is None:
+                return None
+
+            x_min, x_max, y_min, y_max, z_min, z_max = bounds
+            return np.asarray(lazy_volume[z_min:z_max, y_min:y_max, x_min:x_max])
+        except Exception as exc:
+            logger.debug(
+                "Lazy windowed TIFF read failed for %s, falling back to a "
+                "full read: %s",
+                candidate_path,
+                exc,
+            )
+            return None
+        finally:
+            if store is not None:
+                with contextlib.suppress(Exception):
+                    store.close()
+
     def _get_3d_volume_from_cell(  # noqa: C901, PLR0912, PLR0915
         self: CytoDataFrame_type,
         row: Any,
@@ -3615,6 +3732,10 @@ class CytoDataFrame(pd.DataFrame):
 
         volume = None
         dims = None
+        # Set when the lazy windowed-TIFF path (below) already applied the
+        # per-row bounding box crop, so the later cropping step is skipped
+        # instead of (incorrectly) re-cropping an already-cropped volume.
+        volume_already_cropped = False
 
         if isinstance(value, np.ndarray) and self._is_3d_image_array(value):
             volume = np.asarray(value)
@@ -3707,7 +3828,24 @@ class CytoDataFrame(pd.DataFrame):
                 data_path = candidate_paths[0]
 
             # First attempt direct image loading for TIFF/Zarr-backed 3D arrays.
+            # When a per-row bounding box is available, try a lazy, windowed
+            # read first: it opens the file without decoding any pixels and
+            # only reads the row's own z-planes/window, instead of decoding
+            # the whole (often hundreds-of-MB) volume just to crop it down
+            # afterward. Falls back to the eager read below for non-TIFF
+            # paths, missing tifffile/zarr, or any other reason it can't
+            # apply -- this is purely a speedup, never a behavior change.
             for file_candidate in candidate_paths:
+                lazy_cropped_volume = self._try_lazy_windowed_tiff_crop(
+                    candidate_path=file_candidate, row=row
+                )
+                if lazy_cropped_volume is not None:
+                    volume = lazy_cropped_volume
+                    dims = (volume.shape[2], volume.shape[1], volume.shape[0])
+                    data_path = file_candidate
+                    volume_already_cropped = True
+                    break
+
                 with contextlib.suppress(Exception):
                     image_volume = np.asarray(imageio.imread(file_candidate))
                     if self._is_3d_image_array(image_volume):
@@ -3770,11 +3908,18 @@ class CytoDataFrame(pd.DataFrame):
                 not_3d_cache.add(cache_key)
             raise ValueError("Selected cell does not contain a 3D volume.")
 
-        # Apply per-row bounding box cropping when available (XYZ).
+        # Apply per-row bounding box cropping when available (XYZ). Skipped
+        # when the lazy windowed-TIFF read above already cropped the volume
+        # while reading it -- re-resolving bounds against the now-cropped
+        # shape here would double-crop it.
         try:
-            bounds = self._get_3d_bbox_crop_bounds(
-                row=row,
-                volume_shape=tuple(int(v) for v in volume.shape),
+            bounds = (
+                None
+                if volume_already_cropped
+                else self._get_3d_bbox_crop_bounds(
+                    row=row,
+                    volume_shape=tuple(int(v) for v in volume.shape),
+                )
             )
             if bounds is not None:
                 x_min, x_max, y_min, y_max, z_min, z_max = bounds
@@ -4170,11 +4315,19 @@ class CytoDataFrame(pd.DataFrame):
                 ).ravel(order="F")
                 filled_opacity = np.zeros(256, dtype=np.float32)
                 filled_opacity[255] = overlay_opacity
+                # pyvista's `cmap` accepts a colormap name, a Colormap object,
+                # or a list of color-name strings -- NOT a list of raw RGB
+                # tuples, which raises "each item should be a string" and
+                # (caught below) silently drops the whole overlay. Build a
+                # two-color Colormap object instead.
+                from matplotlib.colors import ListedColormap
+
+                filled_cmap = ListedColormap([(0.0, 0.0, 0.0), overlay_color])
                 label_actor = plotter.add_volume(
                     label_grid,
                     scalars="label_scalars",
                     clim=(0, 255),
-                    cmap=[(0.0, 0.0, 0.0), overlay_color],
+                    cmap=filled_cmap,
                     opacity=filled_opacity,
                     shade=False,
                     show_scalar_bar=False,
@@ -4436,6 +4589,13 @@ class CytoDataFrame(pd.DataFrame):
         percentile_clim = display_options.get("volume_percentile_clim", (1.0, 99.9))
         interpolation = display_options.get("volume_interpolation", "nearest")
         sampling_scale = display_options.get("volume_sampling_scale", 0.5)
+        # The default "sigmoid" opacity transfer function ramps to
+        # near-fully-opaque quickly for bright voxels, which can completely
+        # hide a label overlay sitting inside a tightly-cropped, mostly-full
+        # bounding box (e.g. a nucleus crop where nearly every voxel is
+        # bright signal). Not previously configurable; now overridable via
+        # display_options for exactly that case.
+        opacity = display_options.get("volume_opacity", opacity)
         show_axes = display_options.get("volume_show_axes", True)
 
         vol_xyz = np.transpose(volume, (2, 1, 0))
@@ -5028,18 +5188,24 @@ class CytoDataFrame(pd.DataFrame):
 
             # Re-add bounding box columns if they are no longer available
             bounding_box_externally_joined = False
-            if self._custom_attrs["data_bounding_box"] is not None and not all(
-                col
-                in (
-                    data if self._custom_attrs["is_transposed"] else self
-                ).columns.tolist()
-                for col in self._custom_attrs["data_bounding_box"].columns.tolist()
-            ):
+            if self._custom_attrs["data_bounding_box"] is not None:
+                bbox_source = self._custom_attrs["data_bounding_box"]
+                bbox_join_target = data if self._custom_attrs["is_transposed"] else self
+                missing_bbox_cols = [
+                    col
+                    for col in bbox_source.columns.tolist()
+                    if col not in bbox_join_target.columns.tolist()
+                ]
+            else:
+                bbox_source = None
+                missing_bbox_cols = []
+
+            if missing_bbox_cols:
                 logger.debug("Re-adding bounding box columns.")
                 data = (
-                    self.join(other=self._custom_attrs["data_bounding_box"])
+                    self.join(other=bbox_source[missing_bbox_cols])
                     if not self._custom_attrs["is_transposed"]
-                    else data.join(other=self._custom_attrs["data_bounding_box"])
+                    else data.join(other=bbox_source[missing_bbox_cols])
                 )
                 bounding_box_externally_joined = True
             else:
@@ -5353,9 +5519,7 @@ class CytoDataFrame(pd.DataFrame):
                     )
 
             if bounding_box_externally_joined:
-                data = data.drop(
-                    self._custom_attrs["data_bounding_box"].columns.tolist(), axis=1
-                )
+                data = data.drop(missing_bbox_cols, axis=1)
 
             if compartment_center_externally_joined:
                 data = data.drop(
@@ -5756,7 +5920,7 @@ class CytoDataFrame(pd.DataFrame):
             logger.debug("Failed to build trame snapshot HTML: %s", exc)
             return html_content
 
-    def _try_render_trame_widget_table(  # noqa: PLR0911
+    def _try_render_trame_widget_table(  # noqa: C901, PLR0911
         self: CytoDataFrame_type, debug: bool, display_options: dict[str, Any]
     ) -> bool:
         """Try rendering the trame widget table and return ``True`` on success."""
@@ -5794,13 +5958,14 @@ class CytoDataFrame(pd.DataFrame):
                 backend=None,
             )
             display(widget_table)
-            html_content = self._generate_trame_snapshot_html()
-            details_html = (
-                '<details class="cyto-static-snapshot">'
-                "<summary>Static snapshot (for non-interactive view)</summary>"
-                f"{html_content}</details>"
-            )
-            display(HTML(details_html))
+            if bool(display_options.get("show_static_snapshot_details", True)):
+                html_content = self._generate_trame_snapshot_html()
+                details_html = (
+                    '<details class="cyto-static-snapshot">'
+                    "<summary>Static snapshot (for non-interactive view)</summary>"
+                    f"{html_content}</details>"
+                )
+                display(HTML(details_html))
             return True
         except Exception as exc:
             logger.debug(

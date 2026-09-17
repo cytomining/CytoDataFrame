@@ -790,9 +790,11 @@ dependencies = [
     { name = "pyvista" },
     { name = "pywavelets" },
     { name = "scikit-image" },
+    { name = "tifffile" },
     { name = "trame" },
     { name = "trame-vtk" },
     { name = "trame-vuetify" },
+    { name = "zarr" },
 ]
 
 [package.dev-dependencies]
@@ -836,9 +838,11 @@ requires-dist = [
     { name = "pyvista", specifier = ">=0.46.4" },
     { name = "pywavelets", specifier = ">1.4.1" },
     { name = "scikit-image", specifier = ">0.19.3" },
+    { name = "tifffile", specifier = ">=2024.1.30" },
     { name = "trame", specifier = ">=3.12" },
     { name = "trame-vtk", specifier = ">=2.10" },
     { name = "trame-vuetify", specifier = ">=3.1" },
+    { name = "zarr", specifier = ">=2.18" },
 ]
 
 [package.metadata.requires-dev]

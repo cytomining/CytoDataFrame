@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.19.1
 #   kernelspec:
 #     display_name: CytoDataFrame (3.13.5.final.0)
 #     language: python
@@ -32,6 +32,7 @@
 # The actual `CytoDataFrame(...)` call at the end is just a handful of arguments.
 
 # +
+import os
 import pathlib
 import re
 import tempfile
@@ -40,13 +41,34 @@ import pandas as pd
 
 from cytodataframe import CytoDataFrame
 
-KOALA_LOCAL_BASE = pathlib.Path("~/mnt/alpine/active/koala").expanduser()
+# Local mount point for the koala cluster storage. This is machine-specific --
+# e.g. bandicoot is a separate storage location from this machine's mount, and
+# koala data (including this pilot's warehouse) may or may not be duplicated
+# there. Rather than guess a path here, set the KOALA_LOCAL_BASE environment
+# variable to wherever koala is reachable on your machine before running this
+# notebook; the assertion below fails clearly (rather than a cryptic parquet
+# read error) if it's wrong.
+KOALA_LOCAL_BASE = pathlib.Path(
+    os.environ.get("KOALA_LOCAL_BASE", "~/mnt/alpine/active/koala")
+).expanduser()
 KOALA_CLUSTER_PREFIX = "/pl/active/koala"
 RESULT_DIR = "nf0055-nf0014-post-revert-20260821T150143Z"
+# A "warehouse" is the structured parquet output of one nf1-3d-pilot-workflow-db
+# run (one such directory per RESULT_DIR/run), holding the `ibp/` profile
+# tables and `images/` metadata this notebook reads from below.
 WAREHOUSE_DIR = (
     KOALA_LOCAL_BASE / f"nf1-3d-pilot-workflow-db/results/{RESULT_DIR}/warehouse"
 )
+assert WAREHOUSE_DIR.is_dir(), (
+    f"Warehouse not found at {WAREHOUSE_DIR}. Set the KOALA_LOCAL_BASE "
+    "environment variable to wherever koala's cluster storage is mounted "
+    "on this machine (this pilot's data may need to be synced/duplicated "
+    "here first if it isn't already)."
+)
 
+# An "image set" here is one well + field-of-view (one 3D image). Add every
+# image set you want to view to this dict -- e.g. all wells/fields in a
+# plate for per-plate QC -- not just the two shown here.
 IMAGE_SETS = {
     "NF0055_T1__B10__F1": "NF0055_T1__NF0055_T1__B10__F1",
     "NF0014_T1__C4__F2": "NF0014_T1__NF0014_T1__C4__F2",
@@ -54,6 +76,8 @@ IMAGE_SETS = {
 CHANNEL = "DNA"
 COMPARTMENT = "Nuclei"
 
+# Scratch dir for the mask symlinks `stage_mask` creates below (see its
+# docstring) -- not part of the repo, just local working space.
 MASK_LINK_DIR = pathlib.Path(tempfile.gettempdir()) / "cytodataframe_nf1_3d_mask_links"
 MASK_LINK_DIR.mkdir(exist_ok=True)
 
@@ -114,7 +138,6 @@ for image_set in IMAGE_SETS.values():
 
 profiles = pd.concat(profile_rows, ignore_index=True)
 mask_name = mask_path.name
-# -
 
 # +
 bbox_column_map = {
@@ -136,9 +159,8 @@ voxel_view = CytoDataFrame(
         "height": 260,
         "table_max_height": "580px",
         "label_overlay_mode": "filled",
-        "show_static_snapshot_details": False,
         "volume_bbox_column_map": bbox_column_map,
     },
 )
+# The rendered widget includes a "Mask" checkbox to toggle the overlay on/off.
 voxel_view
-# -

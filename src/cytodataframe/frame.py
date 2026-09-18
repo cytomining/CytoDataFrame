@@ -5827,16 +5827,24 @@ class CytoDataFrame(pd.DataFrame):
         )
 
     def _generate_trame_snapshot_html(self: CytoDataFrame_type) -> str:  # noqa: C901
-        """Generate a static HTML table with PyVista 3D snapshots."""
-        html_content = self._generate_jupyter_dataframe_html()
+        """Generate a static HTML table with PyVista 3D snapshots.
+
+        Deliberately does NOT call ``_generate_jupyter_dataframe_html()`` up
+        front for the common (3D + bounding box) case below: that method
+        eagerly decodes each full source volume (often hundreds of MB) for
+        the very same cells this immediately overwrites with a fast,
+        already-cropped PyVista snapshot -- for a large field-of-view TIFF
+        over a slow filesystem, that discarded eager read can take minutes.
+        It's only computed (lazily) for the fallback cases below.
+        """
         try:
             if self._custom_attrs.get("data_bounding_box") is None:
-                return html_content
+                return self._generate_jupyter_dataframe_html()
 
             data = self.copy()
             image_cols = self.find_image_columns() or []
             if not image_cols:
-                return html_content
+                return self._generate_jupyter_dataframe_html()
 
             display_indices = self.get_displayed_rows()
             cache = self._custom_attrs.get("_snapshot_cache", {})
@@ -5918,7 +5926,7 @@ class CytoDataFrame(pd.DataFrame):
             return style + table_html
         except Exception as exc:
             logger.debug("Failed to build trame snapshot HTML: %s", exc)
-            return html_content
+            return self._generate_jupyter_dataframe_html()
 
     def _try_render_trame_widget_table(  # noqa: C901, PLR0911
         self: CytoDataFrame_type, debug: bool, display_options: dict[str, Any]

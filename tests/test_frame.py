@@ -3754,6 +3754,66 @@ def test_pyvista_volume_snapshot_html_returns_none_when_no_image(
     assert html is None
 
 
+def test_generate_trame_snapshot_html_skips_eager_full_volume_read(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression guard: ``_generate_trame_snapshot_html`` used to call
+    ``_generate_jupyter_dataframe_html()`` unconditionally up front, which
+    eagerly decodes the *whole* source volume for cells this immediately
+    overwrites with a fast, already-cropped PyVista snapshot -- for a large
+    field-of-view TIFF over a slow filesystem, that discarded read could
+    take minutes (observed hanging on real data). It must build the snapshot
+    table using only the lazy, per-row cropped read.
+    """
+    pytest.importorskip("pyvista")
+    pytest.importorskip("zarr")
+    volume = np.zeros((10, 8, 6), dtype=np.uint8)
+    volume[3:7, 2:6, 1:4] = 200
+    image_path = tmp_path / "volume.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    data = pd.DataFrame(
+        {
+            "Image_FileName_DNA": [image_path.name],
+            "bbox_x0": [1],
+            "bbox_x1": [4],
+            "bbox_y0": [2],
+            "bbox_y1": [6],
+            "bbox_z0": [3],
+            "bbox_z1": [7],
+        }
+    )
+    cdf = CytoDataFrame(
+        data=data,
+        data_context_dir=str(tmp_path),
+        data_bounding_box=data[
+            ["bbox_x0", "bbox_x1", "bbox_y0", "bbox_y1", "bbox_z0", "bbox_z1"]
+        ],
+        display_options={
+            "volume_bbox_column_map": {
+                "x_min": "bbox_x0",
+                "x_max": "bbox_x1",
+                "y_min": "bbox_y0",
+                "y_max": "bbox_y1",
+                "z_min": "bbox_z0",
+                "z_max": "bbox_z1",
+            }
+        },
+    )
+
+    def _fail_if_called(*args: object, **kwargs: object) -> None:
+        raise AssertionError(
+            "imageio.imread should not run when the lazy windowed crop applies"
+        )
+
+    monkeypatch.setattr(cytodataframe.frame.imageio, "imread", _fail_if_called)
+
+    html = cdf._generate_trame_snapshot_html()
+
+    assert "data:image/png;base64" in html
+    assert "Snapshot unavailable" not in html
+
+
 def _install_fake_pyvista_with_records(  # noqa: C901
     monkeypatch: pytest.MonkeyPatch,
     records: dict[str, list[dict[str, object]]],

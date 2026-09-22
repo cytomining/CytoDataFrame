@@ -21,7 +21,7 @@
 # data's layout, which doesn't look like typical CellProfiler output:
 #
 # - There are no `Image_FileName_*`/`Image_PathName_*` columns, so each row's raw
-#   image path is built from the patient/well/field metadata (`image_path`).
+#   image path is built from the patient/well/field metadata (`load_image_set`).
 # - Every well's mask file has the exact same generic name (`nuclei_mask.tiff`),
 #   so combining two wells into one table needs `stage_mask` to tell them apart
 #   -- a single-well notebook wouldn't need this at all.
@@ -47,10 +47,11 @@ DATA_DIR = BANDICOOT_LOCAL_BASE / "NF1_organoid_data/data"
 PROFILES_DIR = (
     DATA_DIR / "image_based_profiles_production_zedprofiler/ibp/sc_profiles_related"
 )
-assert PROFILES_DIR.is_dir(), (
-    f"Profiles not found at {PROFILES_DIR}. Set the BANDICOOT_LOCAL_BASE "
-    "environment variable to wherever bandicoot is mounted on this machine."
-)
+if not PROFILES_DIR.is_dir():
+    raise FileNotFoundError(
+        f"Profiles not found at {PROFILES_DIR}. Set the BANDICOOT_LOCAL_BASE "
+        "environment variable to wherever bandicoot is mounted on this machine."
+    )
 
 # An "image set" here is one well + field-of-view (one 3D image). Add every
 # image set you want to view to this list -- e.g. all wells/fields in a
@@ -63,42 +64,46 @@ CHANNEL = "DNA"
 CHANNEL_CODE = "405"
 COMPARTMENT = "Nuclei"
 
-# Scratch dir for the mask symlinks `stage_mask` creates below (see its
-# comment) -- not part of the repo, just local working space.
+# Every well's mask file has the same generic name (e.g. "nuclei_mask.tiff"),
+# but CytoDataFrame's data_mask_context_dir only matches masks by filename
+# pattern within one shared directory -- it can't tell two identically-named
+# files in different wells apart. MASK_LINK_DIR is a scratch directory (not
+# part of the repo) that `stage_mask` below fills with per-well symlinks to
+# the real mask files, renamed to embed each well's own identifier, so that
+# matching works.
 MASK_LINK_DIR = pathlib.Path(tempfile.gettempdir()) / "cytodataframe_nf1_3d_mask_links"
 MASK_LINK_DIR.mkdir(exist_ok=True)
-
-
-def image_path(row: pd.Series, kind: str, filename: str) -> pathlib.Path:
-    # e.g. data/NF0055_T1/zstack_images/B10-1/B10-1_405.tif
-    well_field = (
-        f"{row['Metadata_Experiment_WellID']}-{row['Metadata_Imaging_FieldID']}"
-    )
-    return (
-        DATA_DIR
-        / row["Metadata_Biology_PatientTumor"]
-        / kind
-        / well_field
-        / filename.format(well_field=well_field)
-    )
 
 
 def load_image_set(image_set: str) -> tuple[pd.DataFrame, pathlib.Path, pathlib.Path]:
     profiles = pd.read_parquet(PROFILES_DIR / f"{image_set}.parquet").head(1)
     row = profiles.iloc[0]
-    channel_path = image_path(
-        row, "zstack_images", "{well_field}_" + CHANNEL_CODE + ".tif"
+    patient = row["Metadata_Biology_PatientTumor"]
+    # e.g. B10-1
+    well_field = (
+        f"{row['Metadata_Experiment_WellID']}-{row['Metadata_Imaging_FieldID']}"
     )
-    mask_path = image_path(
-        row, "segmentation_masks", COMPARTMENT.lower() + "_mask.tiff"
+
+    channel_path = (
+        DATA_DIR
+        / patient
+        / "zstack_images"
+        / well_field
+        / f"{well_field}_{CHANNEL_CODE}.tif"
+    )
+    mask_path = (
+        DATA_DIR
+        / patient
+        / "segmentation_masks"
+        / well_field
+        / f"{COMPARTMENT.lower()}_mask.tiff"
     )
     profiles[f"Image_FileName_{CHANNEL}"] = str(channel_path)
     return profiles, channel_path, mask_path
 
 
 def stage_mask(channel_path: pathlib.Path, mask_path: pathlib.Path) -> pathlib.Path:
-    # Every well's mask has the same generic filename (e.g. "nuclei_mask.tiff"),
-    # so symlink under a name that embeds the raw stem to tell rows apart.
+    # See MASK_LINK_DIR above for why this exists.
     link = MASK_LINK_DIR / f"{channel_path.stem}__{mask_path.name}"
     if not link.exists():
         link.symlink_to(mask_path)

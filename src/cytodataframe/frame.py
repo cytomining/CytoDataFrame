@@ -157,7 +157,7 @@ class CytoDataFrame(pd.DataFrame):
     # while avoiding oversized outputs in typical Jupyter viewports.
     _DEFAULT_TABLE_MAX_HEIGHT: ClassVar[str] = "700px"
 
-    def __init__(  # noqa: PLR0913, PLR0917
+    def __init__(  # noqa: PLR0913
         self: CytoDataFrame_type,
         data: Union[CytoDataFrame_type, pd.DataFrame, str, pathlib.Path],
         data_context_dir: Optional[str] = None,
@@ -918,7 +918,7 @@ class CytoDataFrame(pd.DataFrame):
         return position
 
     @staticmethod
-    def _build_filter_distribution_html(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917
+    def _build_filter_distribution_html(  # noqa: C901, PLR0912, PLR0913, PLR0915
         values: pd.Series,
         selected_range: Tuple[float, float],
         threshold_x: Optional[float] = None,
@@ -2113,7 +2113,7 @@ class CytoDataFrame(pd.DataFrame):
             and str(col).replace("FileName", "PathName") in all_cols
         }
 
-    def search_for_mask_or_outline(  # noqa: PLR0913, PLR0911, PLR0917, C901
+    def search_for_mask_or_outline(  # noqa: PLR0913, PLR0911, C901
         self: CytoDataFrame_type,
         data_value: str,
         pattern_map: dict,
@@ -2387,13 +2387,21 @@ class CytoDataFrame(pd.DataFrame):
     ) -> Optional[np.ndarray]:
         """Load and normalize a 3D segmentation image for volume overlays.
 
+        Preserves each voxel's original integer label value (0 = background,
+        every other distinct value its own object) rather than collapsing
+        everything nonzero to a single binary mask, so a crop containing more
+        than one labeled object can be colored per object by
+        ``_add_label_overlay_to_plotter`` -- masks are label images, so two
+        touching/nearby objects sharing one row's bounding-box crop is
+        expected, not a bug.
+
         Args:
             segmentation_path: Path to the mask/outline image file.
             expected_shape: Expected ``(z, y, x)`` array shape.
             row: Optional row label/index used to apply 3D bounding-box cropping.
 
         Returns:
-            A uint8 binary array (0/255) matching ``expected_shape``, or ``None``
+            An integer label array matching ``expected_shape``, or ``None``
             when loading or shape validation fails.
         """
         # As with the raw volume, try a lazy windowed read first so a mask
@@ -2433,9 +2441,54 @@ class CytoDataFrame(pd.DataFrame):
                     mask_array = mask_array[z_min:z_max, y_min:y_max, x_min:x_max]
 
         if mask_array.shape != expected_shape:
+            aligned = self._align_mask_to_expected_shape(
+                mask_array=mask_array, expected_shape=expected_shape
+            )
+            if aligned is None:
+                return None
+            mask_array = aligned
+
+        # Preserve label IDs (not just 0/255): negative values shouldn't occur
+        # in a label image, but clip defensively since a negative value would
+        # otherwise be misread as a huge unsigned one below.
+        return np.clip(mask_array, 0, None).astype(np.int64, copy=False)
+
+    @staticmethod
+    def _align_mask_to_expected_shape(
+        mask_array: np.ndarray,
+        expected_shape: Tuple[int, ...],
+        max_edge_slack: int = 8,
+    ) -> Optional[np.ndarray]:
+        """Reconcile a cropped mask array with the expected volume shape.
+
+        The raw-image volume and its mask are cropped to the same per-row
+        bounding box independently, each clamped against its own on-disk
+        array's native dimensions (see ``_get_3d_bbox_crop_bounds``). When an
+        object's bounding box touches the edge of the field of view and the
+        mask's native dimensions differ from the raw image's by even one
+        pixel/slice, the two independently-clamped crops can come out a few
+        pixels apart in size -- previously that silently dropped the whole
+        overlay for that object. Both crops share the same min-corner
+        (CellProfiler-style bounding boxes are anchored to a fixed corner,
+        not centered), so align on that corner and zero-pad or truncate the
+        far edges to match instead of discarding a mask that's only off by a
+        small edge-clamping discrepancy. A gap larger than ``max_edge_slack``
+        in any axis is treated as a genuine mismatch (e.g. the wrong file
+        matched to this object) rather than an edge artifact, and still
+        returns ``None``.
+        """
+        if len(mask_array.shape) != len(expected_shape):
+            return None
+        diffs = [abs(a - b) for a, b in zip(mask_array.shape, expected_shape)]
+        if any(diff > max_edge_slack for diff in diffs):
             return None
 
-        return np.where(mask_array > 0, 255, 0).astype(np.uint8, copy=False)
+        aligned = np.zeros(expected_shape, dtype=mask_array.dtype)
+        overlap = tuple(
+            slice(0, min(a, b)) for a, b in zip(mask_array.shape, expected_shape)
+        )
+        aligned[overlap] = mask_array[overlap]
+        return aligned
 
     def _resolve_volume_candidate(
         self: CytoDataFrame_type,
@@ -2767,7 +2820,7 @@ class CytoDataFrame(pd.DataFrame):
 
         return orig_image_array
 
-    def _prepare_cropped_image_layers(  # noqa: C901, PLR0915, PLR0912, PLR0913, PLR0917
+    def _prepare_cropped_image_layers(  # noqa: C901, PLR0915, PLR0912, PLR0913
         self: CytoDataFrame_type,
         data_value: Any,
         bounding_box: Tuple[int, int, int, int],
@@ -4092,6 +4145,122 @@ class CytoDataFrame(pd.DataFrame):
         x_max = max(x_min + 1, min(x_max, volume_shape[2]))
         return x_min, x_max, y_min, y_max, z_min, z_max
 
+    def _get_3d_crop_origin(
+        self: CytoDataFrame_type,
+        row: Any,
+    ) -> Optional[Tuple[int, int, int]]:
+        """Return a row's 3D bounding-box crop origin ``(x_min, y_min, z_min)``.
+
+        Unlike ``_get_3d_bbox_crop_bounds``, this does not require the source
+        volume's shape: it only needs the min corner, which never depends on
+        clamping against an array's far edge. Used to translate full-image
+        pixel coordinates (e.g. ``compartment_center_xy``) into a cropped
+        volume's local coordinate frame, without the chicken-and-egg problem
+        of needing a volume that's already been cropped to know its own crop
+        origin.
+        """
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        if display_options.get("volume_disable_bbox_crop"):
+            return None
+
+        bbox_source = self._custom_attrs.get("data_bounding_box")
+        bbox_cols = (
+            bbox_source.columns.tolist()
+            if bbox_source is not None
+            else self.columns.tolist()
+        )
+        x_min_col, _, y_min_col, _, z_min_col, _ = self._resolve_3d_bbox_columns(
+            bbox_cols=bbox_cols,
+            display_options=display_options,
+        )
+        if x_min_col is None or y_min_col is None:
+            return None
+
+        try:
+            row_data = (
+                bbox_source.loc[row]
+                if bbox_source is not None and row in bbox_source.index
+                else self.loc[row]
+            )
+        except Exception:
+            row_data = self.iloc[row]
+
+        try:
+            x_min = max(0, int(row_data[x_min_col]))
+            y_min = max(0, int(row_data[y_min_col]))
+            z_min = max(0, int(row_data[z_min_col])) if z_min_col is not None else 0
+        except (KeyError, TypeError, ValueError):
+            return None
+        return x_min, y_min, z_min
+
+    def _get_3d_center_marker_xyz(
+        self: CytoDataFrame_type,
+        row: Any,
+        crop_shape: Tuple[int, int, int],
+    ) -> Optional[Tuple[float, float, float]]:
+        """Resolve a per-row 3D marker position, in crop-local voxel coords.
+
+        Reuses the same per-row compartment center already used for the 2D
+        center-dot overlay (``compartment_center_xy``, in full-image pixel
+        coordinates) for X/Y, translated into this crop's local coordinate
+        frame by subtracting the crop origin. This exists so a rendered
+        object can be visually tied back to *this* row specifically -- e.g.
+        when two objects happen to fall inside the same cropped bounding box,
+        the marker shows which one this row refers to.
+
+        Z uses a column containing "Z" in ``compartment_center_xy`` when the
+        table provides one (e.g. a 3D profiler's ``CenterZ``). 2D-style
+        profiles have no per-object Z centroid, so Z then defaults to the
+        crop's own mid-depth: accurate when the bounding box is reasonably
+        tight around the object (the common case), approximate otherwise.
+
+        Args:
+            row: Row label or index to resolve a marker position for.
+            crop_shape: ``(z, y, x)`` shape of the already-cropped volume.
+
+        Returns:
+            An ``(x, y, z)`` tuple in crop-local voxel coordinates, or
+            ``None`` when no compartment center is configured for this row or
+            it falls outside the crop (most likely a mismatched convention/
+            frame, where drawing a marker would be misleading).
+        """
+        origin = self._get_3d_crop_origin(row=row)
+        if origin is None:
+            return None
+        x_min, y_min, z_min = origin
+
+        comp_center_df = self._custom_attrs.get("compartment_center_xy")
+        if comp_center_df is None or row not in comp_center_df.index:
+            return None
+        center_cols = comp_center_df.columns.tolist()
+        x_col = next((col for col in center_cols if "X" in col), None)
+        y_col = next((col for col in center_cols if "Y" in col), None)
+        if x_col is None or y_col is None:
+            return None
+
+        try:
+            center_x = float(comp_center_df.loc[row, x_col]) - x_min
+            center_y = float(comp_center_df.loc[row, y_col]) - y_min
+        except (KeyError, TypeError, ValueError):
+            return None
+
+        z_depth, y_depth, x_depth = crop_shape
+        # Without a Z column (2D-style profiles), the crop's own mid-depth is
+        # the best available default.
+        center_z = z_depth / 2.0
+        z_col = next((col for col in center_cols if "Z" in col), None)
+        if z_col is not None:
+            with contextlib.suppress(KeyError, TypeError, ValueError):
+                center_z = float(comp_center_df.loc[row, z_col]) - z_min
+
+        if not (
+            0 <= center_x <= x_depth
+            and 0 <= center_y <= y_depth
+            and 0 <= center_z <= z_depth
+        ):
+            return None
+        return center_x, center_y, center_z
+
     @staticmethod
     def _resolve_3d_bbox_columns(
         bbox_cols: Sequence[Any],
@@ -4217,7 +4386,61 @@ class CytoDataFrame(pd.DataFrame):
 
         return columns_3d
 
-    def _add_label_overlay_to_plotter(  # noqa: PLR0913, PLR0917
+    @staticmethod
+    def _build_padded_label_grid(
+        binary_zyx: np.ndarray,
+        spacing: Tuple[float, float, float],
+        scale: int = 1,
+    ) -> Any:
+        """Build a pyvista ``ImageData`` grid from a binary ``(z, y, x)`` mask.
+
+        Pads with one empty voxel on every side: a mask touching the crop's
+        edge (common -- the crop is the object's own bounding box) otherwise
+        leaves the 0.5 isosurface open there, so no cap is drawn on those
+        faces and the overlay looks cut off at the borders. The grid origin
+        shifts back by one voxel so the mask stays aligned with the image
+        volume. ``scale`` multiplies the 0/1 values (e.g. to 0/255 for a
+        transfer-function opacity lookup keyed by raw scalar value).
+        """
+        import pyvista as pv  # type: ignore
+
+        label_xyz = np.transpose(binary_zyx.astype(np.uint8), (2, 1, 0)) * scale
+        label_xyz = np.pad(label_xyz, 1, mode="constant", constant_values=0)
+        grid = pv.ImageData()
+        grid.dimensions = tuple(int(v) for v in label_xyz.shape)
+        grid.spacing = spacing
+        grid.origin = tuple(-float(s) for s in spacing)
+        grid.point_data.clear()
+        grid.point_data["label_scalars"] = np.asfortranarray(label_xyz).ravel(order="F")
+        return grid
+
+    @staticmethod
+    def _distinct_label_colors(
+        labels: Sequence[int],
+        display_options: dict[str, Any],
+    ) -> Dict[int, Tuple[float, float, float]]:
+        """Assign each label id its own RGB color (0-1) for the 3D overlay.
+
+        Colors come from a qualitative matplotlib colormap (default
+        ``tab20``, configurable via ``display_options["label_overlay_colormap"]``),
+        cycling if there are more labels than the colormap provides.
+        Deterministic given the same sorted label list, so the same object
+        keeps the same color across a re-render (e.g. toggling the mask).
+        """
+        from matplotlib import cm
+
+        cmap_name = str(display_options.get("label_overlay_colormap", "tab20"))
+        try:
+            cmap = cm.get_cmap(cmap_name)
+        except (ValueError, KeyError):
+            cmap = cm.get_cmap("tab20")
+        n_colors = getattr(cmap, "N", None) or 20
+        return {
+            label_id: tuple(float(c) for c in cmap(i % n_colors)[:3])
+            for i, label_id in enumerate(labels)
+        }
+
+    def _add_label_overlay_to_plotter(  # noqa: PLR0913
         self: CytoDataFrame_type,
         plotter: Any,
         volume: np.ndarray,
@@ -4243,7 +4466,10 @@ class CytoDataFrame(pd.DataFrame):
             return overlay_actors
 
         try:
-            import pyvista as pv  # type: ignore
+            # Fail fast, before any label-array work, if pyvista isn't
+            # installed; the grid-building helpers below import it again
+            # themselves as needed.
+            import pyvista as pv  # type: ignore  # noqa: F401
         except Exception:
             return overlay_actors
 
@@ -4260,16 +4486,6 @@ class CytoDataFrame(pd.DataFrame):
                 )
                 return overlay_actors
 
-            label_xyz = np.transpose((label_arr > 0).astype(np.uint8), (2, 1, 0))
-            label_grid = pv.ImageData()
-            label_grid.dimensions = tuple(int(v) for v in label_xyz.shape)
-            label_grid.spacing = spacing
-            label_grid.origin = (0.0, 0.0, 0.0)
-            label_grid.point_data.clear()
-            label_grid.point_data["label_scalars"] = np.asfortranarray(label_xyz).ravel(
-                order="F"
-            )
-
             overlay_mode = str(display_options.get("label_overlay_mode", "surface"))
             overlay_mode = overlay_mode.lower()
             overlay_color = display_options.get("label_overlay_color", (0, 255, 0))
@@ -4283,7 +4499,58 @@ class CytoDataFrame(pd.DataFrame):
                 )
             overlay_opacity = float(display_options.get("label_overlay_opacity", 0.95))
 
-            if overlay_mode == "surface":
+            # A mask is a label image: distinct nonzero values are distinct
+            # objects, and more than one can legitimately fall inside one
+            # row's bounding-box crop (e.g. touching/nearby cells). Color
+            # each present object separately so that's visible, rather than
+            # rendering every label as one indistinguishable blob.
+            unique_labels = sorted(int(v) for v in np.unique(label_arr) if v > 0)
+            color_by_object = (
+                bool(display_options.get("label_overlay_color_by_object", True))
+                and len(unique_labels) > 1
+            )
+
+            if color_by_object:
+                # True multi-color volumetric blending would need a full VTK
+                # color/opacity transfer function per label; a colored
+                # surface contour per label is simpler, reuses the existing
+                # "surface" mode's proven padding/contouring, and is equally
+                # clear for telling objects apart -- so this always renders
+                # as surfaces, regardless of ``label_overlay_mode``.
+                label_colors = self._distinct_label_colors(
+                    labels=unique_labels, display_options=display_options
+                )
+                edge_opacity = min(1.0, overlay_opacity + 0.15)
+                for label_id in unique_labels:
+                    grid = self._build_padded_label_grid(
+                        binary_zyx=label_arr == label_id, spacing=spacing
+                    )
+                    contour = grid.contour(isosurfaces=[0.5], scalars="label_scalars")
+                    color = label_colors[label_id]
+                    overlay_actors.append(
+                        plotter.add_mesh(
+                            contour,
+                            color=color,
+                            opacity=overlay_opacity,
+                            smooth_shading=False,
+                            ambient=1.0,
+                            diffuse=0.0,
+                            specular=0.0,
+                        )
+                    )
+                    overlay_actors.append(
+                        plotter.add_mesh(
+                            contour,
+                            color=color,
+                            style="wireframe",
+                            opacity=edge_opacity,
+                            line_width=2.5,
+                        )
+                    )
+            elif overlay_mode == "surface":
+                label_grid = self._build_padded_label_grid(
+                    binary_zyx=label_arr > 0, spacing=spacing
+                )
                 contour = label_grid.contour(isosurfaces=[0.5], scalars="label_scalars")
                 edge_opacity = min(1.0, overlay_opacity + 0.15)
                 overlay_actors.append(
@@ -4307,12 +4574,9 @@ class CytoDataFrame(pd.DataFrame):
                     )
                 )
             else:
-                label_xyz_u8 = np.where(label_xyz > 0, 255, 0).astype(
-                    np.uint8, copy=False
+                label_grid = self._build_padded_label_grid(
+                    binary_zyx=label_arr > 0, spacing=spacing, scale=255
                 )
-                label_grid.point_data["label_scalars"] = np.asfortranarray(
-                    label_xyz_u8
-                ).ravel(order="F")
                 filled_opacity = np.zeros(256, dtype=np.float32)
                 filled_opacity[255] = overlay_opacity
                 # pyvista's `cmap` accepts a colormap name, a Colormap object,
@@ -4355,15 +4619,121 @@ class CytoDataFrame(pd.DataFrame):
                     )
 
             logger.info(
-                "Added 3D label overlay (shape=%s, opacity=%s, mode=%s)",
+                "Added 3D label overlay (shape=%s, opacity=%s, mode=%s, "
+                "objects=%d, color_by_object=%s)",
                 label_arr.shape,
                 overlay_opacity,
                 overlay_mode,
+                len(unique_labels),
+                color_by_object,
             )
         except Exception as exc:
             logger.debug("Unable to add 3D label overlay: %s", exc)
             return overlay_actors
         return overlay_actors
+
+    def _resolve_volume_spacing(
+        self: CytoDataFrame_type,
+    ) -> Tuple[float, float, float]:
+        """Return the ``(x, y, z)`` voxel spacing used to draw 3D volumes.
+
+        Many 3D acquisitions are anisotropic (e.g. 0.1 um in-plane but a 1 um
+        z step), and drawing them with unit spacing makes objects look ~10x
+        flatter than they are. TIFFs written without voxel-size metadata give
+        no way to know this, so it is configured with
+        ``display_options["volume_spacing"]`` (any consistent unit; only the
+        ratios matter for the shape). Defaults to isotropic ``(1, 1, 1)``.
+        """
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        configured = display_options.get("volume_spacing")
+        if (
+            isinstance(configured, (tuple, list))
+            and len(configured) == MIN_VOLUME_NDIM
+            and all(
+                isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0
+                for v in configured
+            )
+        ):
+            return tuple(float(v) for v in configured)
+        return (1.0, 1.0, 1.0)
+
+    def _add_center_marker_to_plotter(
+        self: CytoDataFrame_type,
+        plotter: Any,
+        center_xyz: Tuple[float, float, float],
+        spacing: Tuple[float, float, float],
+        display_options: dict[str, Any],
+    ) -> Optional[Any]:
+        """Add a small sphere marking this row's own object center in 3D.
+
+        Distinguishes "this row's object" from any other object that may
+        fall inside the same cropped bounding box: if two objects share a
+        box, the marker shows which one this row actually refers to.
+
+        Args:
+            plotter: Target PyVista plotter receiving the marker actor.
+            center_xyz: Marker position in crop-local voxel coordinates
+                (``x, y, z``), e.g. from ``_get_3d_center_marker_xyz``.
+            spacing: Voxel spacing tuple used to convert to world coordinates.
+            display_options: Display options controlling marker style.
+
+        Returns:
+            The added marker actor, or ``None`` if it could not be added.
+        """
+        if not bool(display_options.get("show_center_marker", True)):
+            return None
+        try:
+            import pyvista as pv  # type: ignore
+        except Exception:
+            return None
+
+        color = display_options.get("center_marker_color", (255, 0, 0))
+        if isinstance(color, (tuple, list)) and len(color) >= MIN_VOLUME_NDIM:
+            color = tuple(
+                (float(v) / 255.0 if float(v) > 1.0 else float(v)) for v in color[:3]
+            )
+        radius = display_options.get("center_marker_radius")
+        if radius is None:
+            radius = min(spacing) * 3.0
+        center_world = tuple(
+            float(coord) * float(scale) for coord, scale in zip(center_xyz, spacing)
+        )
+        try:
+            sphere = pv.Sphere(radius=float(radius), center=center_world)
+            actor = plotter.add_mesh(
+                sphere,
+                color=color,
+                opacity=float(display_options.get("center_marker_opacity", 0.5)),
+                ambient=1.0,
+                diffuse=0.0,
+                specular=0.0,
+            )
+        except Exception as exc:
+            logger.debug("Unable to add 3D center marker: %s", exc)
+            return None
+
+        # The marker sits inside the object, where the mask overlay (a
+        # near-opaque volume) and the image volume in front of it hide it.
+        # Draw it on its own render layer, sharing the main camera, so it is
+        # always visible on top; if that isn't supported, keep it in the
+        # main scene.
+        try:
+            plotter.renderer.RemoveActor(actor)
+            overlay = pv.Renderer(plotter, border=False)
+            overlay.SetLayer(1)
+            overlay.InteractiveOff()
+            plotter.ren_win.SetNumberOfLayers(2)
+            plotter.ren_win.AddRenderer(overlay)
+            overlay.SetActiveCamera(plotter.renderer.GetActiveCamera())
+            overlay.AddActor(actor)
+            # pyvista's Renderer wrapper clears its actors when garbage
+            # collected, so it must outlive this call.
+            plotter._cdf_marker_renderer = overlay
+        except Exception as exc:
+            logger.debug("Unable to draw 3D center marker on top layer: %s", exc)
+            with contextlib.suppress(Exception):
+                plotter.renderer.AddActor(actor)
+        return actor
 
     @staticmethod
     def _set_overlay_actor_visibility(actor: Any, visible: bool) -> None:
@@ -4564,7 +4934,7 @@ class CytoDataFrame(pd.DataFrame):
         with contextlib.suppress(Exception):
             plotter.render()
 
-    def _build_pyvista_viewer(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917
+    def _build_pyvista_viewer(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self: CytoDataFrame_type,
         volume: np.ndarray,
         backend: str,
@@ -4574,6 +4944,7 @@ class CytoDataFrame(pd.DataFrame):
         shade: bool = False,
         label_volume: Optional[np.ndarray] = None,
         include_plotter_overlay_toggle: bool = True,
+        center_xyz: Optional[Tuple[float, float, float]] = None,
         **kwargs: Any,
     ) -> Any:
         try:
@@ -4682,6 +5053,13 @@ class CytoDataFrame(pd.DataFrame):
                 overlay_actors=overlay_actors,
                 display_options=display_options,
             )
+        if center_xyz is not None:
+            self._add_center_marker_to_plotter(
+                plotter=plotter,
+                center_xyz=center_xyz,
+                spacing=spacing,
+                display_options=display_options,
+            )
 
         if show_axes:
             with contextlib.suppress(Exception):
@@ -4753,6 +5131,7 @@ class CytoDataFrame(pd.DataFrame):
             column=column,
             expected_shape=volume.shape,
         )
+        center_xyz = self._get_3d_center_marker_xyz(row=row, crop_shape=volume.shape)
         html_content = self._generate_jupyter_dataframe_html()
 
         if backend is None:
@@ -4771,7 +5150,7 @@ class CytoDataFrame(pd.DataFrame):
             with contextlib.suppress(Exception):
                 pv.set_jupyter_backend(backend)
 
-        spacing = kwargs.pop("spacing", (1.0, 1.0, 1.0))
+        spacing = kwargs.pop("spacing", self._resolve_volume_spacing())
         opacity = kwargs.pop("opacity", "sigmoid")
         shade = kwargs.pop("shade", False)
         widget_height = kwargs.pop("widget_height", self._DEFAULT_TABLE_MAX_HEIGHT)
@@ -4792,6 +5171,7 @@ class CytoDataFrame(pd.DataFrame):
             opacity=opacity,
             shade=shade,
             label_volume=label_overlay,
+            center_xyz=center_xyz,
         )
 
         try:
@@ -5061,6 +5441,9 @@ class CytoDataFrame(pd.DataFrame):
                             column=col,
                             expected_shape=volume.shape,
                         )
+                        center_xyz = self._get_3d_center_marker_xyz(
+                            row=row_label, crop_shape=volume.shape
+                        )
                         effective_height = (
                             row_height if widget_height == "100%" else widget_height
                         )
@@ -5068,7 +5451,9 @@ class CytoDataFrame(pd.DataFrame):
                             volume=volume,
                             backend=backend,
                             widget_height=effective_height,
+                            spacing=self._resolve_volume_spacing(),
                             label_volume=label_overlay,
+                            center_xyz=center_xyz,
                         )
                         grid[row_idx, col_idx] = widgets.Box(
                             [viewer],
@@ -5682,6 +6067,7 @@ class CytoDataFrame(pd.DataFrame):
         volume: np.ndarray,
         dims: Tuple[int, int, int],
         label_volume: Optional[np.ndarray] = None,
+        center_xyz: Optional[Tuple[float, float, float]] = None,
     ) -> Optional[str]:
         """Render a static PyVista snapshot for a 3D volume.
 
@@ -5689,6 +6075,8 @@ class CytoDataFrame(pd.DataFrame):
             volume: Source volume in ``(z, y, x)`` order.
             dims: Declared vtk dimensions for the volume.
             label_volume: Optional binary label volume aligned to ``volume``.
+            center_xyz: Optional per-row marker position, in crop-local voxel
+                coordinates, from ``_get_3d_center_marker_xyz``.
 
         Returns:
             A PNG-backed ``<img>`` HTML string, or ``None`` if snapshot rendering
@@ -5732,7 +6120,7 @@ class CytoDataFrame(pd.DataFrame):
         else:
             vmin, vmax = 0.0, 1.0
 
-        spacing = (1.0, 1.0, 1.0)
+        spacing = self._resolve_volume_spacing()
         base_sample = max(min(spacing), 1e-6)
         grid = pv.ImageData()
         grid.dimensions = tuple(int(v) for v in vol_xyz.shape)
@@ -5791,6 +6179,13 @@ class CytoDataFrame(pd.DataFrame):
             base_sample=base_sample,
             display_options=display_options,
         )
+        if center_xyz is not None:
+            self._add_center_marker_to_plotter(
+                plotter=plotter,
+                center_xyz=center_xyz,
+                spacing=spacing,
+                display_options=display_options,
+            )
 
         try:
             img = plotter.screenshot(return_img=True)
@@ -5874,6 +6269,9 @@ class CytoDataFrame(pd.DataFrame):
                                 row=row.name,
                                 column=bound_image_col,
                                 expected_shape=volume.shape,
+                            ),
+                            center_xyz=self._get_3d_center_marker_xyz(
+                                row=row.name, crop_shape=volume.shape
                             ),
                         )
                         if cache_lock is not None:

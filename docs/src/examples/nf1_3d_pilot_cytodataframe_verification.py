@@ -15,16 +15,13 @@
 
 # # NF1 3D pilot cropped voxel view
 #
-# View real 3D single-cell crops (with mask overlays) from two NF1 pilot wells in one `CytoDataFrame`.
+# View real 3D single-cell crops (with mask overlays) from two NF1 wells in one `CytoDataFrame`.
 #
 # Most of the setup below isn't about `CytoDataFrame` -- it's working around this
-# warehouse's data layout, which doesn't look like typical CellProfiler output:
+# data's layout, which doesn't look like typical CellProfiler output:
 #
-# - There are no `Image_FileName_*`/`Image_PathName_*` columns to begin with --
-#   raw image and mask paths have to be looked up from a separate metadata
-#   table per image set (`load_image_set`).
-# - Paths are recorded for the cluster filesystem (`/pl/active/koala/...`), not
-#   this machine's mount, so every path needs remapping (`resolve_koala_path`).
+# - There are no `Image_FileName_*`/`Image_PathName_*` columns, so each row's raw
+#   image path is built from the patient/well/field metadata (`image_path`).
 # - Every well's mask file has the exact same generic name (`nuclei_mask.tiff`),
 #   so combining two wells into one table needs `stage_mask` to tell them apart
 #   -- a single-well notebook wouldn't need this at all.
@@ -41,78 +38,61 @@ import pandas as pd
 
 from cytodataframe import CytoDataFrame
 
-# Local mount point for the koala cluster storage. This is machine-specific --
-# e.g. bandicoot is a separate storage location from this machine's mount, and
-# koala data (including this pilot's warehouse) may or may not be duplicated
-# there. Rather than guess a path here, set the KOALA_LOCAL_BASE environment
-# variable to wherever koala is reachable on your machine before running this
-# notebook; the assertion below fails clearly (rather than a cryptic parquet
-# read error) if it's wrong.
-KOALA_LOCAL_BASE = pathlib.Path(
-    os.environ.get("KOALA_LOCAL_BASE", "~/mnt/alpine/active/koala")
+# Local mount point for bandicoot. Set BANDICOOT_LOCAL_BASE if it is mounted
+# somewhere else on your machine.
+BANDICOOT_LOCAL_BASE = pathlib.Path(
+    os.environ.get("BANDICOOT_LOCAL_BASE", "~/mnt/bandicoot")
 ).expanduser()
-KOALA_CLUSTER_PREFIX = "/pl/active/koala"
-RESULT_DIR = "nf0055-nf0014-post-revert-20260821T150143Z"
-# A "warehouse" is the structured parquet output of one nf1-3d-pilot-workflow-db
-# run (one such directory per RESULT_DIR/run), holding the `ibp/` profile
-# tables and `images/` metadata this notebook reads from below.
-WAREHOUSE_DIR = (
-    KOALA_LOCAL_BASE / f"nf1-3d-pilot-workflow-db/results/{RESULT_DIR}/warehouse"
+DATA_DIR = BANDICOOT_LOCAL_BASE / "NF1_organoid_data/data"
+PROFILES_DIR = (
+    DATA_DIR / "image_based_profiles_production_zedprofiler/ibp/sc_profiles_related"
 )
-assert WAREHOUSE_DIR.is_dir(), (
-    f"Warehouse not found at {WAREHOUSE_DIR}. Set the KOALA_LOCAL_BASE "
-    "environment variable to wherever koala's cluster storage is mounted "
-    "on this machine (this pilot's data may need to be synced/duplicated "
-    "here first if it isn't already)."
+assert PROFILES_DIR.is_dir(), (
+    f"Profiles not found at {PROFILES_DIR}. Set the BANDICOOT_LOCAL_BASE "
+    "environment variable to wherever bandicoot is mounted on this machine."
 )
 
 # An "image set" here is one well + field-of-view (one 3D image). Add every
-# image set you want to view to this dict -- e.g. all wells/fields in a
+# image set you want to view to this list -- e.g. all wells/fields in a
 # plate for per-plate QC -- not just the two shown here.
-IMAGE_SETS = {
-    "NF0055_T1__B10__F1": "NF0055_T1__NF0055_T1__B10__F1",
-    "NF0014_T1__C4__F2": "NF0014_T1__NF0014_T1__C4__F2",
-}
+IMAGE_SETS = [
+    "NF0055_T1__NF0055_T1__B10__F1",
+    "NF0014_T1__NF0014_T1__C4__F2",
+]
 CHANNEL = "DNA"
+CHANNEL_CODE = "405"
 COMPARTMENT = "Nuclei"
 
 # Scratch dir for the mask symlinks `stage_mask` creates below (see its
-# docstring) -- not part of the repo, just local working space.
+# comment) -- not part of the repo, just local working space.
 MASK_LINK_DIR = pathlib.Path(tempfile.gettempdir()) / "cytodataframe_nf1_3d_mask_links"
 MASK_LINK_DIR.mkdir(exist_ok=True)
 
 
-def resolve_koala_path(source_uri: str) -> pathlib.Path:
-    # Warehouse metadata records cluster paths, not this machine's mount.
-    if source_uri.startswith(KOALA_CLUSTER_PREFIX):
-        return KOALA_LOCAL_BASE / source_uri[len(KOALA_CLUSTER_PREFIX) :].lstrip("/")
-    return pathlib.Path(source_uri)
-
-
-def load_image_set(
-    image_set: str, channel: str, compartment: str
-) -> tuple[pd.DataFrame, pathlib.Path, pathlib.Path]:
-    profiles = pd.read_parquet(
-        WAREHOUSE_DIR / "ibp/sc_profiles_related" / f"{image_set}.parquet"
-    ).head(1)
-    # No Image_FileName_/PathName_ columns on the profile table -- raw image
-    # and mask paths live in this separate per-image-set metadata table.
-    assets = pd.read_parquet(
-        WAREHOUSE_DIR / "images/image_assets" / f"{image_set}.parquet"
+def image_path(row: pd.Series, kind: str, filename: str) -> pathlib.Path:
+    # e.g. data/NF0055_T1/zstack_images/B10-1/B10-1_405.tif
+    well_field = (
+        f"{row['Metadata_Experiment_WellID']}-{row['Metadata_Imaging_FieldID']}"
     )
-    channel_uri = assets.loc[
-        (assets["Metadata_ImageAsset_AssetType"] == "raw_image")
-        & (assets["Metadata_ImageAsset_Channel"] == channel),
-        "Metadata_ImageAsset_SourceURI",
-    ].iloc[0]
-    mask_uri = assets.loc[
-        (assets["Metadata_ImageAsset_AssetType"] == "segmentation_mask")
-        & (assets["Metadata_ImageAsset_Compartment"] == compartment),
-        "Metadata_ImageAsset_SourceURI",
-    ].iloc[0]
-    channel_path = resolve_koala_path(channel_uri)
-    mask_path = resolve_koala_path(mask_uri)
-    profiles[f"Image_FileName_{channel}"] = str(channel_path)
+    return (
+        DATA_DIR
+        / row["Metadata_Biology_PatientTumor"]
+        / kind
+        / well_field
+        / filename.format(well_field=well_field)
+    )
+
+
+def load_image_set(image_set: str) -> tuple[pd.DataFrame, pathlib.Path, pathlib.Path]:
+    profiles = pd.read_parquet(PROFILES_DIR / f"{image_set}.parquet").head(1)
+    row = profiles.iloc[0]
+    channel_path = image_path(
+        row, "zstack_images", "{well_field}_" + CHANNEL_CODE + ".tif"
+    )
+    mask_path = image_path(
+        row, "segmentation_masks", COMPARTMENT.lower() + "_mask.tiff"
+    )
+    profiles[f"Image_FileName_{CHANNEL}"] = str(channel_path)
     return profiles, channel_path, mask_path
 
 
@@ -131,8 +111,8 @@ def stage_mask(channel_path: pathlib.Path, mask_path: pathlib.Path) -> pathlib.P
 
 # +
 profile_rows = []
-for image_set in IMAGE_SETS.values():
-    profiles, channel_path, mask_path = load_image_set(image_set, CHANNEL, COMPARTMENT)
+for image_set in IMAGE_SETS:
+    profiles, channel_path, mask_path = load_image_set(image_set)
     stage_mask(channel_path, mask_path)
     profile_rows.append(profiles)
 
@@ -149,9 +129,14 @@ bbox_column_map = {
     "z_max": f"{COMPARTMENT}_NoChannel_VolumeSizeShape_MaxZ",
 }
 
+center_columns = [
+    f"{COMPARTMENT}_NoChannel_VolumeSizeShape_Center{axis}" for axis in "XYZ"
+]
+
 voxel_view = CytoDataFrame(
     data=profiles[[f"Image_FileName_{CHANNEL}"]],
     data_bounding_box=profiles[list(bbox_column_map.values())],
+    compartment_center_xy=profiles[center_columns],
     data_mask_context_dir=str(MASK_LINK_DIR),
     segmentation_file_regex={rf"__{re.escape(mask_name)}$": r"_\d+\.tif$"},
     display_options={
@@ -159,8 +144,15 @@ voxel_view = CytoDataFrame(
         "height": 260,
         "table_max_height": "580px",
         "label_overlay_mode": "filled",
+        # Voxel size (x, y, z) in um. These TIFFs carry no voxel-size
+        # metadata, and z is coarser than xy, so without this the objects are
+        # drawn too flat. xy_spacing (0.1) is the NF1 3D pipeline manifests'
+        # recorded value; z_spacing (0.5) was chosen visually against these
+        # two objects rather than read from the manifests (which record 1.0).
+        "volume_spacing": (0.1, 0.1, 0.5),
         "volume_bbox_column_map": bbox_column_map,
     },
 )
-# The rendered widget includes a "Mask" checkbox to toggle the overlay on/off.
+# The rendered widget includes a "Mask" checkbox to toggle the overlay on/off,
+# and a red dot marking each object's center.
 voxel_view

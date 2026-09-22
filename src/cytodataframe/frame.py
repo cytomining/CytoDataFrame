@@ -5,6 +5,7 @@ Defines a CytoDataFrame class.
 import base64
 import contextlib
 import logging
+import math
 import os
 import pathlib
 import re
@@ -157,7 +158,7 @@ class CytoDataFrame(pd.DataFrame):
     # while avoiding oversized outputs in typical Jupyter viewports.
     _DEFAULT_TABLE_MAX_HEIGHT: ClassVar[str] = "700px"
 
-    def __init__(  # noqa: PLR0913
+    def __init__(  # noqa: PLR0913, PLR0917
         self: CytoDataFrame_type,
         data: Union[CytoDataFrame_type, pd.DataFrame, str, pathlib.Path],
         data_context_dir: Optional[str] = None,
@@ -918,7 +919,7 @@ class CytoDataFrame(pd.DataFrame):
         return position
 
     @staticmethod
-    def _build_filter_distribution_html(  # noqa: C901, PLR0912, PLR0913, PLR0915
+    def _build_filter_distribution_html(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917
         values: pd.Series,
         selected_range: Tuple[float, float],
         threshold_x: Optional[float] = None,
@@ -2113,7 +2114,7 @@ class CytoDataFrame(pd.DataFrame):
             and str(col).replace("FileName", "PathName") in all_cols
         }
 
-    def search_for_mask_or_outline(  # noqa: PLR0913, PLR0911, C901
+    def search_for_mask_or_outline(  # noqa: PLR0913, PLR0911, PLR0917, C901
         self: CytoDataFrame_type,
         data_value: str,
         pattern_map: dict,
@@ -2849,7 +2850,7 @@ class CytoDataFrame(pd.DataFrame):
 
         return orig_image_array
 
-    def _prepare_cropped_image_layers(  # noqa: C901, PLR0915, PLR0912, PLR0913
+    def _prepare_cropped_image_layers(  # noqa: C901, PLR0915, PLR0912, PLR0913, PLR0917
         self: CytoDataFrame_type,
         data_value: Any,
         bounding_box: Tuple[int, int, int, int],
@@ -4470,7 +4471,7 @@ class CytoDataFrame(pd.DataFrame):
             for i, label_id in enumerate(labels)
         }
 
-    def _add_label_overlay_to_plotter(  # noqa: PLR0913
+    def _add_label_overlay_to_plotter(  # noqa: PLR0913, PLR0917
         self: CytoDataFrame_type,
         plotter: Any,
         volume: np.ndarray,
@@ -4742,27 +4743,107 @@ class CytoDataFrame(pd.DataFrame):
             logger.debug("Unable to add 3D center marker: %s", exc)
             return None
 
-        # The marker sits inside the object, where the mask overlay (a
-        # near-opaque volume) and the image volume in front of it hide it.
-        # Draw it on its own render layer, sharing the main camera, so it is
-        # always visible on top; if that isn't supported, keep it in the
-        # main scene.
+        # Note: an earlier version of this tried to force the marker onto
+        # its own VTK render layer (pv.Renderer + SetNumberOfLayers) so it
+        # stayed visible even through intervening geometry. That crashed with
+        # a segfault under headless/software rendering (observed in Linux CI,
+        # not locally) -- removed. For the interactive viewer (this method),
+        # a plain 3D mesh actor is the right tradeoff: the user can rotate to
+        # see it, and it's not just about opacity -- a marker at an object's
+        # true centroid is often genuinely behind real signal from a given
+        # angle, which is correct rendering, not a bug. For the static
+        # snapshot path where there's no rotating to fix a bad angle, see
+        # ``_add_center_marker_2d_overlay_to_plotter`` instead.
+        return actor
+
+    def _add_center_marker_2d_overlay_to_plotter(
+        self: CytoDataFrame_type,
+        plotter: Any,
+        center_xyz: Tuple[float, float, float],
+        spacing: Tuple[float, float, float],
+        display_options: dict[str, Any],
+    ) -> Optional[Any]:
+        """Draw the center marker as a screen-space overlay, always on top.
+
+        Unlike ``_add_center_marker_to_plotter`` (a 3D mesh actor, which can
+        end up genuinely behind other geometry from a given camera angle --
+        correct rendering, not a bug, but unhelpful for a fixed static
+        image), this projects the 3D point to 2D display coordinates for the
+        plotter's *current* camera and draws a small flat disk there using a
+        ``vtkActor2D`` -- the same foundational, always-on-top-by-design
+        mechanism pyvista itself uses for on-screen text/legends (e.g.
+        ``add_text``), not the render-layer/``SetNumberOfLayers`` approach
+        that segfaulted under headless rendering.
+
+        Only meaningful for a *fixed* camera: this only makes sense for the
+        static PNG snapshot path. It's the wrong tool for the interactive
+        viewer, where the camera rotates client-side in the browser (via
+        vtk.js) with no Python-side callback to keep a screen-projected
+        position in sync -- a 2D overlay there would freeze at its initial
+        screen position instead of tracking the object through rotation.
+
+        Args:
+            plotter: Target plotter; must already have had at least one
+                render pass (e.g. via ``plotter.render()``) so its camera and
+                viewport are finalized before projecting.
+            center_xyz: Marker position in crop-local voxel coordinates
+                (``x, y, z``), e.g. from ``_get_3d_center_marker_xyz``.
+            spacing: Voxel spacing tuple used to convert to world coordinates.
+            display_options: Display options controlling marker style.
+
+        Returns:
+            The added 2D actor, or ``None`` if it could not be added.
+        """
+        if not bool(display_options.get("show_center_marker", True)):
+            return None
         try:
-            plotter.renderer.RemoveActor(actor)
-            overlay = pv.Renderer(plotter, border=False)
-            overlay.SetLayer(1)
-            overlay.InteractiveOff()
-            plotter.ren_win.SetNumberOfLayers(2)
-            plotter.ren_win.AddRenderer(overlay)
-            overlay.SetActiveCamera(plotter.renderer.GetActiveCamera())
-            overlay.AddActor(actor)
-            # pyvista's Renderer wrapper clears its actors when garbage
-            # collected, so it must outlive this call.
-            plotter._cdf_marker_renderer = overlay
+            import vtk  # type: ignore
+        except Exception:
+            return None
+
+        color = display_options.get("center_marker_color", (255, 0, 0))
+        if isinstance(color, (tuple, list)) and len(color) >= MIN_VOLUME_NDIM:
+            color = tuple(
+                (float(v) / 255.0 if float(v) > 1.0 else float(v)) for v in color[:3]
+            )
+        opacity = float(display_options.get("center_marker_opacity", 0.9))
+        radius_px = float(display_options.get("center_marker_radius_px", 10.0))
+        center_world = tuple(
+            float(coord) * float(scale) for coord, scale in zip(center_xyz, spacing)
+        )
+        try:
+            coord = vtk.vtkCoordinate()
+            coord.SetCoordinateSystemToWorld()
+            coord.SetValue(*center_world)
+            x, y = coord.GetComputedDisplayValue(plotter.renderer)
+
+            num_sides = 24
+            points = vtk.vtkPoints()
+            for i in range(num_sides):
+                angle = 2.0 * math.pi * i / num_sides
+                points.InsertNextPoint(
+                    x + radius_px * math.cos(angle),
+                    y + radius_px * math.sin(angle),
+                    0.0,
+                )
+            polygon = vtk.vtkCellArray()
+            polygon.InsertNextCell(num_sides)
+            for i in range(num_sides):
+                polygon.InsertCellPoint(i)
+            poly_data = vtk.vtkPolyData()
+            poly_data.SetPoints(points)
+            poly_data.SetPolys(polygon)
+
+            mapper = vtk.vtkPolyDataMapper2D()
+            mapper.SetInputData(poly_data)
+            actor = vtk.vtkActor2D()
+            actor.SetMapper(mapper)
+            actor.GetProperty().SetColor(*color)
+            actor.GetProperty().SetOpacity(opacity)
+            plotter.renderer.AddViewProp(actor)
         except Exception as exc:
-            logger.debug("Unable to draw 3D center marker on top layer: %s", exc)
-            with contextlib.suppress(Exception):
-                plotter.renderer.AddActor(actor)
+            logger.debug("Unable to add 2D center marker overlay: %s", exc)
+            return None
         return actor
 
     @staticmethod
@@ -4964,7 +5045,7 @@ class CytoDataFrame(pd.DataFrame):
         with contextlib.suppress(Exception):
             plotter.render()
 
-    def _build_pyvista_viewer(  # noqa: C901, PLR0912, PLR0913, PLR0915
+    def _build_pyvista_viewer(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917
         self: CytoDataFrame_type,
         volume: np.ndarray,
         backend: str,
@@ -6210,12 +6291,33 @@ class CytoDataFrame(pd.DataFrame):
             display_options=display_options,
         )
         if center_xyz is not None:
-            self._add_center_marker_to_plotter(
-                plotter=plotter,
-                center_xyz=center_xyz,
-                spacing=spacing,
-                display_options=display_options,
-            )
+            # The camera here is fixed (this is a one-shot off-screen
+            # snapshot, no interactive rotation), so a screen-space overlay
+            # can safely be used instead of a 3D actor -- see
+            # _add_center_marker_2d_overlay_to_plotter's docstring for why
+            # that's not true for the interactive viewer. A render pass is
+            # needed first so the world-to-display projection reflects the
+            # camera's final position, not a stale/default one -- if that
+            # render fails (e.g. under real resource pressure; observed once
+            # on an unusually slow run), skip the marker rather than
+            # projecting from a stale/uninitialized camera and placing a dot
+            # nowhere near the object with no trace of why.
+            render_succeeded = False
+            try:
+                plotter.render()
+                render_succeeded = True
+            except Exception as exc:
+                logger.debug(
+                    "Skipping 3D center marker: render before projection failed: %s",
+                    exc,
+                )
+            if render_succeeded:
+                self._add_center_marker_2d_overlay_to_plotter(
+                    plotter=plotter,
+                    center_xyz=center_xyz,
+                    spacing=spacing,
+                    display_options=display_options,
+                )
 
         try:
             img = plotter.screenshot(return_img=True)
@@ -6388,18 +6490,30 @@ class CytoDataFrame(pd.DataFrame):
         if not columns_3d:
             return False
         try:
+            # Compute the static (off-screen) snapshot before building the
+            # interactive trame widget below, even though it's displayed
+            # after it. Building a live interactive plotter first can leave
+            # shared VTK/rendering-context state behind that a later
+            # off-screen plotter's marker-position projection is sensitive
+            # to (see _add_center_marker_2d_overlay_to_plotter) without
+            # anything actually raising -- the rest of the render (volume,
+            # mask) isn't affected since it doesn't depend on viewport state
+            # the same way a screen-space coordinate projection does.
+            static_snapshot_html = None
+            if bool(display_options.get("show_static_snapshot_details", True)):
+                static_snapshot_html = self._generate_trame_snapshot_html()
+
             widget_table = self.show_widget_table(
                 column=columns_3d[0],
                 columns_3d=columns_3d,
                 backend=None,
             )
             display(widget_table)
-            if bool(display_options.get("show_static_snapshot_details", True)):
-                html_content = self._generate_trame_snapshot_html()
+            if static_snapshot_html is not None:
                 details_html = (
                     '<details class="cyto-static-snapshot">'
                     "<summary>Static snapshot (for non-interactive view)</summary>"
-                    f"{html_content}</details>"
+                    f"{static_snapshot_html}</details>"
                 )
                 display(HTML(details_html))
             return True

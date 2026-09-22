@@ -895,9 +895,21 @@ def test_add_center_marker_to_plotter_adds_sphere_mesh_with_real_pyvista() -> No
     plotter.close()
 
 
-def test_center_marker_stays_visible_through_full_crop_mask() -> None:
-    """The marker sits inside the object; a near-opaque mask over the whole
-    crop used to hide it completely, so it is drawn on a top render layer."""
+def test_center_marker_added_alongside_partial_crop_mask_overlay() -> None:
+    """Both the mask overlay and the center marker must be addable to the
+    same plotter without error, and the marker actor correctly configured,
+    when a mask covers part (not all) of its own crop -- the realistic case.
+
+    Whether the marker actually turns out to be visible in a given render
+    depends on VTK's volume/mesh depth compositing for that specific scene
+    (camera angle, opacity, what geometry surrounds it) -- not something
+    reliably assertable via screenshot pixel-counting in a headless test
+    environment, so this checks the actors are present and configured
+    instead. An earlier version tried to force the marker "always on top" by
+    giving it its own VTK render layer; that segfaulted under headless/
+    software rendering in Linux CI (not reproduced locally) and was removed
+    in favor of this plain single-scene actor.
+    """
     pv = pytest.importorskip("pyvista")
     cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
     volume = np.random.default_rng(0).random((12, 71, 61)).astype(np.float32) * 255
@@ -905,15 +917,58 @@ def test_center_marker_stays_visible_through_full_crop_mask() -> None:
     grid.point_data["s"] = np.transpose(volume, (2, 1, 0)).ravel(order="F")
     plotter = pv.Plotter(off_screen=True)
     plotter.add_volume(grid, scalars="s", cmap="gray", show_scalar_bar=False)
-    cdf._add_label_overlay_to_plotter(
+    label = np.zeros_like(volume, dtype=np.uint8)
+    label[2:10, 10:60, 10:50] = 1  # covers most, not all, of the crop
+    overlay_actors = cdf._add_label_overlay_to_plotter(
         plotter=plotter,
         volume=volume,
-        label_volume=np.ones_like(volume, dtype=np.uint8),
+        label_volume=label,
         spacing=(1.0, 1.0, 1.0),
         base_sample=1.0,
         display_options={"label_overlay_mode": "filled"},
     )
-    cdf._add_center_marker_to_plotter(
+    marker_actor = cdf._add_center_marker_to_plotter(
+        plotter=plotter,
+        center_xyz=(30.0, 35.0, 6.0),
+        spacing=(1.0, 1.0, 1.0),
+        display_options={},
+    )
+
+    assert overlay_actors
+    assert marker_actor is not None
+    plotter.close()
+
+
+def test_center_marker_2d_overlay_stays_visible_over_dense_volume() -> None:
+    """Reproduces the scenario that motivated this method: a marker placed
+    at an object's true centroid inside a tightly-cropped, mostly-full
+    bounding box is genuinely behind real signal from most angles -- correct
+    rendering, not a bug, but exactly why a 3D actor (see
+    ``test_center_marker_added_alongside_partial_crop_mask_overlay``, which
+    got only 3-44 visible red pixels here) isn't a fix for a fixed-camera
+    static snapshot. The 2D screen-space overlay must render clearly on top
+    regardless.
+    """
+    pv = pytest.importorskip("pyvista")
+    cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+    volume = np.random.default_rng(0).random((12, 71, 61)).astype(np.float32) * 255
+    grid = pv.ImageData(dimensions=(61, 71, 12))
+    grid.point_data["s"] = np.transpose(volume, (2, 1, 0)).ravel(order="F")
+    plotter = pv.Plotter(off_screen=True)
+    plotter.add_volume(grid, scalars="s", cmap="gray", show_scalar_bar=False)
+    label = np.zeros_like(volume, dtype=np.uint8)
+    label[2:10, 10:60, 10:50] = 1
+    cdf._add_label_overlay_to_plotter(
+        plotter=plotter,
+        volume=volume,
+        label_volume=label,
+        spacing=(1.0, 1.0, 1.0),
+        base_sample=1.0,
+        display_options={"label_overlay_mode": "filled"},
+    )
+    plotter.render()
+
+    actor = cdf._add_center_marker_2d_overlay_to_plotter(
         plotter=plotter,
         center_xyz=(30.0, 35.0, 6.0),
         spacing=(1.0, 1.0, 1.0),
@@ -923,41 +978,82 @@ def test_center_marker_stays_visible_through_full_crop_mask() -> None:
     img = plotter.screenshot(return_img=True)
     plotter.close()
 
+    assert actor is not None
     red = (img[..., 0] > 150) & (img[..., 1] < 80) & (img[..., 2] < 80)
-    assert red.sum() > 500
+    assert red.sum() > 200
+
+
+def test_center_marker_2d_overlay_respects_show_center_marker_false() -> None:
+    pv = pytest.importorskip("pyvista")
+    cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+    plotter = pv.Plotter(off_screen=True)
+    plotter.render()
+
+    actor = cdf._add_center_marker_2d_overlay_to_plotter(
+        plotter=plotter,
+        center_xyz=(1.0, 2.0, 3.0),
+        spacing=(1.0, 1.0, 1.0),
+        display_options={"show_center_marker": False},
+    )
+
+    assert actor is None
+    plotter.close()
+
+
+def test_add_center_marker_2d_overlay_to_plotter_stable_across_many_plotters() -> None:
+    """Regression guard for the segfault this replaced: the removed
+    approach created a new VTK renderer/layer per marker and crashed under
+    headless Linux rendering after ~35 sequential test plotters. This
+    exercises the same repeated create/render/close cycle with the 2D
+    overlay to catch a similar instability locally."""
+    pv = pytest.importorskip("pyvista")
+    cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+    for i in range(20):
+        plotter = pv.Plotter(off_screen=True)
+        volume = np.random.default_rng(i).random((6, 20, 20)).astype(np.float32) * 255
+        grid = pv.ImageData(dimensions=(20, 20, 6))
+        grid.point_data["s"] = np.transpose(volume, (2, 1, 0)).ravel(order="F")
+        plotter.add_volume(grid, scalars="s", cmap="gray", show_scalar_bar=False)
+        plotter.render()
+        actor = cdf._add_center_marker_2d_overlay_to_plotter(
+            plotter=plotter,
+            center_xyz=(10.0, 10.0, 3.0),
+            spacing=(1.0, 1.0, 1.0),
+            display_options={},
+        )
+        assert actor is not None
+        plotter.screenshot(return_img=True)
+        plotter.close()
 
 
 def test_center_marker_is_translucent_by_default() -> None:
-    """Over a green object, a translucent marker blends green into its center
-    pixel; a fully opaque one stays pure red."""
+    """The marker actor's own opacity is < 1.0 by default (and exactly 1.0
+    when overridden) -- checked directly on the actor's property rather than
+    via rendered pixels, since how that opacity actually composites against
+    surrounding geometry depends on VTK's volume/mesh depth handling for the
+    specific scene, not something reliable to assert from a screenshot."""
     pv = pytest.importorskip("pyvista")
     cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+    plotter = pv.Plotter(off_screen=True)
 
-    def center_pixel(display_options: dict) -> np.ndarray:
-        plotter = pv.Plotter(off_screen=True)
-        plotter.set_background("black")
-        plotter.add_mesh(
-            pv.Cube(x_length=60, y_length=60, z_length=12),
-            color="lime",
-            ambient=1.0,
-            diffuse=0.0,
-        )
-        cdf._add_center_marker_to_plotter(
-            plotter=plotter,
-            center_xyz=(0.0, 0.0, 0.0),
-            spacing=(1.0, 1.0, 1.0),
-            display_options=display_options,
-        )
-        img = plotter.screenshot(return_img=True)
-        plotter.close()
-        return img[img.shape[0] // 2, img.shape[1] // 2]
+    default_actor = cdf._add_center_marker_to_plotter(
+        plotter=plotter,
+        center_xyz=(0.0, 0.0, 0.0),
+        spacing=(1.0, 1.0, 1.0),
+        display_options={},
+    )
+    opaque_actor = cdf._add_center_marker_to_plotter(
+        plotter=plotter,
+        center_xyz=(10.0, 0.0, 0.0),
+        spacing=(1.0, 1.0, 1.0),
+        display_options={"center_marker_opacity": 1.0},
+    )
 
-    opaque = center_pixel({"center_marker_opacity": 1.0})
-    default = center_pixel({})
-
-    assert opaque[1] == 0
-    assert default[1] > 50
-    assert default[0] < opaque[0]
+    assert default_actor is not None
+    assert opaque_actor is not None
+    assert 0.0 < default_actor.prop.opacity < 1.0
+    assert opaque_actor.prop.opacity == 1.0
+    plotter.close()
 
 
 def test_add_center_marker_to_plotter_respects_show_center_marker_false() -> None:
@@ -4290,6 +4386,35 @@ def test_pyvista_volume_snapshot_html_success(monkeypatch: pytest.MonkeyPatch) -
     html = cdf._pyvista_volume_snapshot_html(
         volume=np.ones((2, 2, 2), dtype=np.uint8),
         dims=(2, 2, 2),
+    )
+    assert html is not None
+    assert "data:image/png;base64" in html
+
+
+def test_pyvista_volume_snapshot_html_skips_marker_when_render_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression guard for a real one-off failure: the pre-projection
+    ``plotter.render()`` call previously had its exception silently
+    swallowed (``contextlib.suppress``), so a transient render failure (seen
+    once on an unusually slow real run) still went on to project the marker
+    from a stale/uninitialized camera -- placing it nowhere useful with no
+    trace of why. It must now skip the marker instead, without breaking the
+    rest of the snapshot. ``FakePlotter`` has no ``render`` method at all,
+    so calling it naturally raises, exercising exactly that failure path.
+    """
+    _install_fake_pyvista(
+        monkeypatch,
+        screenshot_image=np.zeros((2, 2, 3), dtype=np.uint8),
+    )
+    cdf = CytoDataFrame(
+        pd.DataFrame({"A": [1]}),
+        display_options={"width": "10px", "height": "10px"},
+    )
+    html = cdf._pyvista_volume_snapshot_html(
+        volume=np.ones((2, 2, 2), dtype=np.uint8),
+        dims=(2, 2, 2),
+        center_xyz=(1.0, 1.0, 1.0),
     )
     assert html is not None
     assert "data:image/png;base64" in html

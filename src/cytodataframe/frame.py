@@ -2321,12 +2321,17 @@ class CytoDataFrame(pd.DataFrame):
                 # uses fixed, generic mask filenames (e.g. "nuclei_mask.tiff")
                 # that share no identifier with the raw image filename at all.
                 # When `file_pattern` alone already picks out exactly one file
-                # in this root, that's unambiguous on its own -- requiring an
-                # identifier match too would reject every legitimate match for
-                # such naming conventions. Only fall back to identifier
-                # filtering (below) to disambiguate when the pattern alone
-                # matches more than one file.
-                if len(pattern_only_matches) == 1:
+                # in such a well-scoped root, that's unambiguous on its own --
+                # requiring an identifier match too would reject every
+                # legitimate match for such naming conventions. Only trust
+                # this when `search_root` is actually scoped to this image's
+                # own specimen/well (either the root/parent_name candidate
+                # built above, or a `file_dir` that was already itself named
+                # after the specimen/well) -- a flat/shared root covering
+                # multiple specimens isn't scoped this way, and a coincidental
+                # single match there isn't safe to trust without also
+                # checking it against an identifier below.
+                if len(pattern_only_matches) == 1 and search_root.name == parent_name:
                     return pattern_only_matches[0]
 
                 normalized_identifiers = [
@@ -2449,9 +2454,19 @@ class CytoDataFrame(pd.DataFrame):
             mask_array = aligned
 
         # Preserve label IDs (not just 0/255): negative values shouldn't occur
-        # in a label image, but clip defensively since a negative value would
-        # otherwise be misread as a huge unsigned one below.
-        return np.clip(mask_array, 0, None).astype(np.int64, copy=False)
+        # in a label image, but clip defensively (only signed dtypes can even
+        # hold one) since a negative value would otherwise be misread as a
+        # huge unsigned one downstream.
+        if np.issubdtype(mask_array.dtype, np.signedinteger):
+            mask_array = np.clip(mask_array, 0, None)
+        if row is None:
+            # No per-row crop happened above, so this is the whole (often
+            # hundreds-of-MB) field-of-view mask, not one object's small
+            # crop. The caller (volume.py's build_3d_image_html_view) only
+            # ever checks it for nonzero, so keep its original dtype rather
+            # than widening every voxel to int64.
+            return mask_array
+        return mask_array.astype(np.int64, copy=False)
 
     @staticmethod
     def _align_mask_to_expected_shape(
@@ -2610,14 +2625,28 @@ class CytoDataFrame(pd.DataFrame):
 
     @staticmethod
     def _is_3d_image_array(array: np.ndarray) -> bool:
-        if array.ndim < MIN_VOLUME_NDIM:
+        return CytoDataFrame._is_3d_shape(array.shape)
+
+    @staticmethod
+    def _is_3d_shape(shape: Tuple[int, ...]) -> bool:
+        """Decide whether ``shape`` is a genuine ``(Z, Y, X)`` volume.
+
+        Shared by ``_is_3d_image_array`` (eager path, given a full array) and
+        ``_try_lazy_windowed_tiff_crop`` (lazy path, given only a zarr
+        store's ``.shape`` -- no array to pass). A plain 2D RGB/RGBA image
+        also has ``ndim == 3`` (``(H, W, 3)``), so ``ndim`` alone can't tell
+        it apart from a real Z-stack; both paths need this full check, not
+        just an ``ndim`` comparison, or an RGB-like image opened via the lazy
+        path would be misread as a volume and sliced along the wrong axis.
+        """
+        if len(shape) < MIN_VOLUME_NDIM:
             return False
-        if array.ndim != MIN_VOLUME_NDIM:
+        if len(shape) != MIN_VOLUME_NDIM:
             return True
-        if array.shape[-1] not in RGB_LIKE_CHANNEL_COUNTS:
+        if shape[-1] not in RGB_LIKE_CHANNEL_COUNTS:
             return True
 
-        height, width = int(array.shape[0]), int(array.shape[1])
+        height, width = int(shape[0]), int(shape[1])
         short_side = min(height, width)
         long_side = max(height, width)
         if short_side < MIN_RGB_SPATIAL_DIM:
@@ -3726,10 +3755,11 @@ class CytoDataFrame(pd.DataFrame):
         try:
             store = tifffile.imread(str(candidate_path), aszarr=True)
             lazy_volume = zarr.open(store, mode="r")
-            if lazy_volume.ndim != MIN_VOLUME_NDIM:
+            if not self._is_3d_shape(lazy_volume.shape):
                 # Leave anything other than a plain (Z, Y, X) volume (e.g. an
-                # extra trailing color-channel axis) to the eager path, which
-                # already knows how to squeeze that down.
+                # extra trailing color-channel axis, or a 2D RGB-like image
+                # that merely happens to share ndim == 3) to the eager path,
+                # which already knows how to squeeze/reject those.
                 return None
 
             bounds = self._get_3d_bbox_crop_bounds(

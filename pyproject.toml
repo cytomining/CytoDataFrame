@@ -39,12 +39,18 @@ dependencies = [
   # z-planes/window are read from a plain TIFF z-stack, instead of decoding
   # the whole (often hundreds-of-MB) volume just to crop it down afterward.
   # Without these, 3D volumes still load correctly via the existing eager
-  # `imageio` read -- just slower for large field-of-view TIFFs.
-  "tifffile>=2024.1.30",
+  # `imageio` read -- just slower for large field-of-view TIFFs. tifffile
+  # dropped Zarr 2 support for its zarr-store integration in 2025.5.21 (an
+  # older zarr paired with a newer tifffile breaks the lazy path entirely,
+  # rather than just falling back to the eager read), and 2026.4.11 was its
+  # last release still supporting Python 3.11 (required below); a later
+  # tifffile also starts requiring zarr>=3.2.0, which itself needs
+  # Python>=3.12, so staying under that keeps 3.11 support intact.
+  "tifffile>=2025.5.21,<2026.4.11",
   "trame>=3.12",
   "trame-vtk>=2.10",
   "trame-vuetify>=3.1",
-  "zarr>=2.18",
+  "zarr>=3",
 ]
 
 [dependency-groups]

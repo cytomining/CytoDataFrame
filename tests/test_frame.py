@@ -679,6 +679,28 @@ def test_prepare_3d_label_overlay_aligns_edge_clamped_mask(
     assert np.array_equal(overlay[:, :, 4:], np.zeros((3, 4, 1), dtype=np.int64))
 
 
+def test_prepare_3d_label_overlay_keeps_original_dtype_without_a_row(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Without a row, no per-row crop happens, so this is the whole (often
+    hundreds-of-MB) field-of-view mask, not a small per-object crop. It
+    should keep its original (here, small uint8) dtype rather than being
+    widened to int64 -- the caller only ever checks it for nonzero."""
+    mask_path = tmp_path / "whole_fov_mask.tiff"
+    tifffile.imwrite(mask_path, np.full((3, 4, 5), 2, dtype=np.uint8))
+
+    cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+
+    overlay = cdf._prepare_3d_label_overlay(
+        segmentation_path=mask_path,
+        expected_shape=(3, 4, 5),
+    )
+
+    assert overlay is not None
+    assert overlay.dtype == np.uint8
+    assert np.array_equal(overlay, np.full((3, 4, 5), 2, dtype=np.uint8))
+
+
 def test_resolve_volume_spacing_defaults_to_isotropic() -> None:
     cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
 
@@ -1198,6 +1220,34 @@ def test_find_matching_segmentation_path_skips_identifier_check_when_unambiguous
 
     assert matched is not None
     assert matched.name == "nuclei_mask.tiff"
+
+
+def test_find_matching_segmentation_path_requires_identifier_in_unscoped_root(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The "unique pattern-only match" shortcut only applies to a root that
+    is actually scoped to this image's own specimen/well (its name matches
+    the raw image's parent folder name). A flat, shared root covering
+    multiple specimens isn't scoped that way, so a coincidental single
+    pattern match there (belonging to a *different* specimen) must not be
+    trusted without an identifier check -- unlike the well-scoped case in
+    ``test_find_matching_segmentation_path_skips_identifier_check_when_unambiguous``.
+    """
+    mask_dir = tmp_path / "shared_masks"
+    mask_dir.mkdir()
+    # Only one file in this flat, unscoped directory matches the pattern,
+    # but it belongs to a different well ("C4-2") than the row being
+    # resolved ("B10-1") -- its name carries no "B10-1" identifier.
+    (mask_dir / "C4-2_organoid_mask.tiff").write_bytes(b"")
+
+    matched = CytoDataFrame._find_matching_segmentation_path(
+        data_value="/data/zstack_images/B10-1/B10-1_405.tif",
+        pattern_map={r"organoid_mask\.tiff$": r"_405\.tif$"},
+        file_dir=str(mask_dir),
+        candidate_path=pathlib.Path("/data/zstack_images/B10-1/B10-1_405.tif"),
+    )
+
+    assert matched is None
 
 
 def test_find_matching_segmentation_path_disambiguates_multiple_matches(
@@ -3604,6 +3654,41 @@ def test_is_3d_image_array_accepts_thin_small_volume_shapes() -> None:
     singleton_x = np.zeros((5, 20, 1), dtype=np.uint8)
     assert CytoDataFrame._is_3d_image_array(thin_x) is True
     assert CytoDataFrame._is_3d_image_array(singleton_x) is True
+
+
+def test_is_3d_shape_matches_is_3d_image_array() -> None:
+    """``_is_3d_image_array`` must delegate to ``_is_3d_shape`` rather than
+    duplicating the RGB-vs-volume heuristic, so the lazy zarr-store path
+    (which only has a shape, not an array) can share the exact same check."""
+    for shape in [(64, 64, 3), (64, 64, 4), (5, 20, 3), (5, 20, 1), (2, 3), (4, 5, 6)]:
+        array = np.zeros(shape, dtype=np.uint8)
+        assert CytoDataFrame._is_3d_shape(array.shape) == (
+            CytoDataFrame._is_3d_image_array(array)
+        )
+
+
+def test_try_lazy_windowed_tiff_crop_rejects_rgb_like_shape(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A 2D RGB-like TIFF also has ndim == 3 (H, W, 3); checking only ndim
+    (rather than the full ``_is_3d_shape`` heuristic) would misread it as a
+    (Z, Y, X) volume and slice it along the wrong axis. It must instead fall
+    back to the eager path, which already rejects it correctly."""
+    rgb_path = tmp_path / "rgb.tiff"
+    tifffile.imwrite(rgb_path, np.zeros((64, 64, 3), dtype=np.uint8), photometric="rgb")
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame(
+            {
+                "Cells_AreaShape_BoundingBoxMinimum_X": [0],
+                "Cells_AreaShape_BoundingBoxMaximum_X": [10],
+                "Cells_AreaShape_BoundingBoxMinimum_Y": [0],
+                "Cells_AreaShape_BoundingBoxMaximum_Y": [10],
+            }
+        )
+    )
+
+    assert cdf._try_lazy_windowed_tiff_crop(candidate_path=rgb_path, row=0) is None
 
 
 def test_extract_array_from_ome_arrow_rebuilds_multichannel_planes() -> None:

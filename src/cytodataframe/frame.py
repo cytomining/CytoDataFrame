@@ -6222,6 +6222,18 @@ class CytoDataFrame(pd.DataFrame):
         except Exception as exc:
             logger.debug("Failed to render PyVista snapshot: %s", exc)
             return None
+        finally:
+            # This plotter is only ever used for a single throwaway
+            # screenshot, never returned or reused, so it must be closed
+            # here. Leaving many off-screen VTK render windows/GL contexts
+            # open across a test run (or a big notebook table) that renders
+            # one of these per cell was observed to eventually segfault
+            # under headless Mesa software rendering in Linux CI -- at a
+            # different, nondeterministic point in the suite each time,
+            # consistent with a resource leak rather than a bug in any one
+            # cell's rendering logic.
+            with contextlib.suppress(Exception):
+                plotter.close()
 
     def _snapshot_cache_key(self: CytoDataFrame_type, row: Any, column: Any) -> str:
         return f"{row}::{column}"

@@ -23,6 +23,14 @@ jobs:
           python-version: "3.11"
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@v7
+      # VTK/pyvista's built-in headless (EGL/OSMesa) off-screen rendering
+      # path has been unreliable on ubuntu-24.04 runners here (intermittent
+      # segfaults inside plotter.render() partway through the suite, never
+      # reproduced on macOS runners or locally). A real Xvfb virtual
+      # framebuffer is pyvista's own documented, far more heavily tested
+      # recommendation for headless Linux CI rendering.
+      - name: Setup headless display
+        uses: pyvista/setup-headless-display-action@v5
       # run pre-commit
       - uses: pre-commit/action@v3.0.1
         id: pre_commit
@@ -46,6 +54,12 @@ jobs:
           python-version: ${{ matrix.python_version }}
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@v7
+      # See the same step in pre_commit_checks above for why: VTK/pyvista's
+      # built-in headless off-screen rendering has segfaulted intermittently
+      # on ubuntu-24.04 runners; a real Xvfb display is the documented fix.
+      - name: Setup headless display
+        if: ${{ runner.os == 'Linux' }}
+        uses: pyvista/setup-headless-display-action@v5
       - name: Run pytest (non-3.13)
         if: ${{ matrix.python_version != '3.13' }}
         # run all tests

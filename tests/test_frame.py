@@ -20,6 +20,7 @@ import imageio.v2 as imageio
 import ipywidgets as widgets
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 import pytest
 import tifffile
 from _pytest.monkeypatch import MonkeyPatch
@@ -3341,6 +3342,82 @@ def test_find_encoded_image_bytes_columns_is_selective() -> None:
         "gif_memoryview",
         "jxl",
     ]
+
+
+@pytest.mark.parametrize("arrow_type", [pa.binary(), pa.large_binary()])
+def test_arrow_backed_binary_columns_render_inline(arrow_type: pa.DataType) -> None:
+    png = _encode_image(_synthetic_rgb(), "png")
+    frame = pd.DataFrame(
+        {"pixel_data": pd.array([png, None], dtype=pd.ArrowDtype(arrow_type))}
+    )
+    assert CytoDataFrame.find_encoded_image_bytes_columns(frame) == ["pixel_data"]
+
+    cdf = CytoDataFrame(frame)
+    html_output = cdf._generate_jupyter_dataframe_html()
+
+    (payload,) = re.findall(r"data:image/png;base64,([^\"]+)", html_output)
+    assert base64.b64decode(payload) == png
+    # rendering works on a copy, so the source keeps its Arrow dtype
+    assert cdf["pixel_data"].dtype == pd.ArrowDtype(arrow_type)
+
+
+def test_encoded_image_bytes_detection_only_scans_displayed_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scanned = []
+    original = CytoDataFrame.find_encoded_image_bytes_columns
+
+    def spy(data: pd.DataFrame) -> list:
+        scanned.append(len(data))
+        return original(data)
+
+    monkeypatch.setattr(
+        CytoDataFrame, "find_encoded_image_bytes_columns", staticmethod(spy)
+    )
+    cdf = CytoDataFrame(pd.DataFrame({"value": range(200)}))
+
+    with pd.option_context("display.max_rows", 6, "display.min_rows", 6):
+        cdf._generate_jupyter_dataframe_html()
+
+    assert scanned
+    assert max(scanned) <= 6
+
+
+@pytest.mark.parametrize("image_format", ["png", "jxl"])
+def test_gray_alpha_files_are_read_as_rgba_and_render_as_2d(
+    tmp_path: pathlib.Path, image_format: str
+) -> None:
+    gray = _synthetic_gray()
+    gray_alpha = np.dstack([gray, np.full_like(gray, 200)])
+    path = tmp_path / f"gray_alpha.{image_format}"
+    if image_format == "png":
+        Image.fromarray(gray_alpha, "LA").save(path)
+    else:
+        path.write_bytes(imagecodecs.jpegxl_encode(gray_alpha, lossless=True))
+
+    array = read_image_file(path)
+    assert array.shape == (*gray.shape, 4)
+    assert np.array_equal(array[..., 0], gray)
+    assert np.array_equal(array[..., 2], gray)
+    assert (array[..., 3] == 200).all()
+
+    cdf = CytoDataFrame(
+        pd.DataFrame({"Image_FileName_DNA": [path.name]}),
+        data_context_dir=str(tmp_path),
+        display_options={"render_whole_image": True},
+    )
+    html_output = cdf._generate_jupyter_dataframe_html()
+    assert len(_rendered_png_arrays(html_output)) == 1
+    assert "cyto-3d-image" not in html_output
+
+
+def test_read_image_file_leaves_tiff_volumes_untouched(tmp_path: pathlib.Path) -> None:
+    """A TIFF whose last dimension is 2 may genuinely be a volume."""
+    volume = np.arange(3 * 4 * 2, dtype=np.uint8).reshape(3, 4, 2)
+    path = tmp_path / "volume.tiff"
+    tifffile.imwrite(path, volume, photometric="minisblack")
+
+    assert read_image_file(path).shape == volume.shape
 
 
 def test_read_image_file_decodes_jpegxl_and_reports_errors(

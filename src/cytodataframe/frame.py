@@ -3311,20 +3311,37 @@ class CytoDataFrame(pd.DataFrame):
         )
 
     @staticmethod
+    def _dtype_can_hold_bytes(dtype: Any) -> bool:
+        """Whether a column dtype can hold raw ``bytes`` values."""
+
+        if pd.api.types.is_object_dtype(dtype):
+            return True
+        if isinstance(dtype, pd.ArrowDtype):
+            import pyarrow as pa
+
+            arrow_type = dtype.pyarrow_dtype
+            return (
+                pa.types.is_binary(arrow_type)
+                or pa.types.is_large_binary(arrow_type)
+                or pa.types.is_fixed_size_binary(arrow_type)
+            )
+        return False
+
+    @staticmethod
     def find_encoded_image_bytes_columns(data: pd.DataFrame) -> List[str]:
         """
         Identify columns that contain raw encoded image bytes (for example a
         DuckDB ``BLOB`` or a parquet ``binary`` column of JPEG, PNG, GIF, or
         JPEG XL images).
 
-        Only object-dtype columns are scanned, since that is the only dtype
-        pandas uses for ``bytes`` values.
+        Only columns whose dtype can hold ``bytes`` are scanned: object dtype
+        (what pandas uses by default) and Arrow-backed binary dtypes.
         """
 
         image_cols: List[str] = [
             column
             for column, dtype in data.dtypes.items()
-            if pd.api.types.is_object_dtype(dtype)
+            if CytoDataFrame._dtype_can_hold_bytes(dtype)
             and data[column].apply(CytoDataFrame._encoded_image_mime_type).notna().any()
         ]
 
@@ -6037,7 +6054,14 @@ class CytoDataFrame(pd.DataFrame):
                         display_indices, ome_col
                     ].apply(self.process_ome_arrow_data_as_html_display)
 
-            for bytes_col in self.find_encoded_image_bytes_columns(data):
+            # Only the rows actually being rendered need scanning.
+            for bytes_col in self.find_encoded_image_bytes_columns(
+                data.loc[display_indices]
+            ):
+                if not pd.api.types.is_object_dtype(data[bytes_col].dtype):
+                    # e.g. Arrow-backed binary: can't hold the HTML strings
+                    # assigned below, so convert the display copy.
+                    data[bytes_col] = data[bytes_col].astype(object)
                 data.loc[display_indices, bytes_col] = data.loc[
                     display_indices, bytes_col
                 ].apply(self.process_encoded_image_bytes_as_html_display)

@@ -38,11 +38,22 @@ def read_image_file(path: "str | pathlib.Path") -> np.ndarray:
 
     ``imageio`` has no JPEG XL backend, so ``.jxl`` files are decoded with
     ``imagecodecs`` (already a dependency); every other format goes through
-    ``imageio`` as before.
+    ``imageio`` as before. Gray+alpha images are returned as RGBA.
     """
-    if pathlib.Path(path).suffix.lower() == ".jxl":
-        return decode_jpegxl(pathlib.Path(path).read_bytes())
-    return imageio.imread(path)
+    suffix = pathlib.Path(path).suffix.lower()
+    array = (
+        decode_jpegxl(pathlib.Path(path).read_bytes())
+        if suffix == ".jxl"
+        else imageio.imread(path)
+    )
+    # A 2-channel (H, W, 2) array is gray+alpha, which downstream code would
+    # otherwise mistake for a 2-slice 3D volume. TIFFs are left alone since
+    # for them a 3D array genuinely may be a volume.
+    if suffix not in (".tif", ".tiff") and array.ndim == 3 and array.shape[-1] == 2:
+        array = np.concatenate(
+            [np.repeat(array[..., :1], 3, axis=-1), array[..., 1:]], axis=-1
+        )
+    return array
 
 
 def image_array_to_grayscale(img_array: np.ndarray) -> np.ndarray:

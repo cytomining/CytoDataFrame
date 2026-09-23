@@ -15,7 +15,7 @@ repos:
     -   id: check-yaml
     -   id: detect-private-key
 -   repo: https://github.com/tox-dev/pyproject-fmt
-    rev: "v2.29.3"
+    rev: "v2.29.4"
     hooks:
     -   id: pyproject-fmt
 -   repo: https://github.com/codespell-project/codespell
@@ -58,11 +58,6 @@ repos:
     rev: v0.1.17
     hooks:
     -   id: almanack-check
--   repo: https://gitlab.com/vojko.pribudic.foss/pre-commit-update
-    rev: v0.6.0
-    hooks:
-    -   id: pre-commit-update
-        args: ["--keep", "mdformat", "--keep", "pre-commit-update", "--keep", "cffconvert"]
 -   repo: local
     hooks:
     -   id: code-cov-gen

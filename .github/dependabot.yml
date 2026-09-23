@@ -6,6 +6,8 @@
 
 version: 2
 updates:
+  # Cooldown docs:
+  # https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
   # GitHub Actions checks
   # See here for more information:
   # https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuring-dependabot-version-updates
@@ -14,16 +16,48 @@ updates:
     schedule:
       # Check for updates to GitHub Actions every month
       interval: "monthly"
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
-  # Perform checks and updates for python poetry environment.
+  # Perform checks and updates for python uv environment.
+  # This depends on changes to dependabot via:
+  # https://github.com/dependabot/dependabot-core/pull/10040
   # See here for more information:
   # https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file#pip-and-pip-compile
-  - package-ecosystem: "pip"
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
-      # Check for updates to poetry lockfile every month
+      # Check for updates to uv environment files every month
       interval: "monthly"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
     groups:
       python-packages:
+        patterns:
+          - "*"
+
+  # Perform checks and updates for pre-commit hook versions.
+  # Replaces the pre-commit-update pre-commit hook (removed): that hook
+  # rewrote .pre-commit-config.yaml mid-run inside every prek/pre-commit
+  # invocation (including in CI), so a newer, stricter tool version could
+  # fail lint on code nobody had touched, in the same run that just bumped
+  # it -- and CI would then auto-commit that bump back to the PR branch.
+  # Dependabot opens a normal, reviewable PR for hook version bumps instead.
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      # Check for updates to pre-commit hooks every month
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    groups:
+      pre-commit-hooks:
         patterns:
           - "*"

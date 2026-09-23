@@ -2235,7 +2235,7 @@ class CytoDataFrame(pd.DataFrame):
         return None, None
 
     @staticmethod
-    def _find_matching_segmentation_path(
+    def _find_matching_segmentation_path(  # noqa: C901
         data_value: str,
         pattern_map: Optional[dict],
         file_dir: Optional[str],
@@ -2311,23 +2311,42 @@ class CytoDataFrame(pd.DataFrame):
             candidate_roots.append(root)
 
             for search_root in candidate_roots:
+                pattern_only_matches = [
+                    file
+                    for file in sorted(search_root.rglob("*"))
+                    if file.is_file() and re.search(file_pattern, file.name)
+                ]
+                # A directory scoped to a single specimen/well (e.g. one
+                # segmentation_masks/<well>/ folder per field of view) often
+                # uses fixed, generic mask filenames (e.g. "nuclei_mask.tiff")
+                # that share no identifier with the raw image filename at all.
+                # When `file_pattern` alone already picks out exactly one file
+                # in such a well-scoped root, that's unambiguous on its own --
+                # requiring an identifier match too would reject every
+                # legitimate match for such naming conventions. Only trust
+                # this when `search_root` is actually scoped to this image's
+                # own specimen/well (either the root/parent_name candidate
+                # built above, or a `file_dir` that was already itself named
+                # after the specimen/well) -- a flat/shared root covering
+                # multiple specimens isn't scoped this way, and a coincidental
+                # single match there isn't safe to trust without also
+                # checking it against an identifier below.
+                if len(pattern_only_matches) == 1 and search_root.name == parent_name:
+                    return pattern_only_matches[0]
+
                 normalized_identifiers = [
                     re.escape(idf.lower()) for idf in identifiers if idf
                 ]
                 matching_files = [
                     file
-                    for file in sorted(search_root.rglob("*"))
-                    if file.is_file()
-                    and re.search(file_pattern, file.name)
-                    and (
-                        not normalized_identifiers
-                        or any(
-                            re.search(
-                                rf"(?<![0-9A-Za-z]){idf}(?![0-9A-Za-z])",
-                                file.stem.lower(),
-                            )
-                            for idf in normalized_identifiers
+                    for file in pattern_only_matches
+                    if not normalized_identifiers
+                    or any(
+                        re.search(
+                            rf"(?<![0-9A-Za-z]){idf}(?![0-9A-Za-z])",
+                            file.stem.lower(),
                         )
+                        for idf in normalized_identifiers
                     )
                 ]
                 if matching_files:
@@ -2373,36 +2392,118 @@ class CytoDataFrame(pd.DataFrame):
     ) -> Optional[np.ndarray]:
         """Load and normalize a 3D segmentation image for volume overlays.
 
+        Preserves each voxel's original integer label value (0 = background,
+        every other distinct value its own object) rather than collapsing
+        everything nonzero to a single binary mask, so a crop containing more
+        than one labeled object can be colored per object by
+        ``_add_label_overlay_to_plotter`` -- masks are label images, so two
+        touching/nearby objects sharing one row's bounding-box crop is
+        expected, not a bug.
+
         Args:
             segmentation_path: Path to the mask/outline image file.
             expected_shape: Expected ``(z, y, x)`` array shape.
             row: Optional row label/index used to apply 3D bounding-box cropping.
 
         Returns:
-            A uint8 binary array (0/255) matching ``expected_shape``, or ``None``
+            An integer label array matching ``expected_shape``, or ``None``
             when loading or shape validation fails.
         """
-        try:
-            mask_array = np.asarray(imageio.imread(segmentation_path))
-        except (FileNotFoundError, ValueError):
-            return None
+        # As with the raw volume, try a lazy windowed read first so a mask
+        # file (often just as large as the raw z-stack) doesn't have to be
+        # fully decoded just to crop it down to one object's region.
+        mask_array = (
+            self._try_lazy_windowed_tiff_crop(candidate_path=segmentation_path, row=row)
+            if row is not None
+            else None
+        )
 
-        if mask_array.ndim > MIN_VOLUME_NDIM and mask_array.shape[-1] in (1, 3, 4):
-            mask_array = mask_array[..., 0]
+        if mask_array is None:
+            try:
+                mask_array = np.asarray(imageio.imread(segmentation_path))
+            except (FileNotFoundError, OSError, ValueError) as exc:
+                logger.debug(
+                    "Unable to read mask/outline image %s: %s",
+                    segmentation_path,
+                    exc,
+                )
+                return None
 
-        if row is not None:
-            bounds = self._get_3d_bbox_crop_bounds(
-                row=row,
-                volume_shape=tuple(int(v) for v in mask_array.shape),
-            )
-            if bounds is not None:
-                x_min, x_max, y_min, y_max, z_min, z_max = bounds
-                mask_array = mask_array[z_min:z_max, y_min:y_max, x_min:x_max]
+            if mask_array.ndim > MIN_VOLUME_NDIM and mask_array.shape[-1] in (
+                1,
+                3,
+                4,
+            ):
+                mask_array = mask_array[..., 0]
+
+            if row is not None:
+                bounds = self._get_3d_bbox_crop_bounds(
+                    row=row,
+                    volume_shape=tuple(int(v) for v in mask_array.shape),
+                )
+                if bounds is not None:
+                    x_min, x_max, y_min, y_max, z_min, z_max = bounds
+                    mask_array = mask_array[z_min:z_max, y_min:y_max, x_min:x_max]
 
         if mask_array.shape != expected_shape:
+            aligned = self._align_mask_to_expected_shape(
+                mask_array=mask_array, expected_shape=expected_shape
+            )
+            if aligned is None:
+                return None
+            mask_array = aligned
+
+        # Preserve label IDs (not just 0/255): negative values shouldn't occur
+        # in a label image, but clip defensively (only signed dtypes can even
+        # hold one) since a negative value would otherwise be misread as a
+        # huge unsigned one downstream.
+        if np.issubdtype(mask_array.dtype, np.signedinteger):
+            mask_array = np.clip(mask_array, 0, None)
+        if row is None:
+            # No per-row crop happened above, so this is the whole (often
+            # hundreds-of-MB) field-of-view mask, not one object's small
+            # crop. The caller (volume.py's build_3d_image_html_view) only
+            # ever checks it for nonzero, so keep its original dtype rather
+            # than widening every voxel to int64.
+            return mask_array
+        return mask_array.astype(np.int64, copy=False)
+
+    @staticmethod
+    def _align_mask_to_expected_shape(
+        mask_array: np.ndarray,
+        expected_shape: Tuple[int, ...],
+        max_edge_slack: int = 8,
+    ) -> Optional[np.ndarray]:
+        """Reconcile a cropped mask array with the expected volume shape.
+
+        The raw-image volume and its mask are cropped to the same per-row
+        bounding box independently, each clamped against its own on-disk
+        array's native dimensions (see ``_get_3d_bbox_crop_bounds``). When an
+        object's bounding box touches the edge of the field of view and the
+        mask's native dimensions differ from the raw image's by even one
+        pixel/slice, the two independently-clamped crops can come out a few
+        pixels apart in size -- previously that silently dropped the whole
+        overlay for that object. Both crops share the same min-corner
+        (CellProfiler-style bounding boxes are anchored to a fixed corner,
+        not centered), so align on that corner and zero-pad or truncate the
+        far edges to match instead of discarding a mask that's only off by a
+        small edge-clamping discrepancy. A gap larger than ``max_edge_slack``
+        in any axis is treated as a genuine mismatch (e.g. the wrong file
+        matched to this object) rather than an edge artifact, and still
+        returns ``None``.
+        """
+        if len(mask_array.shape) != len(expected_shape):
+            return None
+        diffs = [abs(a - b) for a, b in zip(mask_array.shape, expected_shape)]
+        if any(diff > max_edge_slack for diff in diffs):
             return None
 
-        return np.where(mask_array > 0, 255, 0).astype(np.uint8, copy=False)
+        aligned = np.zeros(expected_shape, dtype=mask_array.dtype)
+        overlap = tuple(
+            slice(0, min(a, b)) for a, b in zip(mask_array.shape, expected_shape)
+        )
+        aligned[overlap] = mask_array[overlap]
+        return aligned
 
     def _resolve_volume_candidate(
         self: CytoDataFrame_type,
@@ -2524,14 +2625,28 @@ class CytoDataFrame(pd.DataFrame):
 
     @staticmethod
     def _is_3d_image_array(array: np.ndarray) -> bool:
-        if array.ndim < MIN_VOLUME_NDIM:
+        return CytoDataFrame._is_3d_shape(array.shape)
+
+    @staticmethod
+    def _is_3d_shape(shape: Tuple[int, ...]) -> bool:
+        """Decide whether ``shape`` is a genuine ``(Z, Y, X)`` volume.
+
+        Shared by ``_is_3d_image_array`` (eager path, given a full array) and
+        ``_try_lazy_windowed_tiff_crop`` (lazy path, given only a zarr
+        store's ``.shape`` -- no array to pass). A plain 2D RGB/RGBA image
+        also has ``ndim == 3`` (``(H, W, 3)``), so ``ndim`` alone can't tell
+        it apart from a real Z-stack; both paths need this full check, not
+        just an ``ndim`` comparison, or an RGB-like image opened via the lazy
+        path would be misread as a volume and sliced along the wrong axis.
+        """
+        if len(shape) < MIN_VOLUME_NDIM:
             return False
-        if array.ndim != MIN_VOLUME_NDIM:
+        if len(shape) != MIN_VOLUME_NDIM:
             return True
-        if array.shape[-1] not in RGB_LIKE_CHANNEL_COUNTS:
+        if shape[-1] not in RGB_LIKE_CHANNEL_COUNTS:
             return True
 
-        height, width = int(array.shape[0]), int(array.shape[1])
+        height, width = int(shape[0]), int(shape[1])
         short_side = min(height, width)
         long_side = max(height, width)
         if short_side < MIN_RGB_SPATIAL_DIM:
@@ -3192,7 +3307,7 @@ class CytoDataFrame(pd.DataFrame):
     @staticmethod
     def _row_bounding_box(
         row: Any, bounding_box_cols: Sequence[Any]
-    ) -> Tuple[Any, Any, Any, Any]:
+    ) -> Optional[Tuple[Any, Any, Any, Any]]:
         """
         Build a ``(x_min, y_min, x_max, y_max)`` bounding box tuple from a row.
 
@@ -3206,15 +3321,30 @@ class CytoDataFrame(pd.DataFrame):
                 The bounding box column names to match against.
 
         Returns:
-            Tuple[Any, Any, Any, Any]:
-                The ``(x_min, y_min, x_max, y_max)`` bounding box values.
+            Optional[Tuple[Any, Any, Any, Any]]:
+                The ``(x_min, y_min, x_max, y_max)`` bounding box values, or
+                ``None`` when ``bounding_box_cols`` doesn't include all four
+                CellProfiler-style ``Minimum_X``/``Minimum_Y``/``Maximum_X``/
+                ``Maximum_Y`` names (e.g. a ``data_bounding_box`` table built
+                for the 3D ``volume_bbox_column_map`` convention instead).
+                Callers already treat a missing bounding box as "no crop for
+                this row", so this degrades gracefully rather than raising.
         """
-        return (
-            row[next(col for col in bounding_box_cols if "Minimum_X" in str(col))],
-            row[next(col for col in bounding_box_cols if "Minimum_Y" in str(col))],
-            row[next(col for col in bounding_box_cols if "Maximum_X" in str(col))],
-            row[next(col for col in bounding_box_cols if "Maximum_Y" in str(col))],
+        x_min_col = next(
+            (col for col in bounding_box_cols if "Minimum_X" in str(col)), None
         )
+        y_min_col = next(
+            (col for col in bounding_box_cols if "Minimum_Y" in str(col)), None
+        )
+        x_max_col = next(
+            (col for col in bounding_box_cols if "Maximum_X" in str(col)), None
+        )
+        y_max_col = next(
+            (col for col in bounding_box_cols if "Maximum_Y" in str(col)), None
+        )
+        if any(col is None for col in (x_min_col, y_min_col, x_max_col, y_max_col)):
+            return None
+        return (row[x_min_col], row[y_min_col], row[x_max_col], row[y_max_col])
 
     def process_image_data_as_html_display(
         self: CytoDataFrame_type,
@@ -3584,6 +3714,76 @@ class CytoDataFrame(pd.DataFrame):
         except Exception:
             return ""
 
+    def _try_lazy_windowed_tiff_crop(
+        self: CytoDataFrame_type,
+        candidate_path: pathlib.Path,
+        row: Any,
+    ) -> Optional[np.ndarray]:
+        """Read only a row's own XYZ bounding-box window from a plain TIFF.
+
+        Reading and adaptive-histogram-equalizing a full z-stack (often
+        hundreds of MB) just to crop it down to one object's region afterward
+        wastes most of that work. When ``tifffile`` and ``zarr`` are both
+        installed, this opens the TIFF as a lazy zarr-backed store (no pixel
+        data read yet), resolves the same per-row crop bounds the eager path
+        would (via ``_get_3d_bbox_crop_bounds``), and reads only the touched
+        z-planes/window directly.
+
+        Args:
+            candidate_path: Resolved on-disk path to probe.
+            row: Row label/index used to look up this object's bounding box.
+
+        Returns:
+            The cropped ``(z, y, x)`` volume, or ``None`` when this
+            optimization doesn't apply (not a plain TIFF, ``tifffile``/
+            ``zarr`` aren't installed, the file isn't a 3D volume, no
+            bounding box is configured/available for this row, or any read
+            error) -- callers fall back to the eager full-volume read in
+            every such case, so this can never change what gets rendered,
+            only how fast it gets there.
+        """
+        if candidate_path.suffix.lower() not in (".tif", ".tiff"):
+            return None
+
+        try:
+            import tifffile
+            import zarr
+        except ImportError:
+            return None
+
+        store = None
+        try:
+            store = tifffile.imread(str(candidate_path), aszarr=True)
+            lazy_volume = zarr.open(store, mode="r")
+            if not self._is_3d_shape(lazy_volume.shape):
+                # Leave anything other than a plain (Z, Y, X) volume (e.g. an
+                # extra trailing color-channel axis, or a 2D RGB-like image
+                # that merely happens to share ndim == 3) to the eager path,
+                # which already knows how to squeeze/reject those.
+                return None
+
+            bounds = self._get_3d_bbox_crop_bounds(
+                row=row,
+                volume_shape=tuple(int(v) for v in lazy_volume.shape),
+            )
+            if bounds is None:
+                return None
+
+            x_min, x_max, y_min, y_max, z_min, z_max = bounds
+            return np.asarray(lazy_volume[z_min:z_max, y_min:y_max, x_min:x_max])
+        except Exception as exc:
+            logger.debug(
+                "Lazy windowed TIFF read failed for %s, falling back to a "
+                "full read: %s",
+                candidate_path,
+                exc,
+            )
+            return None
+        finally:
+            if store is not None:
+                with contextlib.suppress(Exception):
+                    store.close()
+
     def _get_3d_volume_from_cell(  # noqa: C901, PLR0912, PLR0915
         self: CytoDataFrame_type,
         row: Any,
@@ -3615,6 +3815,10 @@ class CytoDataFrame(pd.DataFrame):
 
         volume = None
         dims = None
+        # Set when the lazy windowed-TIFF path (below) already applied the
+        # per-row bounding box crop, so the later cropping step is skipped
+        # instead of (incorrectly) re-cropping an already-cropped volume.
+        volume_already_cropped = False
 
         if isinstance(value, np.ndarray) and self._is_3d_image_array(value):
             volume = np.asarray(value)
@@ -3707,7 +3911,24 @@ class CytoDataFrame(pd.DataFrame):
                 data_path = candidate_paths[0]
 
             # First attempt direct image loading for TIFF/Zarr-backed 3D arrays.
+            # When a per-row bounding box is available, try a lazy, windowed
+            # read first: it opens the file without decoding any pixels and
+            # only reads the row's own z-planes/window, instead of decoding
+            # the whole (often hundreds-of-MB) volume just to crop it down
+            # afterward. Falls back to the eager read below for non-TIFF
+            # paths, missing tifffile/zarr, or any other reason it can't
+            # apply -- this is purely a speedup, never a behavior change.
             for file_candidate in candidate_paths:
+                lazy_cropped_volume = self._try_lazy_windowed_tiff_crop(
+                    candidate_path=file_candidate, row=row
+                )
+                if lazy_cropped_volume is not None:
+                    volume = lazy_cropped_volume
+                    dims = (volume.shape[2], volume.shape[1], volume.shape[0])
+                    data_path = file_candidate
+                    volume_already_cropped = True
+                    break
+
                 with contextlib.suppress(Exception):
                     image_volume = np.asarray(imageio.imread(file_candidate))
                     if self._is_3d_image_array(image_volume):
@@ -3770,11 +3991,18 @@ class CytoDataFrame(pd.DataFrame):
                 not_3d_cache.add(cache_key)
             raise ValueError("Selected cell does not contain a 3D volume.")
 
-        # Apply per-row bounding box cropping when available (XYZ).
+        # Apply per-row bounding box cropping when available (XYZ). Skipped
+        # when the lazy windowed-TIFF read above already cropped the volume
+        # while reading it -- re-resolving bounds against the now-cropped
+        # shape here would double-crop it.
         try:
-            bounds = self._get_3d_bbox_crop_bounds(
-                row=row,
-                volume_shape=tuple(int(v) for v in volume.shape),
+            bounds = (
+                None
+                if volume_already_cropped
+                else self._get_3d_bbox_crop_bounds(
+                    row=row,
+                    volume_shape=tuple(int(v) for v in volume.shape),
+                )
             )
             if bounds is not None:
                 x_min, x_max, y_min, y_max, z_min, z_max = bounds
@@ -3947,6 +4175,122 @@ class CytoDataFrame(pd.DataFrame):
         x_max = max(x_min + 1, min(x_max, volume_shape[2]))
         return x_min, x_max, y_min, y_max, z_min, z_max
 
+    def _get_3d_crop_origin(
+        self: CytoDataFrame_type,
+        row: Any,
+    ) -> Optional[Tuple[int, int, int]]:
+        """Return a row's 3D bounding-box crop origin ``(x_min, y_min, z_min)``.
+
+        Unlike ``_get_3d_bbox_crop_bounds``, this does not require the source
+        volume's shape: it only needs the min corner, which never depends on
+        clamping against an array's far edge. Used to translate full-image
+        pixel coordinates (e.g. ``compartment_center_xy``) into a cropped
+        volume's local coordinate frame, without the chicken-and-egg problem
+        of needing a volume that's already been cropped to know its own crop
+        origin.
+        """
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        if display_options.get("volume_disable_bbox_crop"):
+            return None
+
+        bbox_source = self._custom_attrs.get("data_bounding_box")
+        bbox_cols = (
+            bbox_source.columns.tolist()
+            if bbox_source is not None
+            else self.columns.tolist()
+        )
+        x_min_col, _, y_min_col, _, z_min_col, _ = self._resolve_3d_bbox_columns(
+            bbox_cols=bbox_cols,
+            display_options=display_options,
+        )
+        if x_min_col is None or y_min_col is None:
+            return None
+
+        try:
+            row_data = (
+                bbox_source.loc[row]
+                if bbox_source is not None and row in bbox_source.index
+                else self.loc[row]
+            )
+        except Exception:
+            row_data = self.iloc[row]
+
+        try:
+            x_min = max(0, int(row_data[x_min_col]))
+            y_min = max(0, int(row_data[y_min_col]))
+            z_min = max(0, int(row_data[z_min_col])) if z_min_col is not None else 0
+        except (KeyError, TypeError, ValueError):
+            return None
+        return x_min, y_min, z_min
+
+    def _get_3d_center_marker_xyz(
+        self: CytoDataFrame_type,
+        row: Any,
+        crop_shape: Tuple[int, int, int],
+    ) -> Optional[Tuple[float, float, float]]:
+        """Resolve a per-row 3D marker position, in crop-local voxel coords.
+
+        Reuses the same per-row compartment center already used for the 2D
+        center-dot overlay (``compartment_center_xy``, in full-image pixel
+        coordinates) for X/Y, translated into this crop's local coordinate
+        frame by subtracting the crop origin. This exists so a rendered
+        object can be visually tied back to *this* row specifically -- e.g.
+        when two objects happen to fall inside the same cropped bounding box,
+        the marker shows which one this row refers to.
+
+        Z uses a column containing "Z" in ``compartment_center_xy`` when the
+        table provides one (e.g. a 3D profiler's ``CenterZ``). 2D-style
+        profiles have no per-object Z centroid, so Z then defaults to the
+        crop's own mid-depth: accurate when the bounding box is reasonably
+        tight around the object (the common case), approximate otherwise.
+
+        Args:
+            row: Row label or index to resolve a marker position for.
+            crop_shape: ``(z, y, x)`` shape of the already-cropped volume.
+
+        Returns:
+            An ``(x, y, z)`` tuple in crop-local voxel coordinates, or
+            ``None`` when no compartment center is configured for this row or
+            it falls outside the crop (most likely a mismatched convention/
+            frame, where drawing a marker would be misleading).
+        """
+        origin = self._get_3d_crop_origin(row=row)
+        if origin is None:
+            return None
+        x_min, y_min, z_min = origin
+
+        comp_center_df = self._custom_attrs.get("compartment_center_xy")
+        if comp_center_df is None or row not in comp_center_df.index:
+            return None
+        center_cols = comp_center_df.columns.tolist()
+        x_col = next((col for col in center_cols if "X" in col), None)
+        y_col = next((col for col in center_cols if "Y" in col), None)
+        if x_col is None or y_col is None:
+            return None
+
+        try:
+            center_x = float(comp_center_df.loc[row, x_col]) - x_min
+            center_y = float(comp_center_df.loc[row, y_col]) - y_min
+        except (KeyError, TypeError, ValueError):
+            return None
+
+        z_depth, y_depth, x_depth = crop_shape
+        # Without a Z column (2D-style profiles), the crop's own mid-depth is
+        # the best available default.
+        center_z = z_depth / 2.0
+        z_col = next((col for col in center_cols if "Z" in col), None)
+        if z_col is not None:
+            with contextlib.suppress(KeyError, TypeError, ValueError):
+                center_z = float(comp_center_df.loc[row, z_col]) - z_min
+
+        if not (
+            0 <= center_x <= x_depth
+            and 0 <= center_y <= y_depth
+            and 0 <= center_z <= z_depth
+        ):
+            return None
+        return center_x, center_y, center_z
+
     @staticmethod
     def _resolve_3d_bbox_columns(
         bbox_cols: Sequence[Any],
@@ -4072,6 +4416,60 @@ class CytoDataFrame(pd.DataFrame):
 
         return columns_3d
 
+    @staticmethod
+    def _build_padded_label_grid(
+        binary_zyx: np.ndarray,
+        spacing: Tuple[float, float, float],
+        scale: int = 1,
+    ) -> Any:
+        """Build a pyvista ``ImageData`` grid from a binary ``(z, y, x)`` mask.
+
+        Pads with one empty voxel on every side: a mask touching the crop's
+        edge (common -- the crop is the object's own bounding box) otherwise
+        leaves the 0.5 isosurface open there, so no cap is drawn on those
+        faces and the overlay looks cut off at the borders. The grid origin
+        shifts back by one voxel so the mask stays aligned with the image
+        volume. ``scale`` multiplies the 0/1 values (e.g. to 0/255 for a
+        transfer-function opacity lookup keyed by raw scalar value).
+        """
+        import pyvista as pv  # type: ignore
+
+        label_xyz = np.transpose(binary_zyx.astype(np.uint8), (2, 1, 0)) * scale
+        label_xyz = np.pad(label_xyz, 1, mode="constant", constant_values=0)
+        grid = pv.ImageData()
+        grid.dimensions = tuple(int(v) for v in label_xyz.shape)
+        grid.spacing = spacing
+        grid.origin = tuple(-float(s) for s in spacing)
+        grid.point_data.clear()
+        grid.point_data["label_scalars"] = np.asfortranarray(label_xyz).ravel(order="F")
+        return grid
+
+    @staticmethod
+    def _distinct_label_colors(
+        labels: Sequence[int],
+        display_options: dict[str, Any],
+    ) -> Dict[int, Tuple[float, float, float]]:
+        """Assign each label id its own RGB color (0-1) for the 3D overlay.
+
+        Colors come from a qualitative matplotlib colormap (default
+        ``tab20``, configurable via ``display_options["label_overlay_colormap"]``),
+        cycling if there are more labels than the colormap provides.
+        Deterministic given the same sorted label list, so the same object
+        keeps the same color across a re-render (e.g. toggling the mask).
+        """
+        from matplotlib import cm
+
+        cmap_name = str(display_options.get("label_overlay_colormap", "tab20"))
+        try:
+            cmap = cm.get_cmap(cmap_name)
+        except (ValueError, KeyError):
+            cmap = cm.get_cmap("tab20")
+        n_colors = getattr(cmap, "N", None) or 20
+        return {
+            label_id: tuple(float(c) for c in cmap(i % n_colors)[:3])
+            for i, label_id in enumerate(labels)
+        }
+
     def _add_label_overlay_to_plotter(  # noqa: PLR0913, PLR0917
         self: CytoDataFrame_type,
         plotter: Any,
@@ -4098,7 +4496,10 @@ class CytoDataFrame(pd.DataFrame):
             return overlay_actors
 
         try:
-            import pyvista as pv  # type: ignore
+            # Fail fast, before any label-array work, if pyvista isn't
+            # installed; the grid-building helpers below import it again
+            # themselves as needed.
+            import pyvista as pv  # type: ignore  # noqa: F401
         except Exception:
             return overlay_actors
 
@@ -4115,16 +4516,6 @@ class CytoDataFrame(pd.DataFrame):
                 )
                 return overlay_actors
 
-            label_xyz = np.transpose((label_arr > 0).astype(np.uint8), (2, 1, 0))
-            label_grid = pv.ImageData()
-            label_grid.dimensions = tuple(int(v) for v in label_xyz.shape)
-            label_grid.spacing = spacing
-            label_grid.origin = (0.0, 0.0, 0.0)
-            label_grid.point_data.clear()
-            label_grid.point_data["label_scalars"] = np.asfortranarray(label_xyz).ravel(
-                order="F"
-            )
-
             overlay_mode = str(display_options.get("label_overlay_mode", "surface"))
             overlay_mode = overlay_mode.lower()
             overlay_color = display_options.get("label_overlay_color", (0, 255, 0))
@@ -4138,7 +4529,58 @@ class CytoDataFrame(pd.DataFrame):
                 )
             overlay_opacity = float(display_options.get("label_overlay_opacity", 0.95))
 
-            if overlay_mode == "surface":
+            # A mask is a label image: distinct nonzero values are distinct
+            # objects, and more than one can legitimately fall inside one
+            # row's bounding-box crop (e.g. touching/nearby cells). Color
+            # each present object separately so that's visible, rather than
+            # rendering every label as one indistinguishable blob.
+            unique_labels = sorted(int(v) for v in np.unique(label_arr) if v > 0)
+            color_by_object = (
+                bool(display_options.get("label_overlay_color_by_object", True))
+                and len(unique_labels) > 1
+            )
+
+            if color_by_object:
+                # True multi-color volumetric blending would need a full VTK
+                # color/opacity transfer function per label; a colored
+                # surface contour per label is simpler, reuses the existing
+                # "surface" mode's proven padding/contouring, and is equally
+                # clear for telling objects apart -- so this always renders
+                # as surfaces, regardless of ``label_overlay_mode``.
+                label_colors = self._distinct_label_colors(
+                    labels=unique_labels, display_options=display_options
+                )
+                edge_opacity = min(1.0, overlay_opacity + 0.15)
+                for label_id in unique_labels:
+                    grid = self._build_padded_label_grid(
+                        binary_zyx=label_arr == label_id, spacing=spacing
+                    )
+                    contour = grid.contour(isosurfaces=[0.5], scalars="label_scalars")
+                    color = label_colors[label_id]
+                    overlay_actors.append(
+                        plotter.add_mesh(
+                            contour,
+                            color=color,
+                            opacity=overlay_opacity,
+                            smooth_shading=False,
+                            ambient=1.0,
+                            diffuse=0.0,
+                            specular=0.0,
+                        )
+                    )
+                    overlay_actors.append(
+                        plotter.add_mesh(
+                            contour,
+                            color=color,
+                            style="wireframe",
+                            opacity=edge_opacity,
+                            line_width=2.5,
+                        )
+                    )
+            elif overlay_mode == "surface":
+                label_grid = self._build_padded_label_grid(
+                    binary_zyx=label_arr > 0, spacing=spacing
+                )
                 contour = label_grid.contour(isosurfaces=[0.5], scalars="label_scalars")
                 edge_opacity = min(1.0, overlay_opacity + 0.15)
                 overlay_actors.append(
@@ -4162,19 +4604,24 @@ class CytoDataFrame(pd.DataFrame):
                     )
                 )
             else:
-                label_xyz_u8 = np.where(label_xyz > 0, 255, 0).astype(
-                    np.uint8, copy=False
+                label_grid = self._build_padded_label_grid(
+                    binary_zyx=label_arr > 0, spacing=spacing, scale=255
                 )
-                label_grid.point_data["label_scalars"] = np.asfortranarray(
-                    label_xyz_u8
-                ).ravel(order="F")
                 filled_opacity = np.zeros(256, dtype=np.float32)
                 filled_opacity[255] = overlay_opacity
+                # pyvista's `cmap` accepts a colormap name, a Colormap object,
+                # or a list of color-name strings -- NOT a list of raw RGB
+                # tuples, which raises "each item should be a string" and
+                # (caught below) silently drops the whole overlay. Build a
+                # two-color Colormap object instead.
+                from matplotlib.colors import ListedColormap
+
+                filled_cmap = ListedColormap([(0.0, 0.0, 0.0), overlay_color])
                 label_actor = plotter.add_volume(
                     label_grid,
                     scalars="label_scalars",
                     clim=(0, 255),
-                    cmap=[(0.0, 0.0, 0.0), overlay_color],
+                    cmap=filled_cmap,
                     opacity=filled_opacity,
                     shade=False,
                     show_scalar_bar=False,
@@ -4202,15 +4649,112 @@ class CytoDataFrame(pd.DataFrame):
                     )
 
             logger.info(
-                "Added 3D label overlay (shape=%s, opacity=%s, mode=%s)",
+                "Added 3D label overlay (shape=%s, opacity=%s, mode=%s, "
+                "objects=%d, color_by_object=%s)",
                 label_arr.shape,
                 overlay_opacity,
                 overlay_mode,
+                len(unique_labels),
+                color_by_object,
             )
         except Exception as exc:
             logger.debug("Unable to add 3D label overlay: %s", exc)
             return overlay_actors
         return overlay_actors
+
+    def _resolve_volume_spacing(
+        self: CytoDataFrame_type,
+    ) -> Tuple[float, float, float]:
+        """Return the ``(x, y, z)`` voxel spacing used to draw 3D volumes.
+
+        Many 3D acquisitions are anisotropic (e.g. 0.1 um in-plane but a 1 um
+        z step), and drawing them with unit spacing makes objects look ~10x
+        flatter than they are. TIFFs written without voxel-size metadata give
+        no way to know this, so it is configured with
+        ``display_options["volume_spacing"]`` (any consistent unit; only the
+        ratios matter for the shape). Defaults to isotropic ``(1, 1, 1)``.
+        """
+        display_options = self._custom_attrs.get("display_options", {}) or {}
+        configured = display_options.get("volume_spacing")
+        if (
+            isinstance(configured, (tuple, list))
+            and len(configured) == MIN_VOLUME_NDIM
+            and all(
+                isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0
+                for v in configured
+            )
+        ):
+            return tuple(float(v) for v in configured)
+        return (1.0, 1.0, 1.0)
+
+    def _add_center_marker_to_plotter(
+        self: CytoDataFrame_type,
+        plotter: Any,
+        center_xyz: Tuple[float, float, float],
+        spacing: Tuple[float, float, float],
+        display_options: dict[str, Any],
+    ) -> Optional[Any]:
+        """Add a small sphere marking this row's own object center in 3D.
+
+        Distinguishes "this row's object" from any other object that may
+        fall inside the same cropped bounding box: if two objects share a
+        box, the marker shows which one this row actually refers to.
+
+        Args:
+            plotter: Target PyVista plotter receiving the marker actor.
+            center_xyz: Marker position in crop-local voxel coordinates
+                (``x, y, z``), e.g. from ``_get_3d_center_marker_xyz``.
+            spacing: Voxel spacing tuple used to convert to world coordinates.
+            display_options: Display options controlling marker style.
+
+        Returns:
+            The added marker actor, or ``None`` if it could not be added.
+        """
+        if not bool(display_options.get("show_center_marker", True)):
+            return None
+        try:
+            import pyvista as pv  # type: ignore
+        except Exception:
+            return None
+
+        color = display_options.get("center_marker_color", (255, 0, 0))
+        if isinstance(color, (tuple, list)) and len(color) >= MIN_VOLUME_NDIM:
+            color = tuple(
+                (float(v) / 255.0 if float(v) > 1.0 else float(v)) for v in color[:3]
+            )
+        radius = display_options.get("center_marker_radius")
+        if radius is None:
+            radius = min(spacing) * 3.0
+        center_world = tuple(
+            float(coord) * float(scale) for coord, scale in zip(center_xyz, spacing)
+        )
+        try:
+            sphere = pv.Sphere(radius=float(radius), center=center_world)
+            actor = plotter.add_mesh(
+                sphere,
+                color=color,
+                opacity=float(display_options.get("center_marker_opacity", 0.5)),
+                ambient=1.0,
+                diffuse=0.0,
+                specular=0.0,
+            )
+        except Exception as exc:
+            logger.debug("Unable to add 3D center marker: %s", exc)
+            return None
+
+        # Note: two earlier versions of this tried to force the marker
+        # "always visible" -- first via its own VTK render layer
+        # (pv.Renderer + SetNumberOfLayers), then via a vtkActor2D
+        # screen-space overlay. Both segfaulted under headless/software
+        # rendering in Linux CI (never reproduced locally, including a
+        # 50-iteration local stress test for the second approach), so both
+        # were removed rather than risk a third untested VTK trick. A plain
+        # 3D mesh actor is the safe tradeoff: for the interactive viewer the
+        # user can rotate to see it, and for the static snapshot it isn't
+        # always visible -- but it's not just about opacity anyway, since a
+        # marker at an object's true centroid is often genuinely behind real
+        # signal from a given angle, which is correct rendering, not a bug.
+        return actor
 
     @staticmethod
     def _set_overlay_actor_visibility(actor: Any, visible: bool) -> None:
@@ -4421,6 +4965,7 @@ class CytoDataFrame(pd.DataFrame):
         shade: bool = False,
         label_volume: Optional[np.ndarray] = None,
         include_plotter_overlay_toggle: bool = True,
+        center_xyz: Optional[Tuple[float, float, float]] = None,
         **kwargs: Any,
     ) -> Any:
         try:
@@ -4436,6 +4981,13 @@ class CytoDataFrame(pd.DataFrame):
         percentile_clim = display_options.get("volume_percentile_clim", (1.0, 99.9))
         interpolation = display_options.get("volume_interpolation", "nearest")
         sampling_scale = display_options.get("volume_sampling_scale", 0.5)
+        # The default "sigmoid" opacity transfer function ramps to
+        # near-fully-opaque quickly for bright voxels, which can completely
+        # hide a label overlay sitting inside a tightly-cropped, mostly-full
+        # bounding box (e.g. a nucleus crop where nearly every voxel is
+        # bright signal). Not previously configurable; now overridable via
+        # display_options for exactly that case.
+        opacity = display_options.get("volume_opacity", opacity)
         show_axes = display_options.get("volume_show_axes", True)
 
         vol_xyz = np.transpose(volume, (2, 1, 0))
@@ -4522,6 +5074,13 @@ class CytoDataFrame(pd.DataFrame):
                 overlay_actors=overlay_actors,
                 display_options=display_options,
             )
+        if center_xyz is not None:
+            self._add_center_marker_to_plotter(
+                plotter=plotter,
+                center_xyz=center_xyz,
+                spacing=spacing,
+                display_options=display_options,
+            )
 
         if show_axes:
             with contextlib.suppress(Exception):
@@ -4593,6 +5152,7 @@ class CytoDataFrame(pd.DataFrame):
             column=column,
             expected_shape=volume.shape,
         )
+        center_xyz = self._get_3d_center_marker_xyz(row=row, crop_shape=volume.shape)
         html_content = self._generate_jupyter_dataframe_html()
 
         if backend is None:
@@ -4611,7 +5171,7 @@ class CytoDataFrame(pd.DataFrame):
             with contextlib.suppress(Exception):
                 pv.set_jupyter_backend(backend)
 
-        spacing = kwargs.pop("spacing", (1.0, 1.0, 1.0))
+        spacing = kwargs.pop("spacing", self._resolve_volume_spacing())
         opacity = kwargs.pop("opacity", "sigmoid")
         shade = kwargs.pop("shade", False)
         widget_height = kwargs.pop("widget_height", self._DEFAULT_TABLE_MAX_HEIGHT)
@@ -4632,6 +5192,7 @@ class CytoDataFrame(pd.DataFrame):
             opacity=opacity,
             shade=shade,
             label_volume=label_overlay,
+            center_xyz=center_xyz,
         )
 
         try:
@@ -4901,6 +5462,9 @@ class CytoDataFrame(pd.DataFrame):
                             column=col,
                             expected_shape=volume.shape,
                         )
+                        center_xyz = self._get_3d_center_marker_xyz(
+                            row=row_label, crop_shape=volume.shape
+                        )
                         effective_height = (
                             row_height if widget_height == "100%" else widget_height
                         )
@@ -4908,7 +5472,9 @@ class CytoDataFrame(pd.DataFrame):
                             volume=volume,
                             backend=backend,
                             widget_height=effective_height,
+                            spacing=self._resolve_volume_spacing(),
                             label_volume=label_overlay,
+                            center_xyz=center_xyz,
                         )
                         grid[row_idx, col_idx] = widgets.Box(
                             [viewer],
@@ -5028,18 +5594,24 @@ class CytoDataFrame(pd.DataFrame):
 
             # Re-add bounding box columns if they are no longer available
             bounding_box_externally_joined = False
-            if self._custom_attrs["data_bounding_box"] is not None and not all(
-                col
-                in (
-                    data if self._custom_attrs["is_transposed"] else self
-                ).columns.tolist()
-                for col in self._custom_attrs["data_bounding_box"].columns.tolist()
-            ):
+            if self._custom_attrs["data_bounding_box"] is not None:
+                bbox_source = self._custom_attrs["data_bounding_box"]
+                bbox_join_target = data if self._custom_attrs["is_transposed"] else self
+                missing_bbox_cols = [
+                    col
+                    for col in bbox_source.columns.tolist()
+                    if col not in bbox_join_target.columns.tolist()
+                ]
+            else:
+                bbox_source = None
+                missing_bbox_cols = []
+
+            if missing_bbox_cols:
                 logger.debug("Re-adding bounding box columns.")
                 data = (
-                    self.join(other=self._custom_attrs["data_bounding_box"])
+                    self.join(other=bbox_source[missing_bbox_cols])
                     if not self._custom_attrs["is_transposed"]
-                    else data.join(other=self._custom_attrs["data_bounding_box"])
+                    else data.join(other=bbox_source[missing_bbox_cols])
                 )
                 bounding_box_externally_joined = True
             else:
@@ -5353,9 +5925,7 @@ class CytoDataFrame(pd.DataFrame):
                     )
 
             if bounding_box_externally_joined:
-                data = data.drop(
-                    self._custom_attrs["data_bounding_box"].columns.tolist(), axis=1
-                )
+                data = data.drop(missing_bbox_cols, axis=1)
 
             if compartment_center_externally_joined:
                 data = data.drop(
@@ -5518,6 +6088,7 @@ class CytoDataFrame(pd.DataFrame):
         volume: np.ndarray,
         dims: Tuple[int, int, int],
         label_volume: Optional[np.ndarray] = None,
+        center_xyz: Optional[Tuple[float, float, float]] = None,
     ) -> Optional[str]:
         """Render a static PyVista snapshot for a 3D volume.
 
@@ -5525,6 +6096,8 @@ class CytoDataFrame(pd.DataFrame):
             volume: Source volume in ``(z, y, x)`` order.
             dims: Declared vtk dimensions for the volume.
             label_volume: Optional binary label volume aligned to ``volume``.
+            center_xyz: Optional per-row marker position, in crop-local voxel
+                coordinates, from ``_get_3d_center_marker_xyz``.
 
         Returns:
             A PNG-backed ``<img>`` HTML string, or ``None`` if snapshot rendering
@@ -5568,7 +6141,7 @@ class CytoDataFrame(pd.DataFrame):
         else:
             vmin, vmax = 0.0, 1.0
 
-        spacing = (1.0, 1.0, 1.0)
+        spacing = self._resolve_volume_spacing()
         base_sample = max(min(spacing), 1e-6)
         grid = pv.ImageData()
         grid.dimensions = tuple(int(v) for v in vol_xyz.shape)
@@ -5627,6 +6200,13 @@ class CytoDataFrame(pd.DataFrame):
             base_sample=base_sample,
             display_options=display_options,
         )
+        if center_xyz is not None:
+            self._add_center_marker_to_plotter(
+                plotter=plotter,
+                center_xyz=center_xyz,
+                spacing=spacing,
+                display_options=display_options,
+            )
 
         try:
             img = plotter.screenshot(return_img=True)
@@ -5642,6 +6222,18 @@ class CytoDataFrame(pd.DataFrame):
         except Exception as exc:
             logger.debug("Failed to render PyVista snapshot: %s", exc)
             return None
+        finally:
+            # This plotter is only ever used for a single throwaway
+            # screenshot, never returned or reused, so it must be closed
+            # here. Leaving many off-screen VTK render windows/GL contexts
+            # open across a test run (or a big notebook table) that renders
+            # one of these per cell was observed to eventually segfault
+            # under headless Mesa software rendering in Linux CI -- at a
+            # different, nondeterministic point in the suite each time,
+            # consistent with a resource leak rather than a bug in any one
+            # cell's rendering logic.
+            with contextlib.suppress(Exception):
+                plotter.close()
 
     def _snapshot_cache_key(self: CytoDataFrame_type, row: Any, column: Any) -> str:
         return f"{row}::{column}"
@@ -5663,16 +6255,24 @@ class CytoDataFrame(pd.DataFrame):
         )
 
     def _generate_trame_snapshot_html(self: CytoDataFrame_type) -> str:  # noqa: C901
-        """Generate a static HTML table with PyVista 3D snapshots."""
-        html_content = self._generate_jupyter_dataframe_html()
+        """Generate a static HTML table with PyVista 3D snapshots.
+
+        Deliberately does NOT call ``_generate_jupyter_dataframe_html()`` up
+        front for the common (3D + bounding box) case below: that method
+        eagerly decodes each full source volume (often hundreds of MB) for
+        the very same cells this immediately overwrites with a fast,
+        already-cropped PyVista snapshot -- for a large field-of-view TIFF
+        over a slow filesystem, that discarded eager read can take minutes.
+        It's only computed (lazily) for the fallback cases below.
+        """
         try:
             if self._custom_attrs.get("data_bounding_box") is None:
-                return html_content
+                return self._generate_jupyter_dataframe_html()
 
             data = self.copy()
             image_cols = self.find_image_columns() or []
             if not image_cols:
-                return html_content
+                return self._generate_jupyter_dataframe_html()
 
             display_indices = self.get_displayed_rows()
             cache = self._custom_attrs.get("_snapshot_cache", {})
@@ -5702,6 +6302,9 @@ class CytoDataFrame(pd.DataFrame):
                                 row=row.name,
                                 column=bound_image_col,
                                 expected_shape=volume.shape,
+                            ),
+                            center_xyz=self._get_3d_center_marker_xyz(
+                                row=row.name, crop_shape=volume.shape
                             ),
                         )
                         if cache_lock is not None:
@@ -5754,9 +6357,9 @@ class CytoDataFrame(pd.DataFrame):
             return style + table_html
         except Exception as exc:
             logger.debug("Failed to build trame snapshot HTML: %s", exc)
-            return html_content
+            return self._generate_jupyter_dataframe_html()
 
-    def _try_render_trame_widget_table(  # noqa: PLR0911
+    def _try_render_trame_widget_table(  # noqa: C901, PLR0911
         self: CytoDataFrame_type, debug: bool, display_options: dict[str, Any]
     ) -> bool:
         """Try rendering the trame widget table and return ``True`` on success."""
@@ -5788,19 +6391,29 @@ class CytoDataFrame(pd.DataFrame):
         if not columns_3d:
             return False
         try:
+            # Compute the static (off-screen) snapshot before building the
+            # interactive trame widget below, even though it's displayed
+            # after it. Building a live interactive plotter first can leave
+            # shared VTK/rendering-context state behind that a later
+            # off-screen plotter is sensitive to, without anything actually
+            # raising an exception.
+            static_snapshot_html = None
+            if bool(display_options.get("show_static_snapshot_details", True)):
+                static_snapshot_html = self._generate_trame_snapshot_html()
+
             widget_table = self.show_widget_table(
                 column=columns_3d[0],
                 columns_3d=columns_3d,
                 backend=None,
             )
             display(widget_table)
-            html_content = self._generate_trame_snapshot_html()
-            details_html = (
-                '<details class="cyto-static-snapshot">'
-                "<summary>Static snapshot (for non-interactive view)</summary>"
-                f"{html_content}</details>"
-            )
-            display(HTML(details_html))
+            if static_snapshot_html is not None:
+                details_html = (
+                    '<details class="cyto-static-snapshot">'
+                    "<summary>Static snapshot (for non-interactive view)</summary>"
+                    f"{static_snapshot_html}</details>"
+                )
+                display(HTML(details_html))
             return True
         except Exception as exc:
             logger.debug(

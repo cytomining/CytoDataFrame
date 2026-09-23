@@ -437,8 +437,103 @@ def test_get_3d_label_overlay_from_cell_applies_bbox_crop(
 
     assert overlay is not None
     assert overlay.shape == cropped_volume.shape
-    assert overlay.dtype == np.uint8
+    # label ids are preserved (not collapsed to a binary uint8 mask)
     assert overlay.max() == 255
+
+
+def test_get_3d_label_overlay_from_cell_uses_lazy_windowed_crop(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The mask/outline file is often just as large as the raw z-stack, so
+    it should get the same lazy, windowed read as the raw volume rather than
+    being fully decoded just to crop it down afterward -- verified by
+    asserting imageio.imread is never called for either file.
+    """
+    pytest.importorskip("zarr")
+    volume = np.arange(4 * 5 * 6, dtype=np.uint8).reshape(4, 5, 6)
+    image_path = tmp_path / "vol3d.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    mask_dir = tmp_path / "masks"
+    mask_dir.mkdir()
+    label = np.zeros((4, 5, 6), dtype=np.uint8)
+    label[1:3, 1:4, 1:5] = 255
+    tifffile.imwrite(mask_dir / "vol3d_mask.tiff", label)
+
+    data = pd.DataFrame(
+        {
+            "Image_FileName_DNA": [image_path.name],
+            "AreaShape_BoundingBoxMinimum_X": [1],
+            "AreaShape_BoundingBoxMaximum_X": [5],
+            "AreaShape_BoundingBoxMinimum_Y": [1],
+            "AreaShape_BoundingBoxMaximum_Y": [4],
+            "AreaShape_BoundingBoxMinimum_Z": [1],
+            "AreaShape_BoundingBoxMaximum_Z": [3],
+        }
+    )
+    cdf = CytoDataFrame(
+        data=data,
+        data_context_dir=str(tmp_path),
+        data_mask_context_dir=str(mask_dir),
+    )
+
+    def _fail_if_called(*args: object, **kwargs: object) -> None:
+        raise AssertionError(
+            "imageio.imread should not run when the lazy windowed crop applies"
+        )
+
+    monkeypatch.setattr(cytodataframe.frame.imageio, "imread", _fail_if_called)
+
+    cropped_volume, _ = cdf._get_3d_volume_from_cell(row=0, column="Image_FileName_DNA")
+    overlay = cdf._get_3d_label_overlay_from_cell(
+        row=0,
+        column="Image_FileName_DNA",
+        expected_shape=cropped_volume.shape,
+    )
+
+    assert overlay is not None
+    assert overlay.shape == cropped_volume.shape
+    assert overlay.max() == 255
+
+
+def test_add_label_overlay_to_plotter_filled_mode_with_real_pyvista() -> None:
+    """Regression guard using the *real* pyvista (not the fake mock used by
+    other ``_build_pyvista_viewer`` tests below, which never validates
+    argument types and so never caught this): "filled" mode used to pass
+    ``cmap=[(0.0, 0.0, 0.0), overlay_color]`` -- a list of raw RGB tuples --
+    to ``Plotter.add_volume``, which raises "When inputting a list as a
+    cmap, each item should be a string." ``_add_label_overlay_to_plotter``
+    swallows that in a bare ``except Exception`` and silently returns no
+    overlay actors, which is what "the masks aren't rendering" turned out to
+    be. A real two-color mask overlay must actually get added.
+    """
+    pv = pytest.importorskip("pyvista")
+
+    cdf = CytoDataFrame(
+        pd.DataFrame({"A": [1]}),
+        display_options={
+            "label_overlay_color": (255, 0, 255),
+            "label_overlay_mode": "filled",
+            "label_overlay_opacity": 0.35,
+        },
+    )
+    volume = np.zeros((4, 5, 6), dtype=np.float32)
+    volume[1:3, 1:4, 1:5] = 200
+    label = np.zeros((4, 5, 6), dtype=np.uint8)
+    label[1:3, 1:4, 1:5] = 255
+
+    plotter = pv.Plotter(off_screen=True)
+    overlay_actors = cdf._add_label_overlay_to_plotter(
+        plotter=plotter,
+        volume=volume,
+        label_volume=label,
+        spacing=(1.0, 1.0, 1.0),
+        base_sample=1.0,
+        display_options=cdf._custom_attrs.get("display_options", {}),
+    )
+
+    assert overlay_actors, "filled-mode overlay was silently dropped"
+    plotter.close()
 
 
 def test_get_3d_bbox_crop_bounds_prefers_cellprofiler_columns() -> None:
@@ -493,6 +588,583 @@ def test_get_3d_bbox_crop_bounds_accepts_custom_column_map() -> None:
     assert bounds == (1, 5, 2, 6, 0, 3)
 
 
+def test_align_mask_to_expected_shape_returns_exact_match_unchanged() -> None:
+    mask = np.ones((2, 3, 4), dtype=np.uint8)
+
+    aligned = CytoDataFrame._align_mask_to_expected_shape(
+        mask_array=mask, expected_shape=(2, 3, 4)
+    )
+
+    assert aligned is not None
+    assert np.array_equal(aligned, mask)
+
+
+def test_align_mask_to_expected_shape_pads_small_edge_mismatch() -> None:
+    """A mask cropped a couple of slices short (e.g. an object's bounding
+    box touching the field-of-view edge, where the mask's native TIFF is a
+    pixel or two smaller than the raw image's) should be zero-padded to the
+    expected shape rather than dropped entirely."""
+    mask = np.ones((2, 3, 4), dtype=np.uint8)
+
+    aligned = CytoDataFrame._align_mask_to_expected_shape(
+        mask_array=mask, expected_shape=(2, 3, 6)
+    )
+
+    assert aligned is not None
+    assert aligned.shape == (2, 3, 6)
+    # the overlapping region is preserved, min-corner anchored
+    assert np.array_equal(aligned[:, :, :4], mask)
+    # the padded edge is zero-filled, not garbage
+    assert np.array_equal(aligned[:, :, 4:], np.zeros((2, 3, 2), dtype=np.uint8))
+
+
+def test_align_mask_to_expected_shape_truncates_small_edge_overhang() -> None:
+    mask = np.ones((2, 3, 8), dtype=np.uint8)
+
+    aligned = CytoDataFrame._align_mask_to_expected_shape(
+        mask_array=mask, expected_shape=(2, 3, 4)
+    )
+
+    assert aligned is not None
+    assert aligned.shape == (2, 3, 4)
+    assert np.array_equal(aligned, np.ones((2, 3, 4), dtype=np.uint8))
+
+
+def test_align_mask_to_expected_shape_rejects_large_mismatch() -> None:
+    """A large shape gap indicates the wrong file matched to this object,
+    not an edge-clamping artifact -- still returns None in that case."""
+    mask = np.ones((2, 3, 4), dtype=np.uint8)
+
+    aligned = CytoDataFrame._align_mask_to_expected_shape(
+        mask_array=mask, expected_shape=(2, 3, 40)
+    )
+
+    assert aligned is None
+
+
+def test_prepare_3d_label_overlay_aligns_edge_clamped_mask(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Reproduces the "mask disappears near the field-of-view edge" bug:
+    the mask's own native TIFF is one slice shorter in X than the raw
+    image's, so independently clamping bounds against each array's own
+    shape used to produce a shape mismatch that silently dropped the
+    entire overlay."""
+    mask_path = tmp_path / "edge_mask.tiff"
+    # Native mask volume is 1 pixel narrower in X than the raw image would
+    # be; a row's bounding box requesting x in [0, 5) clamps to [0, 4) here.
+    tifffile.imwrite(mask_path, np.ones((3, 4, 4), dtype=np.uint8))
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame(
+            {
+                "Cells_AreaShape_BoundingBoxMinimum_X": [0],
+                "Cells_AreaShape_BoundingBoxMaximum_X": [5],
+                "Cells_AreaShape_BoundingBoxMinimum_Y": [0],
+                "Cells_AreaShape_BoundingBoxMaximum_Y": [4],
+            }
+        )
+    )
+
+    overlay = cdf._prepare_3d_label_overlay(
+        segmentation_path=mask_path,
+        expected_shape=(3, 4, 5),
+        row=0,
+    )
+
+    assert overlay is not None
+    assert overlay.shape == (3, 4, 5)
+    # label id (1) is preserved, not collapsed to a binary 255
+    assert np.array_equal(overlay[:, :, :4], np.ones((3, 4, 4), dtype=np.int64))
+    assert np.array_equal(overlay[:, :, 4:], np.zeros((3, 4, 1), dtype=np.int64))
+
+
+def test_prepare_3d_label_overlay_keeps_original_dtype_without_a_row(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Without a row, no per-row crop happens, so this is the whole (often
+    hundreds-of-MB) field-of-view mask, not a small per-object crop. It
+    should keep its original (here, small uint8) dtype rather than being
+    widened to int64 -- the caller only ever checks it for nonzero."""
+    mask_path = tmp_path / "whole_fov_mask.tiff"
+    tifffile.imwrite(mask_path, np.full((3, 4, 5), 2, dtype=np.uint8))
+
+    cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+
+    overlay = cdf._prepare_3d_label_overlay(
+        segmentation_path=mask_path,
+        expected_shape=(3, 4, 5),
+    )
+
+    assert overlay is not None
+    assert overlay.dtype == np.uint8
+    assert np.array_equal(overlay, np.full((3, 4, 5), 2, dtype=np.uint8))
+
+
+def test_resolve_volume_spacing_defaults_to_isotropic() -> None:
+    cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+
+    assert cdf._resolve_volume_spacing() == (1.0, 1.0, 1.0)
+
+
+def test_resolve_volume_spacing_reads_display_option() -> None:
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"A": [1]}),
+        display_options={"volume_spacing": (0.1, 0.1, 1)},
+    )
+
+    assert cdf._resolve_volume_spacing() == (0.1, 0.1, 1.0)
+
+
+@pytest.mark.parametrize(
+    "bad", [(1.0, 1.0), (0.1, 0.1, 0), (0.1, "x", 1.0), "0.1,0.1,1", (-1, 1, 1)]
+)
+def test_resolve_volume_spacing_ignores_invalid_values(bad: object) -> None:
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"A": [1]}), display_options={"volume_spacing": bad}
+    )
+
+    assert cdf._resolve_volume_spacing() == (1.0, 1.0, 1.0)
+
+
+def test_label_overlay_respects_anisotropic_spacing() -> None:
+    """A 1 um z step with 0.1 um pixels must draw z 10x taller per voxel than
+    x/y, not as an isotropic (flattened) grid."""
+    pv = pytest.importorskip("pyvista")
+    cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+    plotter = pv.Plotter(off_screen=True)
+    volume = np.ones((4, 5, 6), dtype=np.uint8)
+
+    actors = cdf._add_label_overlay_to_plotter(
+        plotter=plotter,
+        volume=volume,
+        label_volume=np.ones_like(volume),
+        spacing=(0.1, 0.1, 1.0),
+        base_sample=0.1,
+        display_options={"label_overlay_mode": "surface"},
+    )
+
+    x0, x1, y0, y1, z0, z1 = actors[0].mapper.dataset.bounds
+    assert x1 - x0 == pytest.approx(6 * 0.1)
+    assert y1 - y0 == pytest.approx(5 * 0.1)
+    assert z1 - z0 == pytest.approx(4 * 1.0)
+    plotter.close()
+
+
+def test_center_marker_scales_position_but_stays_round_with_anisotropic_spacing() -> (
+    None
+):
+    pv = pytest.importorskip("pyvista")
+    cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+    plotter = pv.Plotter(off_screen=True)
+
+    actor = cdf._add_center_marker_to_plotter(
+        plotter=plotter,
+        center_xyz=(10.0, 20.0, 5.0),
+        spacing=(0.1, 0.1, 1.0),
+        display_options={},
+    )
+
+    x0, x1, y0, y1, z0, z1 = actor.GetBounds()
+    assert (x0 + x1) / 2 == pytest.approx(1.0)
+    assert (y0 + y1) / 2 == pytest.approx(2.0)
+    assert (z0 + z1) / 2 == pytest.approx(5.0)
+    # radius is 3 in-plane voxels (0.3), the same in every direction
+    assert x1 - x0 == pytest.approx(0.6, abs=0.02)
+    assert z1 - z0 == pytest.approx(0.6, abs=0.02)
+    plotter.close()
+
+
+def test_get_3d_crop_origin_reads_min_corner_without_volume_shape() -> None:
+    cdf = CytoDataFrame(
+        data=pd.DataFrame(
+            {
+                "Cells_AreaShape_BoundingBoxMinimum_X": [2],
+                "Cells_AreaShape_BoundingBoxMaximum_X": [6],
+                "Cells_AreaShape_BoundingBoxMinimum_Y": [3],
+                "Cells_AreaShape_BoundingBoxMaximum_Y": [7],
+                "Cells_AreaShape_BoundingBoxMinimum_Z": [1],
+                "Cells_AreaShape_BoundingBoxMaximum_Z": [4],
+            }
+        )
+    )
+
+    origin = cdf._get_3d_crop_origin(row=0)
+
+    assert origin == (2, 3, 1)
+
+
+def test_get_3d_center_marker_xyz_translates_full_image_center_to_crop_local() -> None:
+    cdf = CytoDataFrame(
+        data=pd.DataFrame(
+            {
+                "Nuclei_Location_Center_X": [12.0],
+                "Nuclei_Location_Center_Y": [15.0],
+                "Cells_AreaShape_BoundingBoxMinimum_X": [10],
+                "Cells_AreaShape_BoundingBoxMaximum_X": [20],
+                "Cells_AreaShape_BoundingBoxMinimum_Y": [10],
+                "Cells_AreaShape_BoundingBoxMaximum_Y": [20],
+            }
+        )
+    )
+
+    center_xyz = cdf._get_3d_center_marker_xyz(row=0, crop_shape=(6, 10, 10))
+
+    assert center_xyz is not None
+    center_x, center_y, center_z = center_xyz
+    assert center_x == pytest.approx(2.0)
+    assert center_y == pytest.approx(5.0)
+    # no per-object Z centroid available; defaults to crop mid-depth
+    assert center_z == pytest.approx(3.0)
+
+
+def test_get_3d_center_marker_xyz_uses_z_column_when_provided() -> None:
+    profiles = pd.DataFrame(
+        {
+            "Nuclei_Center_X": [12.0],
+            "Nuclei_Center_Y": [15.0],
+            "Nuclei_Center_Z": [4.5],
+            "Nuclei_Min_X": [10],
+            "Nuclei_Max_X": [20],
+            "Nuclei_Min_Y": [10],
+            "Nuclei_Max_Y": [20],
+            "Nuclei_Min_Z": [2],
+            "Nuclei_Max_Z": [8],
+        }
+    )
+    cdf = CytoDataFrame(
+        data=profiles[["Nuclei_Min_X"]],
+        data_bounding_box=profiles[[c for c in profiles if "_M" in c]],
+        compartment_center_xy=profiles[[c for c in profiles if "Center" in c]],
+        display_options={
+            "volume_bbox_column_map": {
+                "x_min": "Nuclei_Min_X",
+                "x_max": "Nuclei_Max_X",
+                "y_min": "Nuclei_Min_Y",
+                "y_max": "Nuclei_Max_Y",
+                "z_min": "Nuclei_Min_Z",
+                "z_max": "Nuclei_Max_Z",
+            }
+        },
+    )
+
+    center_xyz = cdf._get_3d_center_marker_xyz(row=0, crop_shape=(6, 10, 10))
+
+    assert center_xyz == pytest.approx((2.0, 5.0, 2.5))
+
+
+def test_get_3d_center_marker_xyz_returns_none_outside_crop() -> None:
+    """A compartment center that lands outside this crop after translation
+    most likely means a mismatched convention/frame -- skip rather than
+    draw a misleading marker."""
+    cdf = CytoDataFrame(
+        data=pd.DataFrame(
+            {
+                "Nuclei_Location_Center_X": [999.0],
+                "Nuclei_Location_Center_Y": [999.0],
+                "Cells_AreaShape_BoundingBoxMinimum_X": [10],
+                "Cells_AreaShape_BoundingBoxMaximum_X": [20],
+                "Cells_AreaShape_BoundingBoxMinimum_Y": [10],
+                "Cells_AreaShape_BoundingBoxMaximum_Y": [20],
+            }
+        )
+    )
+
+    assert cdf._get_3d_center_marker_xyz(row=0, crop_shape=(6, 10, 10)) is None
+
+
+def test_get_3d_center_marker_xyz_returns_none_without_compartment_center() -> None:
+    cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+
+    assert cdf._get_3d_center_marker_xyz(row=0, crop_shape=(6, 10, 10)) is None
+
+
+def test_add_center_marker_to_plotter_adds_sphere_mesh_with_real_pyvista() -> None:
+    pv = pytest.importorskip("pyvista")
+    cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+    plotter = pv.Plotter(off_screen=True)
+
+    actor = cdf._add_center_marker_to_plotter(
+        plotter=plotter,
+        center_xyz=(1.0, 2.0, 3.0),
+        spacing=(1.0, 1.0, 1.0),
+        display_options={},
+    )
+
+    assert actor is not None
+    plotter.close()
+
+
+def test_center_marker_added_alongside_partial_crop_mask_overlay() -> None:
+    """Both the mask overlay and the center marker must be addable to the
+    same plotter without error, and the marker actor correctly configured,
+    when a mask covers part (not all) of its own crop -- the realistic case.
+
+    Whether the marker actually turns out to be visible in a given render
+    depends on VTK's volume/mesh depth compositing for that specific scene
+    (camera angle, opacity, what geometry surrounds it) -- not something
+    reliably assertable via screenshot pixel-counting in a headless test
+    environment, so this checks the actors are present and configured
+    instead. An earlier version tried to force the marker "always on top" by
+    giving it its own VTK render layer; that segfaulted under headless/
+    software rendering in Linux CI (not reproduced locally) and was removed
+    in favor of this plain single-scene actor.
+    """
+    pv = pytest.importorskip("pyvista")
+    cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+    volume = np.random.default_rng(0).random((12, 71, 61)).astype(np.float32) * 255
+    grid = pv.ImageData(dimensions=(61, 71, 12))
+    grid.point_data["s"] = np.transpose(volume, (2, 1, 0)).ravel(order="F")
+    plotter = pv.Plotter(off_screen=True)
+    plotter.add_volume(grid, scalars="s", cmap="gray", show_scalar_bar=False)
+    label = np.zeros_like(volume, dtype=np.uint8)
+    label[2:10, 10:60, 10:50] = 1  # covers most, not all, of the crop
+    overlay_actors = cdf._add_label_overlay_to_plotter(
+        plotter=plotter,
+        volume=volume,
+        label_volume=label,
+        spacing=(1.0, 1.0, 1.0),
+        base_sample=1.0,
+        display_options={"label_overlay_mode": "filled"},
+    )
+    marker_actor = cdf._add_center_marker_to_plotter(
+        plotter=plotter,
+        center_xyz=(30.0, 35.0, 6.0),
+        spacing=(1.0, 1.0, 1.0),
+        display_options={},
+    )
+
+    assert overlay_actors
+    assert marker_actor is not None
+    plotter.close()
+
+
+def test_center_marker_is_translucent_by_default() -> None:
+    """The marker actor's own opacity is < 1.0 by default (and exactly 1.0
+    when overridden) -- checked directly on the actor's property rather than
+    via rendered pixels, since how that opacity actually composites against
+    surrounding geometry depends on VTK's volume/mesh depth handling for the
+    specific scene, not something reliable to assert from a screenshot."""
+    pv = pytest.importorskip("pyvista")
+    cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+    plotter = pv.Plotter(off_screen=True)
+
+    default_actor = cdf._add_center_marker_to_plotter(
+        plotter=plotter,
+        center_xyz=(0.0, 0.0, 0.0),
+        spacing=(1.0, 1.0, 1.0),
+        display_options={},
+    )
+    opaque_actor = cdf._add_center_marker_to_plotter(
+        plotter=plotter,
+        center_xyz=(10.0, 0.0, 0.0),
+        spacing=(1.0, 1.0, 1.0),
+        display_options={"center_marker_opacity": 1.0},
+    )
+
+    assert default_actor is not None
+    assert opaque_actor is not None
+    assert 0.0 < default_actor.prop.opacity < 1.0
+    assert opaque_actor.prop.opacity == 1.0
+    plotter.close()
+
+
+def test_add_center_marker_to_plotter_respects_show_center_marker_false() -> None:
+    pv = pytest.importorskip("pyvista")
+    cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+    plotter = pv.Plotter(off_screen=True)
+
+    actor = cdf._add_center_marker_to_plotter(
+        plotter=plotter,
+        center_xyz=(1.0, 2.0, 3.0),
+        spacing=(1.0, 1.0, 1.0),
+        display_options={"show_center_marker": False},
+    )
+
+    assert actor is None
+    plotter.close()
+
+
+def test_label_overlay_surface_is_closed_when_mask_touches_crop_edges() -> None:
+    """A mask filling the whole crop (i.e. touching every border) must still
+    contour to a closed surface; unpadded, the isosurface was left open on
+    every face touching the grid edge, so the overlay looked cut off at the
+    top/bottom/side borders."""
+    pv = pytest.importorskip("pyvista")
+    cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+    plotter = pv.Plotter(off_screen=True)
+    volume = np.ones((4, 5, 6), dtype=np.uint8)
+
+    actors = cdf._add_label_overlay_to_plotter(
+        plotter=plotter,
+        volume=volume,
+        label_volume=np.ones_like(volume),
+        spacing=(1.0, 1.0, 1.0),
+        base_sample=1.0,
+        display_options={"label_overlay_mode": "surface"},
+    )
+
+    mesh = actors[0].mapper.dataset
+    assert mesh.n_points > 0
+    assert mesh.n_open_edges == 0
+    # padded grid is shifted back so the mask stays aligned with the volume
+    assert mesh.bounds[0] < 0 <= mesh.bounds[1]
+    plotter.close()
+
+
+def test_distinct_label_colors_are_unique_and_deterministic() -> None:
+    first = CytoDataFrame._distinct_label_colors(
+        labels=[1, 2, 4, 10], display_options={}
+    )
+    second = CytoDataFrame._distinct_label_colors(
+        labels=[1, 2, 4, 10], display_options={}
+    )
+
+    assert set(first) == {1, 2, 4, 10}
+    assert len(set(first.values())) == 4, "expected 4 distinct colors"
+    assert first == second, "same label set must get the same colors every time"
+
+
+def test_label_overlay_colors_each_object_distinctly_when_multiple_present() -> None:
+    """Two disjoint objects (label ids 1 and 2) sharing one row's crop must
+    render as two distinctly-colored surfaces, not one indistinguishable
+    blob -- this is what actually differentiates them, without needing
+    napari/fiji."""
+    pv = pytest.importorskip("pyvista")
+    cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+    plotter = pv.Plotter(off_screen=True)
+    volume = np.ones((4, 10, 10), dtype=np.uint8)
+    label = np.zeros((4, 10, 10), dtype=np.uint8)
+    label[:, 1:3, 1:3] = 1
+    label[:, 6:8, 6:8] = 2
+
+    actors = cdf._add_label_overlay_to_plotter(
+        plotter=plotter,
+        volume=volume,
+        label_volume=label,
+        spacing=(1.0, 1.0, 1.0),
+        base_sample=1.0,
+        display_options={"label_overlay_mode": "filled"},
+    )
+
+    # one solid-fill + one wireframe actor per object
+    assert len(actors) == 4
+    solid_colors = {tuple(a.prop.color) for a in actors[::2]}
+    assert len(solid_colors) == 2, "each object must get its own color"
+    plotter.close()
+
+
+def test_label_overlay_colors_can_be_disabled() -> None:
+    """A caller can opt back into the single flat overlay_color even with
+    multiple objects present."""
+    pv = pytest.importorskip("pyvista")
+    cdf = CytoDataFrame(data=pd.DataFrame({"A": [1]}))
+    plotter = pv.Plotter(off_screen=True)
+    volume = np.ones((4, 10, 10), dtype=np.uint8)
+    label = np.zeros((4, 10, 10), dtype=np.uint8)
+    label[:, 1:3, 1:3] = 1
+    label[:, 6:8, 6:8] = 2
+
+    actors = cdf._add_label_overlay_to_plotter(
+        plotter=plotter,
+        volume=volume,
+        label_volume=label,
+        spacing=(1.0, 1.0, 1.0),
+        base_sample=1.0,
+        display_options={
+            "label_overlay_mode": "filled",
+            "label_overlay_color_by_object": False,
+        },
+    )
+
+    assert len(actors) >= 1
+    plotter.close()
+
+
+def test_row_bounding_box_matches_cellprofiler_columns() -> None:
+    row = pd.Series({"Minimum_X": 1, "Minimum_Y": 2, "Maximum_X": 5, "Maximum_Y": 6})
+
+    bounds = CytoDataFrame._row_bounding_box(row=row, bounding_box_cols=list(row.index))
+
+    assert bounds == (1, 2, 5, 6)
+
+
+def test_row_bounding_box_returns_none_for_non_cellprofiler_columns() -> None:
+    """A ``data_bounding_box`` table built for the 3D
+    ``volume_bbox_column_map`` convention (e.g. "Nuclei_MinX") has no
+    ``Minimum_X``/``Maximum_X`` columns for this 2D helper to find. It must
+    signal "no bounding box for this row" rather than raising, so the caller
+    can render without a crop instead of crashing.
+    """
+    row = pd.Series({"Nuclei_MinX": 1, "Nuclei_MaxX": 5})
+
+    bounds = CytoDataFrame._row_bounding_box(row=row, bounding_box_cols=list(row.index))
+
+    assert bounds is None
+
+
+def test_repr_html_does_not_crash_with_non_cellprofiler_data_bounding_box(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Regression guard: passing ``data_bounding_box`` with column names that
+    only match the 3D ``volume_bbox_column_map`` convention (not
+    CellProfiler's ``Minimum_X``/``Maximum_X``) used to raise ``StopIteration``
+    out of the 2D static-snapshot renderer. It must render (without applying
+    a 2D crop) instead.
+    """
+    image_path = tmp_path / "img.tiff"
+    imageio.imwrite(image_path, np.zeros((10, 10), dtype=np.uint8))
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+        data_bounding_box=pd.DataFrame(
+            {
+                "Nuclei_MinX": [1],
+                "Nuclei_MaxX": [5],
+                "Nuclei_MinY": [1],
+                "Nuclei_MaxY": [5],
+            }
+        ),
+    )
+
+    html = cdf._generate_jupyter_dataframe_html()
+
+    assert html is not None
+
+
+def test_repr_html_joins_only_missing_bounding_box_columns_when_some_overlap(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A rich ``data_bounding_box`` table may overlap the displayed data.
+
+    Notebook rendering should only rejoin the missing metadata columns needed
+    for cropping rather than joining the whole table and raising pandas'
+    "columns overlap but no suffix specified" error.
+    """
+    image_path = tmp_path / "img.tiff"
+    imageio.imwrite(image_path, np.zeros((10, 10), dtype=np.uint8))
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+        data_bounding_box=pd.DataFrame(
+            {
+                "Image_FileName_DNA": [image_path.name],
+                "Minimum_X": [1],
+                "Minimum_Y": [1],
+                "Maximum_X": [5],
+                "Maximum_Y": [5],
+            }
+        ),
+    )
+
+    html = cdf._generate_jupyter_dataframe_html()
+
+    assert html is not None
+    assert "Image_FileName_DNA" in html
+
+
 def test_find_matching_segmentation_path_filters_by_image_identifier(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -532,7 +1204,84 @@ def test_find_matching_segmentation_path_prefers_candidate_parent_tree(
     assert matched.parent.name == "plate_a"
 
 
-def test_cytodataframe_input(  # noqa: PLR0917
+def test_find_matching_segmentation_path_skips_identifier_check_when_unambiguous(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A directory scoped to one specimen/well (e.g. one
+    ``segmentation_masks/<well>/`` folder per field of view) may use a fixed,
+    generic mask filename that shares no identifier at all with the raw image
+    filename (e.g. always "nuclei_mask.tiff" regardless of which field of
+    view it segments). When ``file_pattern`` alone already matches exactly
+    one file in that directory, that match is unambiguous on its own --
+    requiring an identifier match too would reject every legitimate match for
+    this naming convention.
+    """
+    mask_dir = tmp_path / "segmentation_masks" / "B10-1"
+    mask_dir.mkdir(parents=True)
+    (mask_dir / "nuclei_mask.tiff").write_bytes(b"")
+
+    matched = CytoDataFrame._find_matching_segmentation_path(
+        data_value="/data/zstack_images/B10-1/B10-1_405.tif",
+        pattern_map={r"^nuclei_mask\.tiff$": r"_405\.tif$"},
+        file_dir=str(mask_dir),
+        candidate_path=pathlib.Path("/data/zstack_images/B10-1/B10-1_405.tif"),
+    )
+
+    assert matched is not None
+    assert matched.name == "nuclei_mask.tiff"
+
+
+def test_find_matching_segmentation_path_requires_identifier_in_unscoped_root(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The "unique pattern-only match" shortcut only applies to a root that
+    is actually scoped to this image's own specimen/well (its name matches
+    the raw image's parent folder name). A flat, shared root covering
+    multiple specimens isn't scoped that way, so a coincidental single
+    pattern match there (belonging to a *different* specimen) must not be
+    trusted without an identifier check -- unlike the well-scoped case in
+    ``test_find_matching_segmentation_path_skips_identifier_check_when_unambiguous``.
+    """
+    mask_dir = tmp_path / "shared_masks"
+    mask_dir.mkdir()
+    # Only one file in this flat, unscoped directory matches the pattern,
+    # but it belongs to a different well ("C4-2") than the row being
+    # resolved ("B10-1") -- its name carries no "B10-1" identifier.
+    (mask_dir / "C4-2_organoid_mask.tiff").write_bytes(b"")
+
+    matched = CytoDataFrame._find_matching_segmentation_path(
+        data_value="/data/zstack_images/B10-1/B10-1_405.tif",
+        pattern_map={r"organoid_mask\.tiff$": r"_405\.tif$"},
+        file_dir=str(mask_dir),
+        candidate_path=pathlib.Path("/data/zstack_images/B10-1/B10-1_405.tif"),
+    )
+
+    assert matched is None
+
+
+def test_find_matching_segmentation_path_disambiguates_multiple_matches(
+    tmp_path: pathlib.Path,
+) -> None:
+    """When ``file_pattern`` alone matches more than one file, identifier
+    based disambiguation still applies (unchanged existing behavior).
+    """
+    mask_dir = tmp_path / "masks"
+    mask_dir.mkdir()
+    (mask_dir / "img_a_mask.tiff").write_bytes(b"")
+    (mask_dir / "img_b_mask.tiff").write_bytes(b"")
+
+    matched = CytoDataFrame._find_matching_segmentation_path(
+        data_value="img_b.tiff",
+        pattern_map={r".*_mask\.tiff$": r".*"},
+        file_dir=str(mask_dir),
+        candidate_path=pathlib.Path("img_b.tiff"),
+    )
+
+    assert matched is not None
+    assert matched.name == "img_b_mask.tiff"
+
+
+def test_cytodataframe_input(
     tmp_path: pathlib.Path,
     basic_outlier_dataframe: pd.DataFrame,
     basic_outlier_csv: str,
@@ -2181,6 +2930,100 @@ def test_get_3d_volume_from_cell_loads_3d_tiff(tmp_path: pathlib.Path) -> None:
     assert dims == (6, 5, 4)
 
 
+def test_get_3d_volume_from_cell_uses_lazy_windowed_crop_when_bbox_available(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A per-row 3D bounding box triggers a lazy, windowed tifffile+zarr read
+    instead of decoding the whole volume with imageio -- verified both by the
+    cropped values matching a direct numpy slice, and by asserting
+    imageio.imread is never called (proving the eager path did not run).
+    """
+    pytest.importorskip("zarr")
+    volume = np.arange(10 * 8 * 6, dtype=np.uint8).reshape(10, 8, 6)
+    image_path = tmp_path / "volume.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    data = pd.DataFrame(
+        {
+            "Image_FileName_DNA": [image_path.name],
+            "bbox_x0": [1],
+            "bbox_x1": [4],
+            "bbox_y0": [2],
+            "bbox_y1": [6],
+            "bbox_z0": [3],
+            "bbox_z1": [7],
+        }
+    )
+    cdf = CytoDataFrame(
+        data=data,
+        data_context_dir=str(tmp_path),
+        display_options={
+            "volume_bbox_column_map": {
+                "x_min": "bbox_x0",
+                "x_max": "bbox_x1",
+                "y_min": "bbox_y0",
+                "y_max": "bbox_y1",
+                "z_min": "bbox_z0",
+                "z_max": "bbox_z1",
+            }
+        },
+    )
+
+    def _fail_if_called(*args: object, **kwargs: object) -> None:
+        raise AssertionError(
+            "imageio.imread should not run when the lazy windowed crop applies"
+        )
+
+    monkeypatch.setattr(cytodataframe.frame.imageio, "imread", _fail_if_called)
+
+    loaded_volume, dims = cdf._get_3d_volume_from_cell(
+        row=0, column="Image_FileName_DNA"
+    )
+
+    expected = volume[3:7, 2:6, 1:4]
+    np.testing.assert_array_equal(loaded_volume, expected)
+    assert dims == (
+        loaded_volume.shape[2],
+        loaded_volume.shape[1],
+        loaded_volume.shape[0],
+    )
+
+
+def test_get_3d_volume_from_cell_falls_back_to_eager_read_without_bbox(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no bounding box configured, the lazy path is a no-op and the
+    existing eager imageio read still runs (regression guard: the lazy
+    optimization must never change output for inputs it doesn't apply to).
+    """
+    pytest.importorskip("zarr")
+    volume = np.arange(4 * 5 * 6, dtype=np.uint8).reshape(4, 5, 6)
+    image_path = tmp_path / "volume.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+    )
+
+    calls = []
+    original_imread = imageio.imread
+
+    def _tracking_imread(*args: object, **kwargs: object) -> np.ndarray:
+        calls.append(args)
+        return original_imread(*args, **kwargs)
+
+    monkeypatch.setattr(cytodataframe.frame.imageio, "imread", _tracking_imread)
+
+    loaded_volume, dims = cdf._get_3d_volume_from_cell(
+        row=0, column="Image_FileName_DNA"
+    )
+
+    assert len(calls) == 1
+    assert loaded_volume.shape == (4, 5, 6)
+    assert dims == (6, 5, 4)
+
+
 def test_get_3d_volume_from_cell_normalizes_file_uri_with_context_dir(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -2401,6 +3244,41 @@ def test_repr_html_auto_trame_for_3d_inputs(
     assert captured["columns_3d"] == ["Image_FileName_DNA"]
     assert captured["backend"] is None
     assert displayed
+
+
+def test_repr_html_auto_trame_respects_disabled_static_snapshot(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    volume = np.arange(3 * 4 * 5, dtype=np.uint8).reshape(3, 4, 5)
+    image_path = tmp_path / "auto_trame_no_snapshot.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame({"Image_FileName_DNA": [image_path.name]}),
+        data_context_dir=str(tmp_path),
+        display_options={"show_static_snapshot_details": False},
+    )
+
+    displayed: list = []
+    calls = {"snapshot": 0}
+
+    def fake_show_widget_table(column: str, **kwargs: object) -> str:
+        return "widget_table"
+
+    def fake_snapshot_html() -> str:
+        calls["snapshot"] += 1
+        return "<table/>"
+
+    def capture_display(value: object) -> None:
+        displayed.append(value)
+
+    monkeypatch.setattr(cdf, "show_widget_table", fake_show_widget_table)
+    monkeypatch.setattr(cdf, "_generate_trame_snapshot_html", fake_snapshot_html)
+    monkeypatch.setattr("cytodataframe.frame.display", capture_display)
+
+    assert cdf._repr_html_() is None
+    assert displayed == ["widget_table"]
+    assert calls["snapshot"] == 0
 
 
 def test_find_3d_columns_for_display_skips_ellipsis(
@@ -2785,6 +3663,41 @@ def test_is_3d_image_array_accepts_thin_small_volume_shapes() -> None:
     singleton_x = np.zeros((5, 20, 1), dtype=np.uint8)
     assert CytoDataFrame._is_3d_image_array(thin_x) is True
     assert CytoDataFrame._is_3d_image_array(singleton_x) is True
+
+
+def test_is_3d_shape_matches_is_3d_image_array() -> None:
+    """``_is_3d_image_array`` must delegate to ``_is_3d_shape`` rather than
+    duplicating the RGB-vs-volume heuristic, so the lazy zarr-store path
+    (which only has a shape, not an array) can share the exact same check."""
+    for shape in [(64, 64, 3), (64, 64, 4), (5, 20, 3), (5, 20, 1), (2, 3), (4, 5, 6)]:
+        array = np.zeros(shape, dtype=np.uint8)
+        assert CytoDataFrame._is_3d_shape(array.shape) == (
+            CytoDataFrame._is_3d_image_array(array)
+        )
+
+
+def test_try_lazy_windowed_tiff_crop_rejects_rgb_like_shape(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A 2D RGB-like TIFF also has ndim == 3 (H, W, 3); checking only ndim
+    (rather than the full ``_is_3d_shape`` heuristic) would misread it as a
+    (Z, Y, X) volume and slice it along the wrong axis. It must instead fall
+    back to the eager path, which already rejects it correctly."""
+    rgb_path = tmp_path / "rgb.tiff"
+    tifffile.imwrite(rgb_path, np.zeros((64, 64, 3), dtype=np.uint8), photometric="rgb")
+
+    cdf = CytoDataFrame(
+        data=pd.DataFrame(
+            {
+                "Cells_AreaShape_BoundingBoxMinimum_X": [0],
+                "Cells_AreaShape_BoundingBoxMaximum_X": [10],
+                "Cells_AreaShape_BoundingBoxMinimum_Y": [0],
+                "Cells_AreaShape_BoundingBoxMaximum_Y": [10],
+            }
+        )
+    )
+
+    assert cdf._try_lazy_windowed_tiff_crop(candidate_path=rgb_path, row=0) is None
 
 
 def test_extract_array_from_ome_arrow_rebuilds_multichannel_planes() -> None:
@@ -3358,8 +4271,14 @@ def test_generate_trame_snapshot_html_paths(monkeypatch: pytest.MonkeyPatch):
     )
     captured: dict[str, object] = {}
 
-    def fake_snapshot(volume, dims, label_volume=None):  # noqa: ANN001, ANN202
+    def fake_snapshot(  # noqa: ANN202
+        volume: object,
+        dims: object,
+        label_volume: object = None,
+        center_xyz: object = None,
+    ):
         captured["label_volume"] = label_volume
+        captured["center_xyz"] = center_xyz
         return "<img/>"
 
     monkeypatch.setattr(cdf, "_pyvista_volume_snapshot_html", fake_snapshot)
@@ -3385,6 +4304,31 @@ def test_pyvista_volume_snapshot_html_success(monkeypatch: pytest.MonkeyPatch) -
     assert "data:image/png;base64" in html
 
 
+def test_pyvista_volume_snapshot_html_includes_center_marker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``center_xyz`` passed to the snapshot renderer must not break it --
+    the marker is a plain 3D mesh actor here (see
+    ``_add_center_marker_to_plotter``'s docstring for why a screen-space
+    overlay isn't used: two earlier attempts at "always visible" marker
+    rendering both segfaulted under headless Linux CI and were removed)."""
+    _install_fake_pyvista(
+        monkeypatch,
+        screenshot_image=np.zeros((2, 2, 3), dtype=np.uint8),
+    )
+    cdf = CytoDataFrame(
+        pd.DataFrame({"A": [1]}),
+        display_options={"width": "10px", "height": "10px"},
+    )
+    html = cdf._pyvista_volume_snapshot_html(
+        volume=np.ones((2, 2, 2), dtype=np.uint8),
+        dims=(2, 2, 2),
+        center_xyz=(1.0, 1.0, 1.0),
+    )
+    assert html is not None
+    assert "data:image/png;base64" in html
+
+
 def test_pyvista_volume_snapshot_html_returns_none_when_no_image(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3395,6 +4339,66 @@ def test_pyvista_volume_snapshot_html_returns_none_when_no_image(
         dims=(2, 2, 2),
     )
     assert html is None
+
+
+def test_generate_trame_snapshot_html_skips_eager_full_volume_read(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression guard: ``_generate_trame_snapshot_html`` used to call
+    ``_generate_jupyter_dataframe_html()`` unconditionally up front, which
+    eagerly decodes the *whole* source volume for cells this immediately
+    overwrites with a fast, already-cropped PyVista snapshot -- for a large
+    field-of-view TIFF over a slow filesystem, that discarded read could
+    take minutes (observed hanging on real data). It must build the snapshot
+    table using only the lazy, per-row cropped read.
+    """
+    pytest.importorskip("pyvista")
+    pytest.importorskip("zarr")
+    volume = np.zeros((10, 8, 6), dtype=np.uint8)
+    volume[3:7, 2:6, 1:4] = 200
+    image_path = tmp_path / "volume.tiff"
+    tifffile.imwrite(image_path, volume)
+
+    data = pd.DataFrame(
+        {
+            "Image_FileName_DNA": [image_path.name],
+            "bbox_x0": [1],
+            "bbox_x1": [4],
+            "bbox_y0": [2],
+            "bbox_y1": [6],
+            "bbox_z0": [3],
+            "bbox_z1": [7],
+        }
+    )
+    cdf = CytoDataFrame(
+        data=data,
+        data_context_dir=str(tmp_path),
+        data_bounding_box=data[
+            ["bbox_x0", "bbox_x1", "bbox_y0", "bbox_y1", "bbox_z0", "bbox_z1"]
+        ],
+        display_options={
+            "volume_bbox_column_map": {
+                "x_min": "bbox_x0",
+                "x_max": "bbox_x1",
+                "y_min": "bbox_y0",
+                "y_max": "bbox_y1",
+                "z_min": "bbox_z0",
+                "z_max": "bbox_z1",
+            }
+        },
+    )
+
+    def _fail_if_called(*args: object, **kwargs: object) -> None:
+        raise AssertionError(
+            "imageio.imread should not run when the lazy windowed crop applies"
+        )
+
+    monkeypatch.setattr(cytodataframe.frame.imageio, "imread", _fail_if_called)
+
+    html = cdf._generate_trame_snapshot_html()
+
+    assert "data:image/png;base64" in html
+    assert "Snapshot unavailable" not in html
 
 
 def _install_fake_pyvista_with_records(  # noqa: C901

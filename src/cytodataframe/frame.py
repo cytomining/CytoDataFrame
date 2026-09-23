@@ -5,7 +5,6 @@ Defines a CytoDataFrame class.
 import base64
 import contextlib
 import logging
-import math
 import os
 import pathlib
 import re
@@ -4743,107 +4742,18 @@ class CytoDataFrame(pd.DataFrame):
             logger.debug("Unable to add 3D center marker: %s", exc)
             return None
 
-        # Note: an earlier version of this tried to force the marker onto
-        # its own VTK render layer (pv.Renderer + SetNumberOfLayers) so it
-        # stayed visible even through intervening geometry. That crashed with
-        # a segfault under headless/software rendering (observed in Linux CI,
-        # not locally) -- removed. For the interactive viewer (this method),
-        # a plain 3D mesh actor is the right tradeoff: the user can rotate to
-        # see it, and it's not just about opacity -- a marker at an object's
-        # true centroid is often genuinely behind real signal from a given
-        # angle, which is correct rendering, not a bug. For the static
-        # snapshot path where there's no rotating to fix a bad angle, see
-        # ``_add_center_marker_2d_overlay_to_plotter`` instead.
-        return actor
-
-    def _add_center_marker_2d_overlay_to_plotter(
-        self: CytoDataFrame_type,
-        plotter: Any,
-        center_xyz: Tuple[float, float, float],
-        spacing: Tuple[float, float, float],
-        display_options: dict[str, Any],
-    ) -> Optional[Any]:
-        """Draw the center marker as a screen-space overlay, always on top.
-
-        Unlike ``_add_center_marker_to_plotter`` (a 3D mesh actor, which can
-        end up genuinely behind other geometry from a given camera angle --
-        correct rendering, not a bug, but unhelpful for a fixed static
-        image), this projects the 3D point to 2D display coordinates for the
-        plotter's *current* camera and draws a small flat disk there using a
-        ``vtkActor2D`` -- the same foundational, always-on-top-by-design
-        mechanism pyvista itself uses for on-screen text/legends (e.g.
-        ``add_text``), not the render-layer/``SetNumberOfLayers`` approach
-        that segfaulted under headless rendering.
-
-        Only meaningful for a *fixed* camera: this only makes sense for the
-        static PNG snapshot path. It's the wrong tool for the interactive
-        viewer, where the camera rotates client-side in the browser (via
-        vtk.js) with no Python-side callback to keep a screen-projected
-        position in sync -- a 2D overlay there would freeze at its initial
-        screen position instead of tracking the object through rotation.
-
-        Args:
-            plotter: Target plotter; must already have had at least one
-                render pass (e.g. via ``plotter.render()``) so its camera and
-                viewport are finalized before projecting.
-            center_xyz: Marker position in crop-local voxel coordinates
-                (``x, y, z``), e.g. from ``_get_3d_center_marker_xyz``.
-            spacing: Voxel spacing tuple used to convert to world coordinates.
-            display_options: Display options controlling marker style.
-
-        Returns:
-            The added 2D actor, or ``None`` if it could not be added.
-        """
-        if not bool(display_options.get("show_center_marker", True)):
-            return None
-        try:
-            import vtk  # type: ignore
-        except Exception:
-            return None
-
-        color = display_options.get("center_marker_color", (255, 0, 0))
-        if isinstance(color, (tuple, list)) and len(color) >= MIN_VOLUME_NDIM:
-            color = tuple(
-                (float(v) / 255.0 if float(v) > 1.0 else float(v)) for v in color[:3]
-            )
-        opacity = float(display_options.get("center_marker_opacity", 0.9))
-        radius_px = float(display_options.get("center_marker_radius_px", 10.0))
-        center_world = tuple(
-            float(coord) * float(scale) for coord, scale in zip(center_xyz, spacing)
-        )
-        try:
-            coord = vtk.vtkCoordinate()
-            coord.SetCoordinateSystemToWorld()
-            coord.SetValue(*center_world)
-            x, y = coord.GetComputedDisplayValue(plotter.renderer)
-
-            num_sides = 24
-            points = vtk.vtkPoints()
-            for i in range(num_sides):
-                angle = 2.0 * math.pi * i / num_sides
-                points.InsertNextPoint(
-                    x + radius_px * math.cos(angle),
-                    y + radius_px * math.sin(angle),
-                    0.0,
-                )
-            polygon = vtk.vtkCellArray()
-            polygon.InsertNextCell(num_sides)
-            for i in range(num_sides):
-                polygon.InsertCellPoint(i)
-            poly_data = vtk.vtkPolyData()
-            poly_data.SetPoints(points)
-            poly_data.SetPolys(polygon)
-
-            mapper = vtk.vtkPolyDataMapper2D()
-            mapper.SetInputData(poly_data)
-            actor = vtk.vtkActor2D()
-            actor.SetMapper(mapper)
-            actor.GetProperty().SetColor(*color)
-            actor.GetProperty().SetOpacity(opacity)
-            plotter.renderer.AddViewProp(actor)
-        except Exception as exc:
-            logger.debug("Unable to add 2D center marker overlay: %s", exc)
-            return None
+        # Note: two earlier versions of this tried to force the marker
+        # "always visible" -- first via its own VTK render layer
+        # (pv.Renderer + SetNumberOfLayers), then via a vtkActor2D
+        # screen-space overlay. Both segfaulted under headless/software
+        # rendering in Linux CI (never reproduced locally, including a
+        # 50-iteration local stress test for the second approach), so both
+        # were removed rather than risk a third untested VTK trick. A plain
+        # 3D mesh actor is the safe tradeoff: for the interactive viewer the
+        # user can rotate to see it, and for the static snapshot it isn't
+        # always visible -- but it's not just about opacity anyway, since a
+        # marker at an object's true centroid is often genuinely behind real
+        # signal from a given angle, which is correct rendering, not a bug.
         return actor
 
     @staticmethod
@@ -6291,33 +6201,12 @@ class CytoDataFrame(pd.DataFrame):
             display_options=display_options,
         )
         if center_xyz is not None:
-            # The camera here is fixed (this is a one-shot off-screen
-            # snapshot, no interactive rotation), so a screen-space overlay
-            # can safely be used instead of a 3D actor -- see
-            # _add_center_marker_2d_overlay_to_plotter's docstring for why
-            # that's not true for the interactive viewer. A render pass is
-            # needed first so the world-to-display projection reflects the
-            # camera's final position, not a stale/default one -- if that
-            # render fails (e.g. under real resource pressure; observed once
-            # on an unusually slow run), skip the marker rather than
-            # projecting from a stale/uninitialized camera and placing a dot
-            # nowhere near the object with no trace of why.
-            render_succeeded = False
-            try:
-                plotter.render()
-                render_succeeded = True
-            except Exception as exc:
-                logger.debug(
-                    "Skipping 3D center marker: render before projection failed: %s",
-                    exc,
-                )
-            if render_succeeded:
-                self._add_center_marker_2d_overlay_to_plotter(
-                    plotter=plotter,
-                    center_xyz=center_xyz,
-                    spacing=spacing,
-                    display_options=display_options,
-                )
+            self._add_center_marker_to_plotter(
+                plotter=plotter,
+                center_xyz=center_xyz,
+                spacing=spacing,
+                display_options=display_options,
+            )
 
         try:
             img = plotter.screenshot(return_img=True)
@@ -6494,11 +6383,8 @@ class CytoDataFrame(pd.DataFrame):
             # interactive trame widget below, even though it's displayed
             # after it. Building a live interactive plotter first can leave
             # shared VTK/rendering-context state behind that a later
-            # off-screen plotter's marker-position projection is sensitive
-            # to (see _add_center_marker_2d_overlay_to_plotter) without
-            # anything actually raising -- the rest of the render (volume,
-            # mask) isn't affected since it doesn't depend on viewport state
-            # the same way a screen-space coordinate projection does.
+            # off-screen plotter is sensitive to, without anything actually
+            # raising an exception.
             static_snapshot_html = None
             if bool(display_options.get("show_static_snapshot_details", True)):
                 static_snapshot_html = self._generate_trame_snapshot_html()

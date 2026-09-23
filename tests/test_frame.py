@@ -15,6 +15,7 @@ from contextlib import nullcontext
 from importlib.machinery import ModuleSpec
 from io import BytesIO
 
+import imagecodecs
 import imageio.v2 as imageio
 import ipywidgets as widgets
 import numpy as np
@@ -34,7 +35,11 @@ from cytodataframe.frame import (
     MAX_FILTER_SLIDER_STOPS,
     CytoDataFrame,
 )
-from cytodataframe.image import adjust_with_adaptive_histogram_equalization
+from cytodataframe.image import (
+    adjust_with_adaptive_histogram_equalization,
+    decode_jpegxl,
+    read_image_file,
+)
 from tests.utils import (
     cytodataframe_image_display_contains_pixels,
 )
@@ -3098,6 +3103,265 @@ def test_find_image_columns_skips_numeric_and_finds_strings() -> None:
     )
     found = cdf.find_image_columns()
     assert found == ["Image_FileName_DNA"]
+
+
+def _synthetic_rgb() -> np.ndarray:
+    """A 32x48 RGB image: left half red, right half blue."""
+    rgb = np.zeros((32, 48, 3), dtype=np.uint8)
+    rgb[:, :24, 0] = 220
+    rgb[:, 24:, 2] = 220
+    return rgb
+
+
+def _synthetic_gray() -> np.ndarray:
+    """A 32x48 grayscale horizontal ramp."""
+    return np.tile(np.linspace(0, 255, 48).astype(np.uint8), (32, 1))
+
+
+def _encode_image(array: np.ndarray, image_format: str) -> bytes:
+    """Encode an array as ``jpg``/``png``/``gif``/``jxl`` bytes (lossless-ish)."""
+    if image_format == "jxl":
+        return imagecodecs.jpegxl_encode(array, lossless=True)
+    buffer = BytesIO()
+    image = Image.fromarray(array)
+    if image_format == "gif":
+        image = image.convert("P")
+    image.save(
+        buffer,
+        format={"jpg": "JPEG", "png": "PNG", "gif": "GIF"}[image_format],
+        **({"quality": 95} if image_format == "jpg" else {}),
+    )
+    return buffer.getvalue()
+
+
+def _shifted_rgb_frame(shift: int) -> Image.Image:
+    """A palette frame of the synthetic image, rolled so frames differ."""
+    return Image.fromarray(np.roll(_synthetic_rgb(), shift, axis=1)).convert("P")
+
+
+def _rendered_png_arrays(html_output: str) -> list:
+    """Decode every ``image/png`` <img> in rendered HTML into RGB arrays."""
+    return [
+        np.array(Image.open(BytesIO(base64.b64decode(match))).convert("RGB"))
+        for match in re.findall(r"data:image/png;base64,([^\"]+)", html_output)
+    ]
+
+
+def _assert_red_left_blue_right(image: np.ndarray) -> None:
+    assert image[:, :20, 0].mean() > image[:, :20, 2].mean() + 100
+    assert image[:, -20:, 2].mean() > image[:, -20:, 0].mean() + 100
+
+
+def test_find_image_columns_accepts_supported_extensions() -> None:
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "Image_FileName_A": ["a.jpg"],
+                "Image_FileName_B": ["b.JPEG"],
+                "Image_FileName_C": ["c.Png"],
+                "Image_FileName_D": ["d.gif"],
+                "Image_FileName_E": ["e.JXL"],
+                "Not_Image": ["f.bmp"],
+            }
+        )
+    )
+    assert cdf.find_image_columns() == [
+        "Image_FileName_A",
+        "Image_FileName_B",
+        "Image_FileName_C",
+        "Image_FileName_D",
+        "Image_FileName_E",
+    ]
+
+
+@pytest.mark.parametrize("image_format", ["jpg", "png", "gif", "jxl"])
+def test_render_whole_image_renders_image_files(
+    tmp_path: pathlib.Path, image_format: str
+) -> None:
+    """Every supported format renders like a TIFF, with colors intact."""
+    (tmp_path / f"rgb.{image_format}").write_bytes(
+        _encode_image(_synthetic_rgb(), image_format)
+    )
+    (tmp_path / f"gray.{image_format}").write_bytes(
+        _encode_image(_synthetic_gray(), image_format)
+    )
+
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "Metadata_ObjectNumber": [1, 2],
+                "Image_FileName_DNA": [f"rgb.{image_format}", f"gray.{image_format}"],
+            }
+        ),
+        data_context_dir=str(tmp_path),
+        display_options={"render_whole_image": True},
+    )
+    rendered = _rendered_png_arrays(cdf._generate_jupyter_dataframe_html())
+
+    assert len(rendered) == 2
+    rgb_out, gray_out = rendered
+    assert rgb_out.shape == gray_out.shape == (32, 48, 3)
+    _assert_red_left_blue_right(rgb_out)
+
+
+def test_render_whole_image_renders_rgba_palette_and_animated_files(
+    tmp_path: pathlib.Path,
+) -> None:
+    rgb = _synthetic_rgb()
+    Image.fromarray(np.dstack([rgb, np.full(rgb.shape[:2], 255, np.uint8)])).save(
+        tmp_path / "rgba.png"
+    )
+    Image.fromarray(rgb).convert("P").save(tmp_path / "palette.png")
+    frames = [_shifted_rgb_frame(shift) for shift in (0, 8, 16)]
+    frames[0].save(
+        tmp_path / "animated.gif",
+        save_all=True,
+        append_images=frames[1:],
+        duration=50,
+    )
+    imagecodecs_16bit = _synthetic_gray().astype(np.uint16) * 257
+    (tmp_path / "deep.jxl").write_bytes(
+        imagecodecs.jpegxl_encode(imagecodecs_16bit, lossless=True)
+    )
+
+    names = ["rgba.png", "palette.png", "animated.gif", "deep.jxl"]
+    cdf = CytoDataFrame(
+        pd.DataFrame({"Image_FileName_DNA": names}),
+        data_context_dir=str(tmp_path),
+        display_options={"render_whole_image": True},
+    )
+    rendered = _rendered_png_arrays(cdf._generate_jupyter_dataframe_html())
+
+    assert len(rendered) == len(names)
+    for image in rendered[:3]:
+        _assert_red_left_blue_right(image)
+
+
+@pytest.mark.parametrize("image_format", ["jpg", "png", "gif", "jxl"])
+def test_encoded_image_bytes_columns_render_inline(image_format: str) -> None:
+    """Raw image bytes (e.g. a DuckDB BLOB) render inline in every format."""
+    first = _encode_image(_synthetic_rgb(), image_format)
+    second = _encode_image(_synthetic_gray(), image_format)
+    frame = pd.DataFrame(
+        {
+            "ObjectNumber": [1, 2, 3],
+            "pixel_data": [first, second, None],
+            "notes": ["a", "b", "c"],
+        }
+    )
+    cdf = CytoDataFrame(frame, display_options={"width": "120px"})
+
+    html_output = cdf._generate_jupyter_dataframe_html()
+
+    if image_format == "jxl":
+        # not browser-native: decoded and re-encoded as PNG
+        rendered = _rendered_png_arrays(html_output)
+        assert len(rendered) == 2
+        assert np.array_equal(rendered[0], _synthetic_rgb())
+        assert "image/jxl" not in html_output
+        styles = re.findall(r'image/png;base64,[^"]+" style="([^"]*)"', html_output)
+    else:
+        mime_type = {"jpg": "jpeg", "png": "png", "gif": "gif"}[image_format]
+        matches = re.findall(
+            rf'data:image/{mime_type};base64,([^"]+)" style="([^"]*)"', html_output
+        )
+        # embedded as-is: byte-identical, no decode/re-encode
+        assert [base64.b64decode(payload) for payload, _ in matches] == [
+            first,
+            second,
+        ]
+        styles = [style for _, style in matches]
+
+    assert len(styles) == 2
+    assert all("width:120px" in style for style in styles)
+    # the source frame is left untouched by rendering
+    assert cdf["pixel_data"].iloc[0] == first
+
+
+def test_animated_gif_bytes_are_embedded_unchanged() -> None:
+    frames = [_shifted_rgb_frame(shift) for shift in (0, 8, 16)]
+    buffer = BytesIO()
+    frames[0].save(
+        buffer, format="GIF", save_all=True, append_images=frames[1:], duration=50
+    )
+    animated = buffer.getvalue()
+
+    html_output = CytoDataFrame(
+        pd.DataFrame({"pixel_data": [animated]})
+    )._generate_jupyter_dataframe_html()
+
+    (payload,) = re.findall(r"data:image/gif;base64,([^\"]+)", html_output)
+    assert base64.b64decode(payload) == animated
+    assert Image.open(BytesIO(animated)).n_frames == 3
+
+
+def test_high_bit_depth_jpegxl_bytes_render_as_uint8() -> None:
+    deep = (_synthetic_gray().astype(np.uint16)) * 257
+    html_output = CytoDataFrame(
+        pd.DataFrame({"pixel_data": [imagecodecs.jpegxl_encode(deep, lossless=True)]})
+    )._generate_jupyter_dataframe_html()
+
+    (rendered,) = _rendered_png_arrays(html_output)
+    assert rendered.dtype == np.uint8
+    assert rendered[:, 0].mean() < 5
+    assert rendered[:, -1].mean() > 250
+
+
+def test_undecodable_jpegxl_bytes_are_left_unchanged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    corrupt = b"\xff\x0a" + b"not really jpeg xl"
+    cdf = CytoDataFrame(pd.DataFrame({"pixel_data": [corrupt]}))
+
+    with caplog.at_level(logging.WARNING, logger="cytodataframe.frame"):
+        html_output = cdf._generate_jupyter_dataframe_html()
+
+    assert "<img" not in html_output
+    assert "Unable to render JPEG XL bytes" in caplog.text
+
+
+def test_find_encoded_image_bytes_columns_is_selective() -> None:
+    frame = pd.DataFrame(
+        {
+            "jpeg": [_encode_image(_synthetic_gray(), "jpg"), None],
+            "png_bytearray": [bytearray(_encode_image(_synthetic_gray(), "png")), None],
+            "gif_memoryview": [
+                memoryview(_encode_image(_synthetic_gray(), "gif")),
+                None,
+            ],
+            "jxl": [_encode_image(_synthetic_gray(), "jxl"), None],
+            "other_bytes": [b"hello world, not an image", None],
+            "text": ["a", "b"],
+            "number": [1, 2],
+        }
+    )
+    assert CytoDataFrame.find_encoded_image_bytes_columns(frame) == [
+        "jpeg",
+        "png_bytearray",
+        "gif_memoryview",
+        "jxl",
+    ]
+
+
+def test_read_image_file_decodes_jpegxl_and_reports_errors(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gray = _synthetic_gray()
+    path = tmp_path / "gray.JXL"
+    path.write_bytes(_encode_image(gray, "jxl"))
+    assert np.array_equal(read_image_file(path), gray)
+
+    with pytest.raises(FileNotFoundError):
+        read_image_file(tmp_path / "missing.jxl")
+    with pytest.raises(ValueError, match="Unable to decode JPEG XL"):
+        decode_jpegxl(b"\xff\x0anot jpeg xl")
+
+    monkeypatch.setattr(
+        "cytodataframe.image.imagecodecs",
+        types.SimpleNamespace(JPEGXL=types.SimpleNamespace(available=False)),
+    )
+    with pytest.raises(ValueError, match="unavailable"):
+        decode_jpegxl(b"\xff\x0a")
 
 
 def test_get_3d_volume_from_cell_uses_image_pathname_column(

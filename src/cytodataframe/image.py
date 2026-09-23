@@ -2,9 +2,11 @@
 Helper functions for working with images in the context of CytoDataFrames.
 """
 
+import pathlib
 from typing import Any, Dict, Optional, Tuple
 
 import cv2
+import imagecodecs
 import imageio.v2 as imageio
 import numpy as np
 import skimage
@@ -13,6 +15,34 @@ from PIL import Image, ImageEnhance
 from skimage import draw, exposure
 from skimage import draw as skdraw
 from skimage.util import img_as_ubyte
+
+
+def decode_jpegxl(data: bytes) -> np.ndarray:
+    """
+    Decode a JPEG XL byte string into an image array.
+
+    Raises:
+        ValueError: If JPEG XL decoding is unavailable or the data is invalid.
+    """
+    if not imagecodecs.JPEGXL.available:
+        raise ValueError("JPEG XL decoding is unavailable in this environment.")
+    try:
+        return np.asarray(imagecodecs.jpegxl_decode(data))
+    except Exception as exc:
+        raise ValueError(f"Unable to decode JPEG XL data: {exc}") from exc
+
+
+def read_image_file(path: "str | pathlib.Path") -> np.ndarray:
+    """
+    Read an image file into an array.
+
+    ``imageio`` has no JPEG XL backend, so ``.jxl`` files are decoded with
+    ``imagecodecs`` (already a dependency); every other format goes through
+    ``imageio`` as before.
+    """
+    if pathlib.Path(path).suffix.lower() == ".jxl":
+        return decode_jpegxl(pathlib.Path(path).read_bytes())
+    return imageio.imread(path)
 
 
 def image_array_to_grayscale(img_array: np.ndarray) -> np.ndarray:

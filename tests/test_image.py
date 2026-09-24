@@ -5,7 +5,9 @@ Tests cosmicqc image module
 import os
 import pathlib
 import warnings
+from collections.abc import Callable
 
+import imagecodecs
 import imageio.v2 as imageio
 import numpy as np
 import pytest
@@ -684,3 +686,23 @@ def test_get_pixel_bbox_from_offsets_clamps_negative_lower_bounds_to_zero():
     assert y_min == 0
     assert x_max == 50
     assert y_max == 50
+
+
+@pytest.mark.parametrize(
+    "draw_function",
+    [draw_outline_on_image_from_mask, draw_outline_on_image_from_outline],
+)
+def test_draw_outline_supports_jpegxl_mask_and_outline_files(
+    tmp_path: pathlib.Path, draw_function: Callable
+) -> None:
+    """JPEG XL masks/outlines (which imageio cannot read) still draw outlines."""
+    orig_image = np.zeros((20, 20), dtype=np.uint8)
+    mask = np.zeros((20, 20), dtype=np.uint8)
+    rr, cc = disk((10, 10), 5)
+    mask[rr, cc] = 255
+    path = tmp_path / "mask.jxl"
+    path.write_bytes(imagecodecs.jpegxl_encode(mask, lossless=True))
+
+    result = draw_function(orig_image, str(path))
+
+    assert (result == [0, 255, 0]).all(axis=-1).any()

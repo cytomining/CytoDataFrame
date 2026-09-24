@@ -338,6 +338,43 @@ def test_prepare_layers_mask_binary(tmp_path: pathlib.Path) -> None:
     assert set(np.unique(mask_layer).tolist()).issubset({0, 255})
 
 
+@pytest.mark.parametrize("mask_format", ["gif", "jxl"])
+def test_prepare_layers_mask_binary_supports_more_mask_formats(
+    tmp_path: pathlib.Path, mask_format: str
+) -> None:
+    imageio.imwrite(tmp_path / "cell.tiff", np.zeros((6, 6), dtype=np.uint8))
+    mask_array = np.zeros((6, 6, 3), dtype=np.uint8)
+    mask_array[1:4, 1:4] = (0, 255, 0)
+    mask_dir = tmp_path / "masks"
+    mask_dir.mkdir()
+    (mask_dir / f"cell_mask.{mask_format}").write_bytes(
+        _encode_image(mask_array, mask_format)
+    )
+
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "Image_FileName_DNA": ["cell.tiff"],
+                "Image_PathName_DNA": [str(tmp_path)],
+            }
+        ),
+        data_context_dir=str(tmp_path),
+        data_mask_context_dir=str(mask_dir),
+    )
+    layers = cdf._prepare_cropped_image_layers(
+        data_value="cell.tiff",
+        bounding_box=(0, 0, 6, 6),
+        include_mask_outline=True,
+        include_original=False,
+        include_composite=False,
+    )
+
+    mask_layer = layers["mask"]
+    assert mask_layer is not None
+    assert set(np.unique(mask_layer).tolist()) == {0, 255}
+    assert (mask_layer > 0).sum() == 9
+
+
 def test_prepare_layers_3d_uses_loaded_volume_without_ome_arrow_fallback(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3120,7 +3157,7 @@ def _synthetic_gray() -> np.ndarray:
 
 
 def _encode_image(array: np.ndarray, image_format: str) -> bytes:
-    """Encode an array as ``jpg``/``png``/``gif``/``jxl`` bytes (lossless-ish)."""
+    """Encode an array as ``jpg``/``png``/``gif``/``webp``/``jxl`` bytes."""
     if image_format == "jxl":
         return imagecodecs.jpegxl_encode(array, lossless=True)
     buffer = BytesIO()
@@ -3129,8 +3166,11 @@ def _encode_image(array: np.ndarray, image_format: str) -> bytes:
         image = image.convert("P")
     image.save(
         buffer,
-        format={"jpg": "JPEG", "png": "PNG", "gif": "GIF"}[image_format],
+        format={"jpg": "JPEG", "png": "PNG", "gif": "GIF", "webp": "WEBP"}[
+            image_format
+        ],
         **({"quality": 95} if image_format == "jpg" else {}),
+        **({"lossless": True} if image_format == "webp" else {}),
     )
     return buffer.getvalue()
 
@@ -3162,7 +3202,8 @@ def test_find_image_columns_accepts_supported_extensions() -> None:
                 "Image_FileName_C": ["c.Png"],
                 "Image_FileName_D": ["d.gif"],
                 "Image_FileName_E": ["e.JXL"],
-                "Not_Image": ["f.bmp"],
+                "Image_FileName_F": ["f.WebP"],
+                "Not_Image": ["g.bmp"],
             }
         )
     )
@@ -3172,10 +3213,11 @@ def test_find_image_columns_accepts_supported_extensions() -> None:
         "Image_FileName_C",
         "Image_FileName_D",
         "Image_FileName_E",
+        "Image_FileName_F",
     ]
 
 
-@pytest.mark.parametrize("image_format", ["jpg", "png", "gif", "jxl"])
+@pytest.mark.parametrize("image_format", ["jpg", "png", "gif", "webp", "jxl"])
 def test_render_whole_image_renders_image_files(
     tmp_path: pathlib.Path, image_format: str
 ) -> None:
@@ -3238,7 +3280,7 @@ def test_render_whole_image_renders_rgba_palette_and_animated_files(
         _assert_red_left_blue_right(image)
 
 
-@pytest.mark.parametrize("image_format", ["jpg", "png", "gif", "jxl"])
+@pytest.mark.parametrize("image_format", ["jpg", "png", "gif", "webp", "jxl"])
 def test_encoded_image_bytes_columns_render_inline(image_format: str) -> None:
     """Raw image bytes (e.g. a DuckDB BLOB) render inline in every format."""
     first = _encode_image(_synthetic_rgb(), image_format)
@@ -3262,7 +3304,9 @@ def test_encoded_image_bytes_columns_render_inline(image_format: str) -> None:
         assert "image/jxl" not in html_output
         styles = re.findall(r'image/png;base64,[^"]+" style="([^"]*)"', html_output)
     else:
-        mime_type = {"jpg": "jpeg", "png": "png", "gif": "gif"}[image_format]
+        mime_type = {"jpg": "jpeg", "png": "png", "gif": "gif", "webp": "webp"}[
+            image_format
+        ]
         matches = re.findall(
             rf'data:image/{mime_type};base64,([^"]+)" style="([^"]*)"', html_output
         )
@@ -3294,6 +3338,49 @@ def test_animated_gif_bytes_are_embedded_unchanged() -> None:
     (payload,) = re.findall(r"data:image/gif;base64,([^\"]+)", html_output)
     assert base64.b64decode(payload) == animated
     assert Image.open(BytesIO(animated)).n_frames == 3
+
+
+def _animated_webp_bytes() -> bytes:
+    frames = [
+        Image.fromarray(np.roll(_synthetic_rgb(), shift, axis=1))
+        for shift in (0, 8, 16)
+    ]
+    buffer = BytesIO()
+    frames[0].save(
+        buffer,
+        format="WEBP",
+        save_all=True,
+        append_images=frames[1:],
+        duration=50,
+        lossless=True,
+    )
+    return buffer.getvalue()
+
+
+def test_animated_webp_bytes_are_embedded_unchanged() -> None:
+    animated = _animated_webp_bytes()
+    assert Image.open(BytesIO(animated)).n_frames == 3
+
+    html_output = CytoDataFrame(
+        pd.DataFrame({"pixel_data": [animated]})
+    )._generate_jupyter_dataframe_html()
+
+    (payload,) = re.findall(r"data:image/webp;base64,([^\"]+)", html_output)
+    assert base64.b64decode(payload) == animated
+
+
+def test_animated_webp_file_renders_first_frame(tmp_path: pathlib.Path) -> None:
+    (tmp_path / "animated.webp").write_bytes(_animated_webp_bytes())
+    cdf = CytoDataFrame(
+        pd.DataFrame({"Image_FileName_DNA": ["animated.webp"]}),
+        data_context_dir=str(tmp_path),
+        display_options={"render_whole_image": True},
+    )
+
+    (rendered,) = _rendered_png_arrays(cdf._generate_jupyter_dataframe_html())
+
+    assert rendered.shape == (32, 48, 3)
+    _assert_red_left_blue_right(rendered)
 
 
 def test_high_bit_depth_jpegxl_bytes_render_as_uint8() -> None:
@@ -3330,6 +3417,7 @@ def test_find_encoded_image_bytes_columns_is_selective() -> None:
                 memoryview(_encode_image(_synthetic_gray(), "gif")),
                 None,
             ],
+            "webp": [_encode_image(_synthetic_gray(), "webp"), None],
             "jxl": [_encode_image(_synthetic_gray(), "jxl"), None],
             "other_bytes": [b"hello world, not an image", None],
             "text": ["a", "b"],
@@ -3340,6 +3428,7 @@ def test_find_encoded_image_bytes_columns_is_selective() -> None:
         "jpeg",
         "png_bytearray",
         "gif_memoryview",
+        "webp",
         "jxl",
     ]
 
@@ -3895,6 +3984,34 @@ def test_show_widget_table_renders_fallback_when_3d_fails():
     assert grid.layout.overflow == "auto"
     assert "3D render failed" in grid[1, 1].value
     assert "\u2026" in grid[2, 1].value
+
+
+def test_show_widget_table_renders_encoded_image_bytes_and_escapes_text() -> None:
+    png = _encode_image(_synthetic_rgb(), "png")
+    cdf = CytoDataFrame(
+        pd.DataFrame(
+            {
+                "A": [1],
+                "pixel_data": [png],
+                "note": ["<b>not html</b>"],
+            }
+        ),
+        display_options={"width": "120px"},
+    )
+    grid = cdf.show_widget_table(
+        column="A",
+        rows=[0],
+        columns=["A", "pixel_data", "note"],
+        columns_3d=["A"],
+    )
+
+    image_cell = grid[1, 2].value
+    (payload,) = re.findall(r"data:image/png;base64,([^\"]+)", image_cell)
+    assert base64.b64decode(payload) == png
+    assert "width:120px" in image_cell
+    # ordinary text cells stay escaped
+    assert "&lt;b&gt;not html&lt;/b&gt;" in grid[1, 3].value
+    assert "<b>not html</b>" not in grid[1, 3].value
 
 
 def test_show_widget_table_raises_in_debug_mode_when_3d_fails():

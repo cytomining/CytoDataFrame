@@ -188,7 +188,7 @@ def draw_outline_on_image_from_outline(
     """
 
     # Load the outline image
-    outline_image = imageio.imread(outline_image_path)
+    outline_image = read_image_file(outline_image_path)
 
     # Resize if necessary
     if outline_image.shape[:2] != orig_image.shape[:2]:
@@ -250,7 +250,7 @@ def draw_outline_on_image_from_mask(
             The resulting image with the green outline applied.
     """
     # Load the binary mask image
-    mask_image = imageio.imread(mask_image_path)
+    mask_image = read_image_file(mask_image_path)
 
     # Ensure the original image is RGB
     # Grayscale input

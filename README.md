@@ -37,6 +37,12 @@ For images without bounding box columns (e.g. older CellProfiler outputs or imag
 - Crop from compartment-center coordinates plus pixel offsets with `display_options={"offset_bounding_box": {"x_min": -20, "y_min": -20, "x_max": 20, "y_max": 20}}` (requires compartment center columns such as `Nuclei_Location_Center_X/Y`).
 - Render the full field of view without cropping with `display_options={"render_whole_image": True}` (works even with no bounding box and no center columns).
 
+For image formats and inline image data:
+
+- Image filename columns may point to `.tif`/`.tiff`, `.jpg`/`.jpeg`, `.png`, `.gif`, `.webp`, or `.jxl` ([JPEG XL](https://jpeg.org/jpegxl/)) files, and mask or outline files may use the same formats. Animated GIFs and WebPs display their first frame.
+- Columns holding raw encoded image bytes (for example a DuckDB `BLOB` or a parquet `binary` column) render inline as images, in both the standard table and the widget table. JPEG, PNG, GIF, and WebP bytes are embedded as-is (animations stay animated), while JPEG XL bytes are decoded and shown as PNG since browsers can't reliably display JPEG XL.
+- Inline image bytes are displayed as stored, without the brightness or contrast adjustments applied to image files. Their size follows the `width` and `height` display options.
+
 For row display in notebook/widget tables:
 
 - CytoDataFrame respects pandas display settings (`display.max_rows`, `display.min_rows`).

@@ -43,6 +43,7 @@ from pandas.io.formats import (
 from skimage.util import img_as_ubyte
 
 from .image import (
+    TIFF_SUFFIXES,
     add_image_scale_bar,
     adjust_with_adaptive_histogram_equalization,
     decode_jpegxl,
@@ -2782,7 +2783,13 @@ class CytoDataFrame(pd.DataFrame):
             logger.error(exc)
             return None
 
-        if self._is_3d_image_array(orig_image_array):
+        # Only TIFFs can hold a z-stack. Every other supported format (JPEG,
+        # PNG, GIF, WebP, JPEG XL) is a 2D image, so skip the array-shape
+        # guess for those: it can misread small, elongated, or two-channel 2D
+        # images as volumes.
+        if candidate_path.suffix.lower() in TIFF_SUFFIXES and self._is_3d_image_array(
+            orig_image_array
+        ):
             logger.debug(
                 "Detected 3D image at %s; returning HTML view.", candidate_path
             )
@@ -3318,16 +3325,9 @@ class CytoDataFrame(pd.DataFrame):
 
         if pd.api.types.is_object_dtype(dtype):
             return True
-        if isinstance(dtype, pd.ArrowDtype):
-            import pyarrow as pa
-
-            arrow_type = dtype.pyarrow_dtype
-            return (
-                pa.types.is_binary(arrow_type)
-                or pa.types.is_large_binary(arrow_type)
-                or pa.types.is_fixed_size_binary(arrow_type)
-            )
-        return False
+        # Every Arrow binary type (binary, large_binary, fixed_size_binary)
+        # maps to Python ``bytes``.
+        return isinstance(dtype, pd.ArrowDtype) and dtype.type is bytes
 
     @staticmethod
     def find_encoded_image_bytes_columns(data: pd.DataFrame) -> List[str]:

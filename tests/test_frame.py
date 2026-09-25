@@ -3421,6 +3421,7 @@ def test_find_encoded_image_bytes_columns_is_selective() -> None:
             "jxl": [_encode_image(_synthetic_gray(), "jxl"), None],
             "other_bytes": [b"hello world, not an image", None],
             "text": ["a", "b"],
+            "arrow_text": pd.array(["a", "b"], dtype=pd.ArrowDtype(pa.string())),
             "number": [1, 2],
         }
     )
@@ -3497,6 +3498,36 @@ def test_gray_alpha_files_are_read_as_rgba_and_render_as_2d(
     )
     html_output = cdf._generate_jupyter_dataframe_html()
     assert len(_rendered_png_arrays(html_output)) == 1
+    assert "cyto-3d-image" not in html_output
+
+
+@pytest.mark.parametrize(
+    ("image_format", "shape"),
+    [
+        ("png", (4, 4, 3)),  # smaller than the RGB-vs-volume size heuristic
+        ("png", (20, 200, 3)),  # more elongated than the heuristic allows
+        ("jpg", (20, 200, 3)),
+        ("webp", (4, 4, 3)),
+    ],
+)
+def test_non_tiff_images_are_never_treated_as_volumes(
+    tmp_path: pathlib.Path, image_format: str, shape: tuple
+) -> None:
+    """Only TIFFs can hold a z-stack, whatever a 2D image's array shape looks like."""
+    array = np.random.default_rng(0).integers(0, 255, shape, dtype=np.uint8)
+    (tmp_path / f"small.{image_format}").write_bytes(_encode_image(array, image_format))
+    # confirm the shape heuristic alone would have called these volumes
+    assert CytoDataFrame._is_3d_shape(shape)
+
+    cdf = CytoDataFrame(
+        pd.DataFrame({"Image_FileName_DNA": [f"small.{image_format}"]}),
+        data_context_dir=str(tmp_path),
+        display_options={"render_whole_image": True},
+    )
+    html_output = cdf._generate_jupyter_dataframe_html()
+
+    (rendered,) = _rendered_png_arrays(html_output)
+    assert rendered.shape == shape
     assert "cyto-3d-image" not in html_output
 
 

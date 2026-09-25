@@ -39,9 +39,9 @@ For images without bounding box columns (e.g. older CellProfiler outputs or imag
 
 For image formats and inline image data:
 
-- Image filename columns may point to `.tif`/`.tiff`, `.jpg`/`.jpeg`, `.png`, `.gif`, `.webp`, or `.jxl` ([JPEG XL](https://jpeg.org/jpegxl/)) files, and mask or outline files may use the same formats. Animated GIFs and WebPs display their first frame.
-- Columns holding raw encoded image bytes (for example a DuckDB `BLOB` or a parquet `binary` column) render inline as images, in both the standard table and the widget table. JPEG, PNG, GIF, and WebP bytes are embedded as-is (animations stay animated), while JPEG XL bytes are decoded and shown as PNG since browsers can't reliably display JPEG XL.
-- Inline image bytes are displayed as stored, without the brightness or contrast adjustments applied to image files. Their size follows the `width` and `height` display options.
+- CytoDataFrame reads image filename columns that point to `.tif`/`.tiff`, `.jpg`/`.jpeg`, `.png`, `.gif`, `.webp`, or `.jxl` ([JPEG XL](https://jpeg.org/jpegxl/)) files, and it reads mask or outline files in the same formats. For animated GIFs and WebPs, it displays the first frame.
+- CytoDataFrame renders columns that hold raw encoded image bytes (for example a DuckDB `BLOB` or a parquet `binary` column) inline as images, in both the standard table and the widget table. It embeds JPEG, PNG, GIF, and WebP bytes as-is (animations stay animated). It decodes JPEG XL bytes and shows them as PNG, because browsers can't reliably display JPEG XL.
+- CytoDataFrame displays inline image bytes as stored, without the brightness or contrast adjustments it applies to image files. The `width` and `height` display options set their size.
 
 For row display in notebook/widget tables:
 

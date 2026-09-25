@@ -16,6 +16,9 @@ from skimage import draw, exposure
 from skimage import draw as skdraw
 from skimage.util import img_as_ubyte
 
+# The only supported image file formats that can hold a multi-plane (3D) volume.
+TIFF_SUFFIXES = (".tif", ".tiff")
+
 
 def decode_jpegxl(data: bytes) -> np.ndarray:
     """
@@ -46,10 +49,10 @@ def read_image_file(path: "str | pathlib.Path") -> np.ndarray:
         if suffix == ".jxl"
         else imageio.imread(path)
     )
-    # A 2-channel (H, W, 2) array is gray+alpha, which downstream code would
-    # otherwise mistake for a 2-slice 3D volume. TIFFs are left alone since
-    # for them a 3D array genuinely may be a volume.
-    if suffix not in (".tif", ".tiff") and array.ndim == 3 and array.shape[-1] == 2:
+    # The display pipeline only handles grayscale, RGB, and RGBA, so expand
+    # gray+alpha (H, W, 2) to RGBA. TIFFs are left alone since a 3D TIFF
+    # array may genuinely be a volume rather than a gray+alpha image.
+    if suffix not in TIFF_SUFFIXES and array.ndim == 3 and array.shape[-1] == 2:
         array = np.concatenate(
             [np.repeat(array[..., :1], 3, axis=-1), array[..., 1:]], axis=-1
         )

@@ -611,11 +611,23 @@ keeps the same color across a re-render (e.g. toggling the mask).</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._dtype_can_hold_bytes">
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">_dtype_can_hold_bytes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._dtype_can_hold_bytes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._dtype_can_hold_bytes" title="Link to this definition">#</a></dt>
+<dd><p>Whether a column dtype can hold raw <code class="docutils literal notranslate"><span class="pre">bytes</span></code> values.</p>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._enbable_debug_mode">
 <span class="sig-name descname"><span class="pre">_enbable_debug_mode</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._enbable_debug_mode"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._enbable_debug_mode" title="Link to this definition">#</a></dt>
 <dd><p>Enable debug mode for the CytoDataFrame instance.
 This method sets the logger level to DEBUG and
 enables debug mode for the instance.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._encoded_image_mime_type">
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">_encoded_image_mime_type</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._encoded_image_mime_type"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._encoded_image_mime_type" title="Link to this definition">#</a></dt>
+<dd><p>Return the MIME type of a raw encoded-image byte string, else None.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -898,6 +910,12 @@ bounded with <code class="docutils literal notranslate"><span class="pre">image_
 <dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._image_array_to_html">
 <span class="sig-name descname"><span class="pre">_image_array_to_html</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">image_array</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._image_array_to_html"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._image_array_to_html" title="Link to this definition">#</a></dt>
 <dd><p>Encode an image array as an HTML &lt;img&gt; tag.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame._image_html_style">
+<span class="sig-name descname"><span class="pre">_image_html_style</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame._image_html_style"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame._image_html_style" title="Link to this definition">#</a></dt>
+<dd><p>Build the inline CSS shared by every rendered <code class="docutils literal notranslate"><span class="pre">&lt;img&gt;</span></code> cell.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -1374,12 +1392,22 @@ Pandas DataFrame.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame.find_encoded_image_bytes_columns">
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">find_encoded_image_bytes_columns</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame.find_encoded_image_bytes_columns"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame.find_encoded_image_bytes_columns" title="Link to this definition">#</a></dt>
+<dd><p>Identify columns that contain raw encoded image bytes (for example a
+DuckDB <code class="docutils literal notranslate"><span class="pre">BLOB</span></code> or a parquet <code class="docutils literal notranslate"><span class="pre">binary</span></code> column of JPEG, PNG, GIF, WebP,
+or JPEG XL images).</p>
+<p>Only columns whose dtype can hold <code class="docutils literal notranslate"><span class="pre">bytes</span></code> are scanned: object dtype
+(what pandas uses by default) and Arrow-backed binary dtypes.</p>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame.find_image_columns">
 <span class="sig-name descname"><span class="pre">find_image_columns</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame.find_image_columns"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame.find_image_columns" title="Link to this definition">#</a></dt>
 <dd><p>Find columns containing image file names.</p>
 <p>This method searches for columns in the DataFrame
-that contain image file names with extensions .tif
-or .tiff (case insensitive).</p>
+that contain image file names with extensions .tif, .tiff,
+.jpg, .jpeg, .png, .gif, .webp, or .jxl (case insensitive).</p>
 <dl class="simple">
 <dt>Performance note:</dt><dd><p>Single-cell profiles typically have thousands of numeric feature
 columns and only a handful of image-name columns. Scanning every
@@ -1552,6 +1580,18 @@ or scripts).</p>
 <dd><p>Render a merged multi-channel composite crop for a row as HTML.</p>
 <p>Returns an HTML <code class="docutils literal notranslate"><span class="pre">&lt;img&gt;</span></code> string for the blended composite, or an
 empty string when no channel could be rendered for the row.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.cytodataframe.frame.CytoDataFrame.process_encoded_image_bytes_as_html_display">
+<span class="sig-name descname"><span class="pre">process_encoded_image_bytes_as_html_display</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data_value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/frame.html#CytoDataFrame.process_encoded_image_bytes_as_html_display"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.frame.CytoDataFrame.process_encoded_image_bytes_as_html_display" title="Link to this definition">#</a></dt>
+<dd><p>Render raw encoded image bytes as an HTML &lt;img&gt; element.</p>
+<p>JPEG, PNG, GIF, and WebP bytes are already browser-native images, so
+they are embedded directly without decoding and re-encoding (which
+also keeps animations animated). Browsers cannot reliably display JPEG
+XL, so those bytes are decoded and re-encoded as PNG. Values which are
+not encoded images (for example nulls), or JPEG XL data which cannot
+be decoded, are returned unchanged.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -1746,6 +1786,17 @@ which is often preferable for merged channel composites.</p></li>
 </dd></dl>
 
 <dl class="py function">
+<dt class="sig sig-object py" id="src.cytodataframe.image.decode_jpegxl">
+<span class="sig-prename descclassname"><span class="pre">src.cytodataframe.image.</span></span><span class="sig-name descname"><span class="pre">decode_jpegxl</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/image.html#decode_jpegxl"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.image.decode_jpegxl" title="Link to this definition">#</a></dt>
+<dd><p>Decode a JPEG XL byte string into an image array.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>ValueError</strong> – If JPEG XL decoding is unavailable or the data is invalid.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
 <dt class="sig sig-object py" id="src.cytodataframe.image.draw_outline_on_image_from_mask">
 <span class="sig-prename descclassname"><span class="pre">src.cytodataframe.image.</span></span><span class="sig-name descname"><span class="pre">draw_outline_on_image_from_mask</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">orig_image</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask_image_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">outline_color</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">tuple</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">(0,</span> <span class="pre">255,</span> <span class="pre">0)</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/image.html#draw_outline_on_image_from_mask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.image.draw_outline_on_image_from_mask" title="Link to this definition">#</a></dt>
 <dd><p>Draws green outlines on an image based on a binary mask and returns
@@ -1863,6 +1914,15 @@ By “too dark” we mean not as visible to the human eye.</p>
 <dd class="field-odd"><p>bool</p>
 </dd>
 </dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.cytodataframe.image.read_image_file">
+<span class="sig-prename descclassname"><span class="pre">src.cytodataframe.image.</span></span><span class="sig-name descname"><span class="pre">read_image_file</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="reference internal" href="_modules/src/cytodataframe/image.html#read_image_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.cytodataframe.image.read_image_file" title="Link to this definition">#</a></dt>
+<dd><p>Read an image file into an array.</p>
+<p><code class="docutils literal notranslate"><span class="pre">imageio</span></code> has no JPEG XL backend, so <code class="docutils literal notranslate"><span class="pre">.jxl</span></code> files are decoded with
+<code class="docutils literal notranslate"><span class="pre">imagecodecs</span></code> (already a dependency); every other format goes through
+<code class="docutils literal notranslate"><span class="pre">imageio</span></code> as before. Gray+alpha images are returned as RGBA.</p>
 </dd></dl>
 
 </section>

@@ -43,12 +43,15 @@ from pandas.io.formats import (
 from skimage.util import img_as_ubyte
 
 from .image import (
+    TIFF_SUFFIXES,
     add_image_scale_bar,
     adjust_with_adaptive_histogram_equalization,
+    decode_jpegxl,
     draw_outline_on_image_from_mask,
     draw_outline_on_image_from_outline,
     get_pixel_bbox_from_offsets,
     image_array_to_grayscale,
+    read_image_file,
 )
 from .volume import (
     build_3d_html_from_path,
@@ -61,6 +64,20 @@ from .volume import (
 logger = logging.getLogger(__name__)
 MIN_VOLUME_NDIM = 3
 RGB_LIKE_CHANNEL_COUNTS = (MIN_VOLUME_NDIM, 4)
+# (byte offset, signature, MIME type) for encoded image formats. Used to
+# recognize raw image bytes (e.g. a DuckDB ``BLOB``) held in a column. JPEG XL
+# has a bare-codestream and an ISO BMFF container signature, and WebP is a
+# RIFF container with ``WEBP`` at offset 8.
+ENCODED_IMAGE_SIGNATURES = (
+    (0, b"\xff\xd8\xff", "image/jpeg"),
+    (0, b"\x89PNG\r\n\x1a\n", "image/png"),
+    (0, b"GIF87a", "image/gif"),
+    (0, b"GIF89a", "image/gif"),
+    (0, b"\xff\x0a", "image/jxl"),
+    (0, b"\x00\x00\x00\x0cJXL \r\n\x87\n", "image/jxl"),
+    (8, b"WEBP", "image/webp"),
+)
+JPEGXL_MIME_TYPE = "image/jxl"
 MIN_RGB_SPATIAL_DIM = 8
 MAX_RGB_ASPECT_RATIO = 4.0
 MIN_POSITION_COMPONENTS = 2
@@ -1968,8 +1985,8 @@ class CytoDataFrame(pd.DataFrame):
         Find columns containing image file names.
 
         This method searches for columns in the DataFrame
-        that contain image file names with extensions .tif
-        or .tiff (case insensitive).
+        that contain image file names with extensions .tif, .tiff,
+        .jpg, .jpeg, .png, .gif, .webp, or .jxl (case insensitive).
 
         Performance note:
             Single-cell profiles typically have thousands of numeric feature
@@ -1984,8 +2001,10 @@ class CytoDataFrame(pd.DataFrame):
                 image file names.
 
         """
-        # Image file names end in ``.tif``/``.tiff`` (case insensitive).
-        compiled_pattern = re.compile(r".*\.(tif|tiff)$", flags=re.IGNORECASE)
+        # Image file names end in a supported extension (case insensitive).
+        compiled_pattern = re.compile(
+            r".*\.(tif|tiff|jpg|jpeg|png|gif|webp|jxl)$", flags=re.IGNORECASE
+        )
 
         def _value_is_image_name(value: Any) -> bool:
             return (
@@ -2420,7 +2439,7 @@ class CytoDataFrame(pd.DataFrame):
 
         if mask_array is None:
             try:
-                mask_array = np.asarray(imageio.imread(segmentation_path))
+                mask_array = np.asarray(read_image_file(segmentation_path))
             except (FileNotFoundError, OSError, ValueError) as exc:
                 logger.debug(
                     "Unable to read mask/outline image %s: %s",
@@ -2759,12 +2778,18 @@ class CytoDataFrame(pd.DataFrame):
                 return cached.copy()
 
         try:
-            orig_image_array = imageio.imread(candidate_path)
+            orig_image_array = read_image_file(candidate_path)
         except (FileNotFoundError, ValueError) as exc:
             logger.error(exc)
             return None
 
-        if self._is_3d_image_array(orig_image_array):
+        # Only TIFFs can hold a z-stack. Every other supported format (JPEG,
+        # PNG, GIF, WebP, JPEG XL) is a 2D image, so skip the array-shape
+        # guess for those: it can misread small, elongated, or two-channel 2D
+        # images as volumes.
+        if candidate_path.suffix.lower() in TIFF_SUFFIXES and self._is_3d_image_array(
+            orig_image_array
+        ):
             logger.debug(
                 "Detected 3D image at %s; returning HTML view.", candidate_path
             )
@@ -2974,7 +2999,7 @@ class CytoDataFrame(pd.DataFrame):
         mask_source_array = None
         if include_mask_outline and mask_source_path is not None:
             try:
-                loaded_mask = imageio.imread(mask_source_path)
+                loaded_mask = read_image_file(mask_source_path)
                 if loaded_mask.ndim == 3:  # noqa: PLR2004
                     mask_gray = np.max(loaded_mask[..., :3], axis=2)
                 else:
@@ -3236,18 +3261,8 @@ class CytoDataFrame(pd.DataFrame):
             return None
         return f"{IMAGE_MIN_DISPLAY_WIDTH_PX}px"
 
-    def _image_array_to_html(self: CytoDataFrame_type, image_array: np.ndarray) -> str:
-        """Encode an image array as an HTML <img> tag."""
-
-        try:
-            png_bytes_io = BytesIO()
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", UserWarning)
-                imageio.imwrite(png_bytes_io, image_array, format="png")
-            png_bytes = png_bytes_io.getvalue()
-        except (FileNotFoundError, ValueError) as exc:
-            logger.error(exc)
-            raise
+    def _image_html_style(self: CytoDataFrame_type) -> str:
+        """Build the inline CSS shared by every rendered ``<img>`` cell."""
 
         display_options = self._custom_attrs.get("display_options", {}) or {}
         # Normalize bare numeric widths (e.g. 300 or "300") to CSS pixel strings
@@ -3266,12 +3281,109 @@ class CytoDataFrame(pd.DataFrame):
         if height is not None:
             html_style.append(f"height:{height}")
 
-        html_style_joined = ";".join(html_style)
+        return ";".join(html_style)
+
+    def _image_array_to_html(self: CytoDataFrame_type, image_array: np.ndarray) -> str:
+        """Encode an image array as an HTML <img> tag."""
+
+        try:
+            png_bytes_io = BytesIO()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                imageio.imwrite(png_bytes_io, image_array, format="png")
+            png_bytes = png_bytes_io.getvalue()
+        except (FileNotFoundError, ValueError) as exc:
+            logger.error(exc)
+            raise
+
         base64_image_bytes = base64.b64encode(png_bytes).decode("utf-8")
 
         return (
             '<img src="data:image/png;base64,'
-            f'{base64_image_bytes}" style="{html_style_joined}"/>'
+            f'{base64_image_bytes}" style="{self._image_html_style()}"/>'
+        )
+
+    @staticmethod
+    def _encoded_image_mime_type(value: Any) -> Optional[str]:
+        """Return the MIME type of a raw encoded-image byte string, else None."""
+
+        if not isinstance(value, (bytes, bytearray, memoryview)):
+            return None
+        head = bytes(value[:12])
+        return next(
+            (
+                mime_type
+                for offset, signature, mime_type in ENCODED_IMAGE_SIGNATURES
+                if head[offset : offset + len(signature)] == signature
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _dtype_can_hold_bytes(dtype: Any) -> bool:
+        """Whether a column dtype can hold raw ``bytes`` values."""
+
+        if pd.api.types.is_object_dtype(dtype):
+            return True
+        # Every Arrow binary type (binary, large_binary, fixed_size_binary)
+        # maps to Python ``bytes``.
+        return isinstance(dtype, pd.ArrowDtype) and dtype.type is bytes
+
+    @staticmethod
+    def find_encoded_image_bytes_columns(data: pd.DataFrame) -> List[str]:
+        """
+        Identify columns that contain raw encoded image bytes (for example a
+        DuckDB ``BLOB`` or a parquet ``binary`` column of JPEG, PNG, GIF, WebP,
+        or JPEG XL images).
+
+        Only columns whose dtype can hold ``bytes`` are scanned: object dtype
+        (what pandas uses by default) and Arrow-backed binary dtypes.
+        """
+
+        image_cols: List[str] = [
+            column
+            for column, dtype in data.dtypes.items()
+            if CytoDataFrame._dtype_can_hold_bytes(dtype)
+            and data[column].apply(CytoDataFrame._encoded_image_mime_type).notna().any()
+        ]
+
+        if image_cols:
+            logger.debug("Found encoded image bytes columns: %s", image_cols)
+
+        return image_cols
+
+    def process_encoded_image_bytes_as_html_display(
+        self: CytoDataFrame_type,
+        data_value: Any,
+    ) -> Any:
+        """
+        Render raw encoded image bytes as an HTML <img> element.
+
+        JPEG, PNG, GIF, and WebP bytes are already browser-native images, so
+        they are embedded directly without decoding and re-encoding (which
+        also keeps animations animated). Browsers cannot reliably display JPEG
+        XL, so those bytes are decoded and re-encoded as PNG. Values which are
+        not encoded images (for example nulls), or JPEG XL data which cannot
+        be decoded, are returned unchanged.
+        """
+
+        mime_type = self._encoded_image_mime_type(data_value)
+        if mime_type is None:
+            return data_value
+
+        if mime_type == JPEGXL_MIME_TYPE:
+            try:
+                return self._image_array_to_html(
+                    self._ensure_uint8(decode_jpegxl(bytes(data_value)))
+                )
+            except ValueError as exc:
+                logger.warning("Unable to render JPEG XL bytes: %s", exc)
+                return data_value
+
+        encoded = base64.b64encode(bytes(data_value)).decode("ascii")
+        return (
+            f'<img src="data:{mime_type};base64,{encoded}" '
+            f'style="{self._image_html_style()}"/>'
         )
 
     def process_ome_arrow_data_as_html_display(
@@ -5502,7 +5614,18 @@ class CytoDataFrame(pd.DataFrame):
                         continue
 
                 value = self.loc[row_label, col]
-                text_value = html_lib.escape(_safe_text(value))
+                # Raw encoded image bytes (e.g. a BLOB column) render as an
+                # image; the signature check keeps text cells escaped.
+                image_html = (
+                    self.process_encoded_image_bytes_as_html_display(value)
+                    if self._encoded_image_mime_type(value) is not None
+                    else None
+                )
+                text_value = (
+                    image_html
+                    if isinstance(image_html, str)
+                    else html_lib.escape(_safe_text(value))
+                )
                 grid[row_idx, col_idx] = widgets.HTML(
                     value=(
                         f"<div style='width:100%;height:100%;background:{row_bg};"
@@ -5943,6 +6066,18 @@ class CytoDataFrame(pd.DataFrame):
                     data.loc[display_indices, ome_col] = data.loc[
                         display_indices, ome_col
                     ].apply(self.process_ome_arrow_data_as_html_display)
+
+            # Only the rows actually being rendered need scanning.
+            for bytes_col in self.find_encoded_image_bytes_columns(
+                data.loc[display_indices]
+            ):
+                if not pd.api.types.is_object_dtype(data[bytes_col].dtype):
+                    # e.g. Arrow-backed binary: can't hold the HTML strings
+                    # assigned below, so convert the display copy.
+                    data[bytes_col] = data[bytes_col].astype(object)
+                data.loc[display_indices, bytes_col] = data.loc[
+                    display_indices, bytes_col
+                ].apply(self.process_encoded_image_bytes_as_html_display)
 
             if self._custom_attrs["is_transposed"]:
                 # retranspose to return the

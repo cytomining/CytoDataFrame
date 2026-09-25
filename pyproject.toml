@@ -147,6 +147,10 @@ ini_options.addopts = "--cov=src/cytodataframe --cov-report=term-missing:skip-co
 # settings to avoid errors with cv2 and coverage
 # see here for more: https://github.com/nedbat/coveragepy/issues/1653
 run.omit = [
+  # imagecodecs' compiled extensions carry Cython line-trace data pointing at
+  # ``.pyx`` sources that aren't shipped, which breaks ``coverage xml`` once
+  # tests decode JPEG XL.
+  "*.pyx",
   "config-3.py",
   "config.py",
 ]

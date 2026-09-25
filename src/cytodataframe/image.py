@@ -2,9 +2,11 @@
 Helper functions for working with images in the context of CytoDataFrames.
 """
 
+import pathlib
 from typing import Any, Dict, Optional, Tuple
 
 import cv2
+import imagecodecs
 import imageio.v2 as imageio
 import numpy as np
 import skimage
@@ -13,6 +15,48 @@ from PIL import Image, ImageEnhance
 from skimage import draw, exposure
 from skimage import draw as skdraw
 from skimage.util import img_as_ubyte
+
+# The only supported image file formats that can hold a multi-plane (3D) volume.
+TIFF_SUFFIXES = (".tif", ".tiff")
+
+
+def decode_jpegxl(data: bytes) -> np.ndarray:
+    """
+    Decode a JPEG XL byte string into an image array.
+
+    Raises:
+        ValueError: If JPEG XL decoding is unavailable or the data is invalid.
+    """
+    if not imagecodecs.JPEGXL.available:
+        raise ValueError("JPEG XL decoding is unavailable in this environment.")
+    try:
+        return np.asarray(imagecodecs.jpegxl_decode(data))
+    except Exception as exc:
+        raise ValueError(f"Unable to decode JPEG XL data: {exc}") from exc
+
+
+def read_image_file(path: "str | pathlib.Path") -> np.ndarray:
+    """
+    Read an image file into an array.
+
+    ``imageio`` has no JPEG XL backend, so ``.jxl`` files are decoded with
+    ``imagecodecs`` (already a dependency); every other format goes through
+    ``imageio`` as before. Gray+alpha images are returned as RGBA.
+    """
+    suffix = pathlib.Path(path).suffix.lower()
+    array = (
+        decode_jpegxl(pathlib.Path(path).read_bytes())
+        if suffix == ".jxl"
+        else imageio.imread(path)
+    )
+    # The display pipeline only handles grayscale, RGB, and RGBA, so expand
+    # gray+alpha (H, W, 2) to RGBA. TIFFs are left alone since a 3D TIFF
+    # array may genuinely be a volume rather than a gray+alpha image.
+    if suffix not in TIFF_SUFFIXES and array.ndim == 3 and array.shape[-1] == 2:
+        array = np.concatenate(
+            [np.repeat(array[..., :1], 3, axis=-1), array[..., 1:]], axis=-1
+        )
+    return array
 
 
 def image_array_to_grayscale(img_array: np.ndarray) -> np.ndarray:
@@ -147,7 +191,7 @@ def draw_outline_on_image_from_outline(
     """
 
     # Load the outline image
-    outline_image = imageio.imread(outline_image_path)
+    outline_image = read_image_file(outline_image_path)
 
     # Resize if necessary
     if outline_image.shape[:2] != orig_image.shape[:2]:
@@ -209,7 +253,7 @@ def draw_outline_on_image_from_mask(
             The resulting image with the green outline applied.
     """
     # Load the binary mask image
-    mask_image = imageio.imread(mask_image_path)
+    mask_image = read_image_file(mask_image_path)
 
     # Ensure the original image is RGB
     # Grayscale input

@@ -87,7 +87,7 @@ docs = [
   "dunamai>=1.22,<2",
   "myst-nb>=1.1.2,<2",
   "myst-parser>=3,<6",
-  "pydata-sphinx-theme>=0.16,<0.22",
+  "pydata-sphinx-theme>=0.16,<0.23",
   "sphinx>=9,<9.1",
   "sphinx-multiversion",
 ]

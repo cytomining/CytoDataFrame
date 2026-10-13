@@ -27,3 +27,61 @@ updates:
       python-packages:
         patterns:
           - "*"
+
+  # Updates for the 0.3.x release branch. Dependabot reads this
+  # configuration from the default branch only, so the 0.3.x branch
+  # is tracked through the target-branch entries below rather than
+  # through the dependabot.yml stored on the 0.3.x branch itself.
+  # See here for more information about target-branch:
+  # https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file#target-branch
+
+  # GitHub Actions checks for the 0.3.x release branch.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "0.3.x"
+    schedule:
+      # Check for updates to GitHub Actions every month
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # Perform checks and updates for python uv environment
+  # files on the 0.3.x release branch.
+  # This depends on changes to dependabot via:
+  # https://github.com/dependabot/dependabot-core/pull/10040
+  - package-ecosystem: "uv"
+    directory: "/"
+    target-branch: "0.3.x"
+    schedule:
+      # Check for updates to uv environment files every month
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
+    groups:
+      python-packages:
+        patterns:
+          - "*"
+
+  # Perform checks and updates for pre-commit hook versions
+  # on the 0.3.x release branch. Dependabot opens a normal,
+  # reviewable PR for hook version bumps (the pre-commit-update
+  # hook was removed for the reasons noted on the 0.3.x branch).
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    target-branch: "0.3.x"
+    schedule:
+      # Check for updates to pre-commit hooks every month
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    groups:
+      pre-commit-hooks:
+        patterns:
+          - "*"

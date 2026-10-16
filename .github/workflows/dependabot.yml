@@ -30,6 +30,12 @@ jobs:
           python-version: "3.11"
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@v7
+      # VTK/pyvista's built-in headless rendering has segfaulted
+      # intermittently on ubuntu-24.04 runners (see the same step in
+      # run-tests.yml); a real Xvfb display avoids that here too, since
+      # pre-commit's code-cov-gen hook runs the full pytest suite.
+      - name: Setup headless display
+        uses: pyvista/setup-headless-display-action@v5
       # run pre-commmit checks using prek for faster execution
       - uses: j178/prek-action@v3.0.0
         id: pre_commit

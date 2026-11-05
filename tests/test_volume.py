@@ -1,5 +1,6 @@
 import logging
 import pathlib
+import re
 import types
 from importlib.machinery import ModuleSpec
 
@@ -66,6 +67,69 @@ def test_build_3d_image_html_view_contains_vtk_script():
     assert 'class="cyto-3d-image"' in html
     assert "data-volume=" in html
     assert "vtk.js" in html
+
+
+@pytest.mark.parametrize(
+    ("background", "encoded"),
+    [
+        ("black", "0.000000,0.000000,0.000000"),
+        ("#808080", "0.501961,0.501961,0.501961"),
+        ((0.1, 0.2, 0.3), "0.100000,0.200000,0.300000"),
+        ("not-a-color", "1.000000,1.000000,1.000000"),
+    ],
+)
+def test_browser_volume_respects_grayscale_and_background(
+    background: object, encoded: str
+):
+    html = build_3d_image_html_view(
+        volume=np.zeros((2, 2, 2), dtype=np.uint8),
+        dims=(2, 2, 2),
+        data_value="volume.tiff",
+        candidate_path=pathlib.Path("volume.tiff"),
+        display_options={"volume_background": background, "volume_cmap": "gray"},
+    )
+    assert f'data-volume-background="{encoded}"' in html
+    assert 'data-volume-cmap="gray"' in html
+    assert "ctfun.removeAllPoints()" in html
+    assert "ofun.removeAllPoints()" in html
+    assert "background:background" in html
+
+
+def test_browser_volume_preserves_default_appearance():
+    html = build_3d_image_html_view(
+        volume=np.zeros((2, 2, 2), dtype=np.uint8),
+        dims=(2, 2, 2),
+        data_value="volume.tiff",
+        candidate_path=pathlib.Path("volume.tiff"),
+        display_options={},
+    )
+    assert 'data-volume-background="1.000000,1.000000,1.000000"' in html
+    assert 'data-volume-cmap="white"' in html
+
+
+def test_mask_toggle_is_unique_to_each_masked_view():
+    arguments = {
+        "volume": np.ones((2, 2, 2), dtype=np.uint8),
+        "dims": (2, 2, 2),
+        "data_value": "volume.tiff",
+        "candidate_path": pathlib.Path("volume.tiff"),
+        "display_options": {},
+    }
+    first = build_3d_image_html_view(
+        **arguments, label_volume=np.ones((2, 2, 2), dtype=np.uint8)
+    )
+    second = build_3d_image_html_view(
+        **arguments, label_volume=np.ones((2, 2, 2), dtype=np.uint8)
+    )
+    pattern = r'<input id="([^"]+)"[^>]+class="cyto-3d-mask-toggle"[^>]*checked'
+    first_id = re.search(pattern, first)
+    second_id = re.search(pattern, second)
+    assert first_id is not None
+    assert second_id is not None
+    assert first_id[1] != second_id[1]
+    assert f'for="{first_id[1]}"' in first
+    assert "labelVolume.setVisibility(maskToggle.checked)" in first
+    assert 'class="cyto-3d-mask-toggle"' not in build_3d_image_html_view(**arguments)
 
 
 def test_build_3d_image_html_view_includes_label_overlay_data():
@@ -168,7 +232,7 @@ def test_build_3d_image_html_stub_includes_default_height():
 def test_vtk_js_helpers_include_expected_hooks():
     script = build_3d_vtk_js_script("abc")
     initializer = build_3d_vtk_js_initializer()
-    assert "https://unpkg.com/@kitware/vtk.js@34.9.1/dist/vtk.js" in script
+    assert "https://unpkg.com/vtk.js@34.9.1/vtk.js" in script
     assert "document.getElementById('abc')" in script
     assert "querySelectorAll('.cyto-3d-image[data-volume][data-dims]')" in initializer
     for token in (

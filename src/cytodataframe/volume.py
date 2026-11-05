@@ -8,11 +8,12 @@ from typing import Any, Callable, Optional, Tuple
 
 import imageio.v2 as imageio
 import numpy as np
+from matplotlib.colors import to_rgb
 
 FALLBACK_NDIM = 2
 MIN_VOLUME_NDIM = 3
 DEFAULT_MAX_INLINE_VOLUME_BYTES = 16 * 1024 * 1024
-VTK_JS_CDN_URL = "https://unpkg.com/@kitware/vtk.js@34.9.1/dist/vtk.js"
+VTK_JS_CDN_URL = "https://unpkg.com/vtk.js@34.9.1/vtk.js"
 VTK_JS_URL_ENV_VAR = "CYTODATAFRAME_VTK_JS_URL"
 VTK_JS_TRANSFER_FUNCTION_SNIPPET = (
     "const ctfun=vtk.Rendering.Core.vtkColorTransferFunction.newInstance();"
@@ -90,6 +91,12 @@ def build_3d_image_html_view(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917
     display_options: Optional[dict],
     label_volume: Optional[np.ndarray] = None,
 ) -> str:
+    """Build an inline browser volume, optionally using gray-on-color rendering.
+
+    ``volume_cmap="gray"`` enables intensity-dependent grayscale and opacity;
+    ``volume_background`` accepts a Matplotlib color. Legacy defaults remain
+    white-on-white when neither option is supplied.
+    """
     display_options = display_options or {}
     width = display_options.get("width", "300px")
     height = display_options.get("height", "300px")
@@ -99,6 +106,7 @@ def build_3d_image_html_view(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917
         f"height:{height}",
         "background:#f6f6f6",
         "border:1px solid #ddd",
+        "position:relative",
     ]
     html_style_joined = ";".join(html_style)
 
@@ -199,6 +207,24 @@ def build_3d_image_html_view(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917
     except Exception:
         fallback_html = ""
 
+    try:
+        background = to_rgb(display_options.get("volume_background", "white"))
+    except (TypeError, ValueError):
+        background = (1.0, 1.0, 1.0)
+    background_attr = ",".join(f"{value:.6f}" for value in background)
+    cmap = "gray" if display_options.get("volume_cmap") == "gray" else "white"
+    mask_control = ""
+    if label_binary is not None:
+        toggle_id = f"{element_id}-mask-toggle"
+        mask_control = (
+            f'<label for="{toggle_id}" '
+            'style="position:absolute;top:6px;left:6px;z-index:1;'
+            "background:rgba(0,0,0,0.75);color:white;padding:4px 6px;"
+            'font:12px sans-serif;border-radius:3px;cursor:pointer">'
+            f'<input id="{toggle_id}" type="checkbox" '
+            'class="cyto-3d-mask-toggle" checked aria-label="Show mask"> '
+            "Show mask</label>"
+        )
     vtk_js_url = _resolve_vtk_js_url(display_options)
     return (
         f'<div id="{element_id}" class="cyto-3d-image" '
@@ -207,8 +233,10 @@ def build_3d_image_html_view(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917
         f'data-label-volume="{label_b64}" '
         f'data-label-color="{label_color_attr}" '
         f'data-label-opacity="{label_opacity_attr}" '
+        f'data-volume-background="{background_attr}" '
+        f'data-volume-cmap="{cmap}" '
         f'style="{html_style_joined}">'
-        f"{fallback_html}</div>"
+        f"{fallback_html}{mask_control}</div>"
         + build_3d_vtk_js_script(element_id, vtk_js_url=vtk_js_url)
     )
 
@@ -275,12 +303,22 @@ def _build_vtk_js_renderer_core(*, include_container_size: bool) -> str:
         "const volume=vtk.Rendering.Core.vtkVolume.newInstance();"
         "volume.setMapper(mapper);"
         f"{VTK_JS_TRANSFER_FUNCTION_SNIPPET}"
+        "if(container.dataset.volumeCmap==='gray'){"
+        "ctfun.removeAllPoints();"
+        "ctfun.addRGBPoint(0,0,0,0);"
+        "ctfun.addRGBPoint(255,1,1,1);"
+        "ofun.removeAllPoints();"
+        "ofun.addPoint(0,0.0);"
+        "ofun.addPoint(255,0.2);"
+        "}"
         "volume.getProperty().setRGBTransferFunction(0,ctfun);"
         "volume.getProperty().setScalarOpacity(0,ofun);"
         "volume.getProperty().setShade(false);"
         "volume.getProperty().setInterpolationTypeToFastLinear();"
+        "const background=(container.dataset.volumeBackground||'1,1,1')"
+        ".split(',').map(Number);"
         "const renderer=vtk.Rendering.Core.vtkRenderer.newInstance({"
-        "background:[1,1,1]"
+        "background:background"
         "});"
         "const renderWindow=vtk.Rendering.Core.vtkRenderWindow.newInstance();"
         "renderWindow.addRenderer(renderer);"
@@ -336,6 +374,19 @@ def _build_vtk_js_renderer_core(*, include_container_size: bool) -> str:
         "labelVolume.getProperty().setShade(false);"
         "labelVolume.getProperty().setInterpolationTypeToNearest();"
         "renderer.addVolume(labelVolume);"
+        "const maskToggle=container.querySelector('.cyto-3d-mask-toggle');"
+        "if(maskToggle){"
+        "labelVolume.setVisibility(maskToggle.checked);"
+        "const maskControl=maskToggle.parentElement;"
+        "['pointerdown','pointermove','pointerup','click','wheel','keydown','keyup']"
+        ".forEach(type=>maskControl.addEventListener(type,event=>event.stopPropagation()));"
+        "container.dataset.maskVisible=String(maskToggle.checked);"
+        "maskToggle.addEventListener('change',function(){"
+        "labelVolume.setVisibility(maskToggle.checked);"
+        "container.dataset.maskVisible=String(maskToggle.checked);"
+        "renderWindow.render();"
+        "});"
+        "}"
         "}"
         "}"
         "renderer.resetCamera();"

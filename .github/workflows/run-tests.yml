@@ -10,7 +10,7 @@ name: tests
 
 jobs:
   pre_commit_checks:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # we avoid running duplicative
     # pre-commit checks for dependabot PRs
     if: github.actor != 'dependabot[bot]'
@@ -33,7 +33,7 @@ jobs:
     strategy:
       matrix:
         python_version: ["3.11", "3.12", "3.13", "3.14"]
-        os: [ubuntu-24.04, macos-14]
+        os: [ubuntu-26.04, macos-26]
     runs-on: ${{ matrix.os }}
     env:
       OS: ${{ matrix.os }}

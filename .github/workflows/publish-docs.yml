@@ -14,7 +14,7 @@ jobs:
   build:
     # only build and deploy docs if the actor is not dependabot
     if: ${{ github.actor != 'dependabot[bot]' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7
